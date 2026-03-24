@@ -2,27 +2,26 @@
 
 export type TabId =
   | "cockpit"
+  | "diagnostic"
   | "kpis"
-  | "config"
-  | "import"
-  | "checklist"
-  | "temps"
-  | "decisions"
   | "plan"
   | "comparatif"
+  | "visite"
+  | "checklist"
+  | "temps"
+  | "config"
   | "historique";
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: "cockpit", label: "Cockpit", icon: "◉" },
-  { id: "kpis", label: "KPIs détail", icon: "◈" },
-  { id: "config", label: "Paramétrage", icon: "⚙" },
-  { id: "import", label: "Import", icon: "⬆" },
-  { id: "checklist", label: "Checklist", icon: "☑" },
-  { id: "temps", label: "Temps", icon: "◷" },
-  { id: "decisions", label: "Décisions", icon: "⚡" },
-  { id: "plan", label: "Plan d'action", icon: "📋" },
-  { id: "comparatif", label: "Comparatif", icon: "⊞" },
-  { id: "historique", label: "Historique", icon: "↗" },
+  { id: "cockpit",    label: "Le Verdict",    icon: "⚡" },
+  { id: "diagnostic", label: "Diagnostic",    icon: "🔬" },
+  { id: "kpis",       label: "KPIs",          icon: "📊" },
+  { id: "plan",       label: "Plan d'action", icon: "🎯" },
+  { id: "comparatif", label: "Comparatif",    icon: "🏆" },
+  { id: "visite",     label: "Visite & CR",   icon: "📋" },
+  { id: "checklist",  label: "Checklist",     icon: "✅" },
+  { id: "temps",      label: "Grille Temps",  icon: "⏱" },
+  { id: "config",     label: "Paramétrage",   icon: "⚙️" },
 ];
 
 interface NavigationProps {
@@ -33,29 +32,32 @@ interface NavigationProps {
 export function Navigation({ activeTab, onTabChange }: NavigationProps) {
   return (
     <nav
-      className="flex gap-0.5 px-6 py-2 overflow-x-auto"
-      style={{ background: "var(--bg)" }}
+      className="border-b overflow-x-auto"
+      style={{ background: "var(--surface)", borderColor: "var(--border)" }}
     >
-      {TABS.map((tab) => {
-        const isActive = tab.id === activeTab;
-        return (
-          <button
-            key={tab.id}
-            onClick={() => onTabChange(tab.id)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium whitespace-nowrap transition-all outline-none"
-            style={{
-              background: isActive ? "var(--accentDim)" : "transparent",
-              color: isActive ? "var(--accent)" : "var(--textMuted)",
-              border: "none",
-              fontFamily: "inherit",
-              cursor: "pointer",
-            }}
-          >
-            <span className="text-[14px]">{tab.icon}</span>
-            {tab.label}
-          </button>
-        );
-      })}
+      <div className="flex max-w-[1600px] mx-auto px-4">
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => onTabChange(tab.id)}
+              className="flex items-center gap-1.5 px-4 py-3.5 text-[12px] font-semibold border-b-2 transition-all whitespace-nowrap shrink-0"
+              style={{
+                borderBottomColor: isActive ? "var(--accent)" : "transparent",
+                color: isActive ? "var(--accent)" : "var(--textMuted)",
+                background: isActive ? "#00d4aa08" : "transparent",
+                fontFamily: "inherit",
+                cursor: "pointer",
+                outline: "none",
+              }}
+            >
+              <span className="text-[14px]">{tab.icon}</span>
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }
