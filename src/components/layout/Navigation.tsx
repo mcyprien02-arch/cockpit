@@ -7,21 +7,24 @@ export type TabId =
   | "plan"
   | "comparatif"
   | "visite"
-  | "checklist"
-  | "temps"
-  | "config"
-  | "historique";
+  | "pap"
+  | "competences"
+  | "import"
+  | "balance"
+  | "config";
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: "cockpit",    label: "Le Verdict",    icon: "⚡" },
-  { id: "diagnostic", label: "Diagnostic",    icon: "🔬" },
-  { id: "kpis",       label: "KPIs",          icon: "📊" },
-  { id: "plan",       label: "Plan d'action", icon: "🎯" },
-  { id: "comparatif", label: "Comparatif",    icon: "🏆" },
-  { id: "visite",     label: "Visite & CR",   icon: "📋" },
-  { id: "checklist",  label: "Checklist",     icon: "✅" },
-  { id: "temps",      label: "Grille Temps",  icon: "⏱" },
-  { id: "config",     label: "Paramétrage",   icon: "⚙️" },
+  { id: "cockpit",      label: "Le Verdict",       icon: "⚡" },
+  { id: "diagnostic",   label: "Diagnostic",        icon: "🔬" },
+  { id: "kpis",         label: "KPIs",              icon: "📊" },
+  { id: "plan",         label: "Plan d'action",     icon: "🎯" },
+  { id: "comparatif",   label: "Comparatif",        icon: "🏆" },
+  { id: "visite",       label: "Visite & CR",       icon: "📋" },
+  { id: "pap",          label: "PAP",               icon: "🚀" },
+  { id: "competences",  label: "Compétences ISEOR", icon: "🧠" },
+  { id: "import",       label: "Import",            icon: "📥" },
+  { id: "balance",      label: "Balance Éco.",      icon: "⚖️" },
+  { id: "config",       label: "Paramétrage",       icon: "⚙️" },
 ];
 
 interface NavigationProps {

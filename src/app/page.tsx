@@ -5,14 +5,17 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { Navigation, TabId } from "@/components/layout/Navigation";
+import { SUPABASE_CONFIGURED } from "@/lib/supabase";
 import { HomeScreen } from "@/components/screens/HomeScreen";
 import { DiagnosticScreen } from "@/components/screens/DiagnosticScreen";
 import { SaisieScreen } from "@/components/screens/SaisieScreen";
 import { PlanActionScreen } from "@/components/screens/PlanActionScreen";
 import { ComparatifScreen } from "@/components/screens/ComparatifScreen";
 import { VisiteScreen } from "@/components/screens/VisiteScreen";
-import { ChecklistScreen } from "@/components/screens/ChecklistScreen";
-import { GrilleTempsScreen } from "@/components/screens/GrilleTempsScreen";
+import { PAPScreen } from "@/components/screens/PAPScreen";
+import { CompetencesISEORScreen } from "@/components/screens/CompetencesISEORScreen";
+import { ImportScreen } from "@/components/screens/ImportScreen";
+import { BalanceEconomiqueScreen } from "@/components/screens/BalanceEconomiqueScreen";
 import { ParametrageScreen } from "@/components/screens/ParametrageScreen";
 import type { Magasin } from "@/types";
 
@@ -24,8 +27,6 @@ function StoreSelector({
   selectedId: string;
   onChange: (id: string) => void;
 }) {
-  const selected = magasins.find((m) => m.id === selectedId);
-
   return (
     <div className="relative">
       <select
@@ -82,7 +83,7 @@ function AppHeader({
           </div>
         </div>
 
-        {/* Store selector + actions */}
+        {/* Store selector */}
         <div className="flex items-center gap-3">
           {activeTab !== "comparatif" && activeTab !== "config" && magasins.length > 0 && (
             <StoreSelector magasins={magasins} selectedId={selectedId} onChange={onSelect} />
@@ -121,6 +122,35 @@ export default function App() {
   }, []);
 
   const selectedMagasin = magasins.find((m) => m.id === selectedId) ?? null;
+
+  // ── Supabase config guard ────────────────────────────────────
+  if (!SUPABASE_CONFIGURED) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6" style={{ background: "var(--bg)" }}>
+        <div className="rounded-2xl p-8 border max-w-lg w-full text-center" style={{ background: "var(--surface)", borderColor: "#ff4d6a40" }}>
+          <div className="text-[32px] mb-3">⚙️</div>
+          <div className="text-[16px] font-bold mb-2" style={{ color: "var(--text)" }}>Configuration requise</div>
+          <div className="text-[13px] mb-5" style={{ color: "var(--textMuted)" }}>
+            Les variables d&apos;environnement Supabase sont manquantes. L&apos;application ne peut pas démarrer.
+          </div>
+          <div className="rounded-xl p-4 text-left mb-4 font-mono text-[11px] leading-relaxed"
+            style={{ background: "#0f1117", border: "1px solid var(--border)", color: "#00d4aa" }}>
+            <div style={{ color: "var(--textDim)" }}># Dans Vercel → Settings → Environment Variables :</div>
+            <div className="mt-2">NEXT_PUBLIC_SUPABASE_URL</div>
+            <div className="mt-1">= https://bgreukjqujstgzulgabz.supabase.co</div>
+            <div className="mt-3">NEXT_PUBLIC_SUPABASE_ANON_KEY</div>
+            <div className="mt-1 break-all">= eyJhbGci...</div>
+          </div>
+          <div className="text-[11px]" style={{ color: "var(--textDim)" }}>
+            Après avoir ajouté les variables, déclenchez un nouveau déploiement dans Vercel.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Tabs that don't need a store selected
+  const noStoreNeeded = ["comparatif", "config"];
 
   if (loading) {
     return (
@@ -193,34 +223,22 @@ export default function App() {
             {activeTab === "visite" && selectedId && (
               <VisiteScreen magasin={selectedMagasin} magasinId={selectedId} />
             )}
-            {activeTab === "checklist" && selectedId && (
-              <ChecklistScreen magasinId={selectedId} />
+            {activeTab === "pap" && selectedId && (
+              <PAPScreen magasinId={selectedId} />
             )}
-            {activeTab === "temps" && selectedId && (
-              <GrilleTempsScreen magasinId={selectedId} />
+            {activeTab === "competences" && selectedId && (
+              <CompetencesISEORScreen magasinId={selectedId} />
+            )}
+            {activeTab === "import" && selectedId && (
+              <ImportScreen magasinId={selectedId} magasin={selectedMagasin} />
+            )}
+            {activeTab === "balance" && selectedId && (
+              <BalanceEconomiqueScreen magasinId={selectedId} magasin={selectedMagasin} />
             )}
             {activeTab === "config" && (
               <ParametrageScreen />
             )}
-            {activeTab === "historique" && (
-              <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
-                <div className="text-[40px] mb-3">📈</div>
-                <div className="text-[16px] font-semibold mb-2" style={{ color: "var(--text)" }}>
-                  Historique des visites
-                </div>
-                <div className="text-[13px]" style={{ color: "var(--textMuted)" }}>
-                  Accédez à l&apos;historique complet depuis l&apos;onglet <strong>Visite & CR</strong>.
-                </div>
-                <button
-                  onClick={() => setActiveTab("visite")}
-                  className="mt-4 px-5 py-2.5 rounded-xl text-[12px] font-semibold"
-                  style={{ background: "var(--accent)", color: "#000" }}
-                >
-                  Voir Visite & CR →
-                </button>
-              </div>
-            )}
-            {!selectedId && activeTab !== "comparatif" && activeTab !== "config" && (
+            {!selectedId && !noStoreNeeded.includes(activeTab) && (
               <div className="text-center py-16" style={{ color: "var(--textMuted)" }}>
                 <div className="text-[40px] mb-3">🏪</div>
                 <div className="text-[14px]">Aucun magasin trouvé. Ajoutez-en un dans Paramétrage.</div>
