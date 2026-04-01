@@ -1,11 +1,10 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { Navigation, TabId } from "@/components/layout/Navigation";
-import { SUPABASE_CONFIGURED } from "@/lib/supabase";
+import { Navigation, ModeSwitcher, TabId, AppMode, getTabGroup } from "@/components/layout/Navigation";
 import { HomeScreen } from "@/components/screens/HomeScreen";
 import { DiagnosticScreen } from "@/components/screens/DiagnosticScreen";
 import { SaisieScreen } from "@/components/screens/SaisieScreen";
@@ -17,9 +16,11 @@ import { CompetencesISEORScreen } from "@/components/screens/CompetencesISEORScr
 import { ImportScreen } from "@/components/screens/ImportScreen";
 import { BalanceEconomiqueScreen } from "@/components/screens/BalanceEconomiqueScreen";
 import { ParametrageScreen } from "@/components/screens/ParametrageScreen";
+import { CHVACVScreen } from "@/components/screens/CHVACVScreen";
+import { AnalyseTempsScreen } from "@/components/screens/AnalyseTempsScreen";
 import type { Magasin } from "@/types";
 
-// ─── Store selector dropdown ──────────────────────────────────
+// ─── Store selector ───────────────────────────────────────────
 function StoreSelector({
   magasins, selectedId, onChange,
 }: {
@@ -31,7 +32,7 @@ function StoreSelector({
     <div className="relative">
       <select
         value={selectedId}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         className="appearance-none rounded-xl px-4 py-2.5 pr-10 text-[13px] font-semibold border cursor-pointer"
         style={{
           background: "var(--surface)",
@@ -40,7 +41,7 @@ function StoreSelector({
           fontFamily: "inherit",
         }}
       >
-        {magasins.map((m) => (
+        {magasins.map(m => (
           <option key={m.id} value={m.id} style={{ background: "var(--surface)" }}>
             {m.nom}
           </option>
@@ -58,14 +59,16 @@ function StoreSelector({
 
 // ─── App Header ───────────────────────────────────────────────
 function AppHeader({
-  magasins, selectedId, onSelect, activeTab, onTabChange,
+  magasins, selectedId, onSelect, activeTab, mode, onModeChange,
 }: {
   magasins: Magasin[];
   selectedId: string;
   onSelect: (id: string) => void;
   activeTab: TabId;
-  onTabChange: (t: TabId) => void;
+  mode: AppMode;
+  onModeChange: (m: AppMode) => void;
 }) {
+  const noStore = ["comparatif", "config"];
   return (
     <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
       <div className="flex items-center justify-between px-6 py-3 max-w-[1600px] mx-auto">
@@ -83,25 +86,52 @@ function AppHeader({
           </div>
         </div>
 
-        {/* Store selector */}
+        {/* Right side */}
         <div className="flex items-center gap-3">
-          {activeTab !== "comparatif" && activeTab !== "config" && magasins.length > 0 && (
+          {!noStore.includes(activeTab) && magasins.length > 0 && (
             <StoreSelector magasins={magasins} selectedId={selectedId} onChange={onSelect} />
           )}
+          <ModeSwitcher mode={mode} onChange={onModeChange} />
         </div>
       </div>
     </header>
   );
 }
 
+// ─── Empty state for restricted screens ──────────────────────
+function RestrictedScreen({ onSwitchMode }: { onSwitchMode: () => void }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center py-24 text-center"
+    >
+      <div className="text-[40px] mb-4">🔒</div>
+      <div className="text-[16px] font-semibold mb-2" style={{ color: "var(--text)" }}>
+        Section réservée au mode Consultant
+      </div>
+      <div className="text-[13px] mb-5" style={{ color: "var(--textMuted)" }}>
+        Cette section est disponible en mode Consultant.
+      </div>
+      <button
+        onClick={onSwitchMode}
+        className="rounded-xl px-5 py-2.5 text-[13px] font-semibold"
+        style={{ background: "var(--accent)", color: "#000", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+      >
+        Changer de mode →
+      </button>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────
 export default function App() {
-  const [magasins, setMagasins] = useState<Magasin[]>([]);
+  const [magasins, setMagasins]   = useState<Magasin[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<TabId>("cockpit");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState<string | null>(null);
+  const [mode, setMode]           = useState<AppMode>("consultant");
 
+  // Load magasins
   useEffect(() => {
     async function loadMagasins() {
       const { data, error } = await supabase
@@ -121,60 +151,59 @@ export default function App() {
     loadMagasins();
   }, []);
 
-  const selectedMagasin = magasins.find((m) => m.id === selectedId) ?? null;
+  // Persist mode
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("app_mode");
+      if (saved === "consultant" || saved === "franchisé" || saved === "visite") {
+        setMode(saved);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
-  // ── Supabase config guard ────────────────────────────────────
-  if (!SUPABASE_CONFIGURED) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-6" style={{ background: "var(--bg)" }}>
-        <div className="rounded-2xl p-8 border max-w-lg w-full text-center" style={{ background: "var(--surface)", borderColor: "#ff4d6a40" }}>
-          <div className="text-[32px] mb-3">⚙️</div>
-          <div className="text-[16px] font-bold mb-2" style={{ color: "var(--text)" }}>Configuration requise</div>
-          <div className="text-[13px] mb-5" style={{ color: "var(--textMuted)" }}>
-            Les variables d&apos;environnement Supabase sont manquantes. L&apos;application ne peut pas démarrer.
-          </div>
-          <div className="rounded-xl p-4 text-left mb-4 font-mono text-[11px] leading-relaxed"
-            style={{ background: "#0f1117", border: "1px solid var(--border)", color: "#00d4aa" }}>
-            <div style={{ color: "var(--textDim)" }}># Dans Vercel → Settings → Environment Variables :</div>
-            <div className="mt-2">NEXT_PUBLIC_SUPABASE_URL</div>
-            <div className="mt-1">= https://bgreukjqujstgzulgabz.supabase.co</div>
-            <div className="mt-3">NEXT_PUBLIC_SUPABASE_ANON_KEY</div>
-            <div className="mt-1 break-all">= eyJhbGci...</div>
-          </div>
-          <div className="text-[11px]" style={{ color: "var(--textDim)" }}>
-            Après avoir ajouté les variables, déclenchez un nouveau déploiement dans Vercel.
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const handleModeChange = (m: AppMode) => {
+    setMode(m);
+    try { localStorage.setItem("app_mode", m); } catch { /* ignore */ }
+    // If current tab is restricted in new mode, redirect
+    if (m === "franchisé") {
+      const allowedGroups = ["cockpit", "kpis", "pap"];
+      if (!allowedGroups.includes(getTabGroup(activeTab))) {
+        setActiveTab("cockpit");
+      }
+    }
+  };
 
-  // Tabs that don't need a store selected
-  const noStoreNeeded = ["comparatif", "config"];
+  const selectedMagasin = magasins.find(m => m.id === selectedId) ?? null;
 
+  const CONSULTANT_ONLY: TabId[] = ["balance", "chvacv", "competences", "temps"];
+  const isRestricted = (tab: TabId) =>
+    CONSULTANT_ONLY.includes(tab) && mode !== "consultant";
+
+  // Skeleton loading
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg)" }}>
-        <div className="text-center">
-          <div
-            className="w-12 h-12 rounded-xl flex items-center justify-center text-[20px] font-bold mx-auto mb-4"
-            style={{ background: "linear-gradient(135deg, #ff4d6a, #c0392b)", color: "#fff" }}
-          >
-            E
-          </div>
-          <div className="flex gap-1.5 justify-center">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="w-2 h-2 rounded-full"
-                style={{ background: "var(--accent)", animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite` }}
-              />
+      <div className="min-h-screen" style={{ background: "var(--bg)" }}>
+        {/* Header skeleton */}
+        <div className="h-14 border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }} />
+        <div className="h-12 border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }} />
+        <div className="px-6 py-6 max-w-[1600px] mx-auto space-y-4">
+          <div className="grid grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-28 rounded-2xl animate-pulse" style={{ background: "var(--surfaceAlt)" }} />
             ))}
+          </div>
+          <div className="h-64 rounded-2xl animate-pulse" style={{ background: "var(--surfaceAlt)" }} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="h-48 rounded-2xl animate-pulse" style={{ background: "var(--surfaceAlt)" }} />
+            <div className="h-48 rounded-2xl animate-pulse" style={{ background: "var(--surfaceAlt)" }} />
           </div>
         </div>
       </div>
     );
   }
+
+  const noStoreNeeded: TabId[] = ["comparatif", "config"];
+  const noStore = !selectedId && !noStoreNeeded.includes(activeTab);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
@@ -183,9 +212,10 @@ export default function App() {
         selectedId={selectedId}
         onSelect={setSelectedId}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        mode={mode}
+        onModeChange={handleModeChange}
       />
-      <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
+      <Navigation activeTab={activeTab} onTabChange={setActiveTab} mode={mode} />
 
       <main className="px-6 py-5 max-w-[1600px] mx-auto">
         {error && (
@@ -203,46 +233,94 @@ export default function App() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.18 }}
           >
-            {activeTab === "cockpit" && selectedId && (
-              <HomeScreen magasinId={selectedId} onNavigate={(tab) => setActiveTab(tab as TabId)} />
-            )}
-            {activeTab === "diagnostic" && selectedId && (
-              <DiagnosticScreen magasinId={selectedId} />
-            )}
-            {activeTab === "kpis" && selectedId && (
-              <SaisieScreen magasinId={selectedId} />
-            )}
-            {activeTab === "plan" && selectedId && (
-              <PlanActionScreen magasinId={selectedId} />
-            )}
-            {activeTab === "comparatif" && (
-              <ComparatifScreen />
-            )}
-            {activeTab === "visite" && selectedId && (
-              <VisiteScreen magasin={selectedMagasin} magasinId={selectedId} />
-            )}
-            {activeTab === "pap" && selectedId && (
-              <PAPScreen magasinId={selectedId} />
-            )}
-            {activeTab === "competences" && selectedId && (
-              <CompetencesISEORScreen magasinId={selectedId} />
-            )}
-            {activeTab === "import" && selectedId && (
-              <ImportScreen magasinId={selectedId} magasin={selectedMagasin} />
-            )}
-            {activeTab === "balance" && selectedId && (
-              <BalanceEconomiqueScreen magasinId={selectedId} magasin={selectedMagasin} />
-            )}
-            {activeTab === "config" && (
-              <ParametrageScreen />
-            )}
-            {!selectedId && !noStoreNeeded.includes(activeTab) && (
+            {noStore ? (
               <div className="text-center py-16" style={{ color: "var(--textMuted)" }}>
                 <div className="text-[40px] mb-3">🏪</div>
                 <div className="text-[14px]">Aucun magasin trouvé. Ajoutez-en un dans Paramétrage.</div>
               </div>
+            ) : (
+              <>
+                {/* cockpit */}
+                {activeTab === "cockpit" && selectedId && (
+                  <HomeScreen magasinId={selectedId} onNavigate={tab => setActiveTab(tab as TabId)} />
+                )}
+
+                {/* diagnostic */}
+                {activeTab === "diagnostic" && selectedId && (
+                  <DiagnosticScreen magasinId={selectedId} />
+                )}
+
+                {/* kpis — in visite mode render ImportScreen with visite tab active */}
+                {activeTab === "kpis" && selectedId && (
+                  mode === "visite"
+                    ? <ImportScreen magasinId={selectedId} magasin={selectedMagasin} onNavigate={tab => setActiveTab(tab as TabId)} />
+                    : <SaisieScreen magasinId={selectedId} />
+                )}
+
+                {/* plan */}
+                {activeTab === "plan" && selectedId && (
+                  <PlanActionScreen magasinId={selectedId} />
+                )}
+
+                {/* pap */}
+                {activeTab === "pap" && selectedId && (
+                  <PAPScreen magasinId={selectedId} />
+                )}
+
+                {/* balance */}
+                {activeTab === "balance" && selectedId && (
+                  isRestricted("balance")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <BalanceEconomiqueScreen magasinId={selectedId} magasin={selectedMagasin} />
+                )}
+
+                {/* chvacv */}
+                {activeTab === "chvacv" && selectedId && (
+                  isRestricted("chvacv")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <CHVACVScreen magasinId={selectedId} magasin={selectedMagasin} />
+                )}
+
+                {/* competences */}
+                {activeTab === "competences" && selectedId && (
+                  isRestricted("competences")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <CompetencesISEORScreen magasinId={selectedId} />
+                )}
+
+                {/* temps */}
+                {activeTab === "temps" && selectedId && (
+                  isRestricted("temps")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <AnalyseTempsScreen magasinId={selectedId} />
+                )}
+
+                {/* visite */}
+                {activeTab === "visite" && selectedId && (
+                  <VisiteScreen magasin={selectedMagasin} magasinId={selectedId} />
+                )}
+
+                {/* comparatif */}
+                {activeTab === "comparatif" && (
+                  <ComparatifScreen />
+                )}
+
+                {/* import */}
+                {activeTab === "import" && selectedId && (
+                  <ImportScreen
+                    magasinId={selectedId}
+                    magasin={selectedMagasin}
+                    onNavigate={tab => setActiveTab(tab as TabId)}
+                  />
+                )}
+
+                {/* config */}
+                {activeTab === "config" && (
+                  <ParametrageScreen />
+                )}
+              </>
             )}
           </motion.div>
         </AnimatePresence>

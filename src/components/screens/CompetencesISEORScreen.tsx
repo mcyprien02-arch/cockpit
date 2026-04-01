@@ -3,583 +3,628 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Legend, Tooltip,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
 } from "recharts";
 
 // ─── Types ────────────────────────────────────────────────────
+type NiveauOp = "gestion" | "securite" | "developpement";
+type NiveauCell = 0 | 1 | 2 | 3;
+
 interface Competence {
   id: string;
   nom: string;
-  categorie: string;
+  famille: string;
+  niveauOp: NiveauOp;
 }
 
-interface TeamMember {
+interface Collab {
   id: string;
   nom: string;
   poste: string;
-  ratings: Record<string, 0 | 1 | 2 | 3>; // competence_id → rating
 }
 
-interface GridData {
-  members: TeamMember[];
-  competences: Competence[];
+type Matrix = Record<string, Record<string, NiveauCell>>;
+
+interface CompetencesISEORScreenProps {
+  magasinId: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────
-const RATING_CONFIG: Record<number, { label: string; color: string; bg: string; symbol: string }> = {
-  0: { label: "Non maîtrisé",    color: "#ff4d6a", bg: "#ff4d6a20", symbol: "✗" },
-  1: { label: "En apprentissage",color: "#ffb347", bg: "#ffb34720", symbol: "◑" },
-  2: { label: "Maîtrisé",        color: "#ffd700", bg: "#ffd70020", symbol: "✓" },
-  3: { label: "Expert",          color: "#00d4aa", bg: "#00d4aa20", symbol: "★" },
+const OP_COLORS: Record<NiveauOp, string> = {
+  gestion:       "#6b8fa3",
+  securite:      "#00d4aa",
+  developpement: "#a78bfa",
 };
 
-const MEMBER_COLORS = ["#00d4aa", "#4da6ff", "#a78bfa", "#ffb347", "#f472b6", "#ff6b6b"];
+const FAMILLES = ["ACHAT", "VENTE", "MERCHANDISING", "DIGITAL", "GESTION"] as const;
+type Famille = (typeof FAMILLES)[number];
 
-const DEFAULT_COMPETENCES: Competence[] = [
-  // Techniques métier
-  { id: "c1",  nom: "Rachat / Évaluation produit",      categorie: "Techniques métier" },
-  { id: "c2",  nom: "Test Picea (batteries/logiciel)",   categorie: "Techniques métier" },
-  { id: "c3",  nom: "Authentification produits",         categorie: "Techniques métier" },
-  { id: "c4",  nom: "Logiciel EasyCash (maîtrise)",      categorie: "Techniques métier" },
-  { id: "c5",  nom: "Diagnostic / Réparation basique",   categorie: "Techniques métier" },
-  // Commercial & Client
-  { id: "c6",  nom: "Accueil et conseil client",         categorie: "Commercial & Client" },
-  { id: "c7",  nom: "Vente complémentaire (cross-sell)", categorie: "Commercial & Client" },
-  { id: "c8",  nom: "Négociation rachat",                categorie: "Commercial & Client" },
-  { id: "c9",  nom: "Programme fidélité / Encartage",    categorie: "Commercial & Client" },
-  // Gestion & Admin
-  { id: "c10", nom: "Gestion de caisse",                 categorie: "Gestion & Admin" },
-  { id: "c11", nom: "Inventaire / Gestion stock",        categorie: "Gestion & Admin" },
-  { id: "c12", nom: "Module étiquette & démarque",       categorie: "Gestion & Admin" },
-  { id: "c13", nom: "Bilan quotidien / Reporting",       categorie: "Gestion & Admin" },
-  // Management
-  { id: "c14", nom: "Animation et motivation équipe",    categorie: "Management" },
-  { id: "c15", nom: "Formation collaborateurs",          categorie: "Management" },
-  { id: "c16", nom: "Conformité procédures réseau",      categorie: "Management" },
+const COMPETENCES: Competence[] = [
+  // ACHAT
+  { id: "a1", nom: "Accueil client vendeur",   famille: "ACHAT",         niveauOp: "gestion"       },
+  { id: "a2", nom: "Découverte du besoin",      famille: "ACHAT",         niveauOp: "gestion"       },
+  { id: "a3", nom: "Connaissance des cotes",    famille: "ACHAT",         niveauOp: "securite"      },
+  { id: "a4", nom: "Négociation",               famille: "ACHAT",         niveauOp: "securite"      },
+  { id: "a5", nom: "Test produit Picea",        famille: "ACHAT",         niveauOp: "securite"      },
+  { id: "a6", nom: "Appel de stock oral",       famille: "ACHAT",         niveauOp: "developpement" },
+  { id: "a7", nom: "Saisie enregistrement",     famille: "ACHAT",         niveauOp: "gestion"       },
+  { id: "a8", nom: "Embasement",                famille: "ACHAT",         niveauOp: "developpement" },
+  // VENTE
+  { id: "v1", nom: "Accueil client acheteur",   famille: "VENTE",         niveauOp: "gestion"       },
+  { id: "v2", nom: "Conseil orientation",       famille: "VENTE",         niveauOp: "gestion"       },
+  { id: "v3", nom: "Argumentation vente",       famille: "VENTE",         niveauOp: "securite"      },
+  { id: "v4", nom: "Vente additionnelle TLAC",  famille: "VENTE",         niveauOp: "developpement" },
+  { id: "v5", nom: "Conclusion de vente",       famille: "VENTE",         niveauOp: "securite"      },
+  { id: "v6", nom: "Encaissement",              famille: "VENTE",         niveauOp: "gestion"       },
+  // MERCHANDISING
+  { id: "m1", nom: "Tenue du rayon",            famille: "MERCHANDISING", niveauOp: "gestion"       },
+  { id: "m2", nom: "Étiquetage",                famille: "MERCHANDISING", niveauOp: "gestion"       },
+  { id: "m3", nom: "Mise en avant",             famille: "MERCHANDISING", niveauOp: "developpement" },
+  { id: "m4", nom: "Appels de stock visuels",   famille: "MERCHANDISING", niveauOp: "developpement" },
+  { id: "m5", nom: "Gestion vieux stock",       famille: "MERCHANDISING", niveauOp: "securite"      },
+  // DIGITAL
+  { id: "d1", nom: "Fiches produits web",       famille: "DIGITAL",       niveauOp: "gestion"       },
+  { id: "d2", nom: "Gestion marketplace",       famille: "DIGITAL",       niveauOp: "securite"      },
+  { id: "d3", nom: "Avis Google",               famille: "DIGITAL",       niveauOp: "developpement" },
+  { id: "d4", nom: "Réseaux sociaux",           famille: "DIGITAL",       niveauOp: "developpement" },
+  // GESTION
+  { id: "g1", nom: "Inventaire",                famille: "GESTION",       niveauOp: "securite"      },
+  { id: "g2", nom: "Démarque",                  famille: "GESTION",       niveauOp: "securite"      },
+  { id: "g3", nom: "Caisse Z",                  famille: "GESTION",       niveauOp: "gestion"       },
+  { id: "g4", nom: "Réception stock",           famille: "GESTION",       niveauOp: "gestion"       },
+  { id: "g5", nom: "Procédures sécurité",       famille: "GESTION",       niveauOp: "securite"      },
 ];
 
-const CAT_COLORS: Record<string, string> = {
-  "Techniques métier":  "#4da6ff",
-  "Commercial & Client":"#00d4aa",
-  "Gestion & Admin":    "#a78bfa",
-  "Management":         "#ffb347",
-};
+const DEFAULT_COLLABS: Collab[] = [
+  { id: "c1", nom: "Collaborateur 1", poste: "Vendeur" },
+  { id: "c2", nom: "Collaborateur 2", poste: "Vendeur" },
+];
 
-const DEFAULT_GRID: GridData = {
-  members: [
-    { id: "m1", nom: "Membre 1", poste: "Responsable", ratings: {} },
-    { id: "m2", nom: "Membre 2", poste: "Vendeur",      ratings: {} },
-    { id: "m3", nom: "Membre 3", poste: "Vendeur",      ratings: {} },
-  ],
-  competences: DEFAULT_COMPETENCES,
-};
+const COLLAB_COLORS = ["#00d4aa", "#4da6ff", "#a78bfa", "#ffb347", "#f472b6", "#ff6b6b"];
+const NIVEAU_LABELS = ["Non renseigné", "En cours", "Acquis partiel", "Maîtrisé"];
 
-// ─── Rating Cell ──────────────────────────────────────────────
-function RatingCell({ rating, onChange }: { rating: 0 | 1 | 2 | 3; onChange: () => void }) {
-  const cfg = RATING_CONFIG[rating];
+// ─── SVG Skill Cell ───────────────────────────────────────────
+function SkillCell({
+  niveau,
+  niveauOp,
+  onCycle,
+  compNom,
+}: {
+  niveau: NiveauCell;
+  niveauOp: NiveauOp;
+  onCycle: () => void;
+  compNom: string;
+}) {
+  const color = OP_COLORS[niveauOp];
+  const [hovered, setHovered] = useState(false);
+
+  const renderSVG = () => {
+    if (niveau === 0) {
+      return (
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="1" y="1" width="20" height="20" rx="2"
+            fill="none" stroke="#4a5568" strokeWidth="1.5"
+            strokeDasharray="4 2" />
+          <line x1="4" y1="11" x2="18" y2="11" stroke="#4a5568" strokeWidth="1.5" />
+        </svg>
+      );
+    }
+    if (niveau === 1) {
+      return (
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="1" y="1" width="20" height="20" rx="2"
+            fill="none" stroke={color} strokeWidth="1.5" />
+        </svg>
+      );
+    }
+    if (niveau === 2) {
+      return (
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="1" y="1" width="20" height="20" rx="2"
+            fill="none" stroke={color} strokeWidth="1.5" />
+          <rect x="2" y="11" width="18" height="9" rx="0"
+            fill={color} opacity="0.85" />
+        </svg>
+      );
+    }
+    return (
+      <svg width="22" height="22" viewBox="0 0 22 22">
+        <rect x="1" y="1" width="20" height="20" rx="2"
+          fill={color} stroke={color} strokeWidth="1.5" />
+        <polyline points="6,11 9.5,14.5 16,8"
+          fill="none" stroke="white" strokeWidth="2"
+          strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  };
+
   return (
-    <motion.button
-      onClick={onChange}
-      whileTap={{ scale: 0.85 }}
-      className="w-8 h-8 rounded-lg text-[13px] font-bold flex items-center justify-center transition-all hover:scale-110"
-      style={{ background: cfg.bg, color: cfg.color, border: `1.5px solid ${cfg.color}50` }}
-      title={`${cfg.symbol} ${cfg.label} — cliquer pour modifier`}
-    >
-      {cfg.symbol}
-    </motion.button>
+    <div className="relative inline-flex">
+      <button
+        onClick={onCycle}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        className="flex items-center justify-center transition-transform hover:scale-110 focus:outline-none"
+        style={{ cursor: "pointer", background: "transparent", border: "none", padding: 4 }}
+        title={`${compNom} — ${NIVEAU_LABELS[niveau]}`}
+      >
+        {renderSVG()}
+      </button>
+      {hovered && compNom && (
+        <div
+          className="absolute z-50 rounded-lg px-3 py-2 text-[11px] font-medium whitespace-nowrap pointer-events-none"
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--text)",
+            bottom: "calc(100% + 6px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+          }}
+        >
+          <div style={{ color: "var(--text)" }}>{compNom}</div>
+          <div style={{ color }}>{NIVEAU_LABELS[niveau]}</div>
+        </div>
+      )}
+    </div>
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────
-export function CompetencesISEORScreen({ magasinId }: { magasinId: string }) {
-  const [grid, setGrid] = useState<GridData>(DEFAULT_GRID);
-  const [view, setView] = useState<"grid" | "radar" | "besoins">("grid");
-  const [addingMember, setAddingMember] = useState(false);
-  const [newMember, setNewMember] = useState({ nom: "", poste: "" });
-  const [saved, setSaved] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<string | null>(null);
+// ─── Main Component ───────────────────────────────────────────
+export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProps) {
+  const [collabs, setCollabs]                   = useState<Collab[]>(DEFAULT_COLLABS);
+  const [matrix, setMatrix]                     = useState<Matrix>({});
+  const [view, setView]                         = useState<"grille" | "radar">("grille");
+  const [simulerAbsenceId, setSimulerAbsenceId] = useState<string>("");
+  const [newCollabNom, setNewCollabNom]         = useState("");
+  const [showAddCollab, setShowAddCollab]       = useState(false);
 
-  const storageKey = `competences_iseor_${magasinId}`;
-
-  // Load from localStorage
+  // ── Persist / load ──────────────────────────────────────────
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
-      try { setGrid(JSON.parse(stored)); } catch {}
-    }
-  }, [storageKey]);
+    try {
+      const savedCollabs = localStorage.getItem(`iseor_collabs_${magasinId}`);
+      const savedMatrix  = localStorage.getItem(`iseor_matrix_${magasinId}`);
+      if (savedCollabs) setCollabs(JSON.parse(savedCollabs));
+      if (savedMatrix)  setMatrix(JSON.parse(savedMatrix));
+    } catch { /* ignore */ }
+  }, [magasinId]);
 
-  const saveGrid = useCallback((updated: GridData) => {
-    setGrid(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    }
-  }, [storageKey]);
+  useEffect(() => {
+    localStorage.setItem(`iseor_collabs_${magasinId}`, JSON.stringify(collabs));
+  }, [collabs, magasinId]);
 
-  const cycleRating = (memberId: string, compId: string) => {
-    const current = (grid.members.find((m) => m.id === memberId)?.ratings[compId] ?? 0) as 0 | 1 | 2 | 3;
-    const next = ((current + 1) % 4) as 0 | 1 | 2 | 3;
-    const updated: GridData = {
-      ...grid,
-      members: grid.members.map((m) =>
-        m.id === memberId ? { ...m, ratings: { ...m.ratings, [compId]: next } } : m
-      ),
-    };
-    saveGrid(updated);
-  };
+  useEffect(() => {
+    localStorage.setItem(`iseor_matrix_${magasinId}`, JSON.stringify(matrix));
+  }, [matrix, magasinId]);
 
-  const addMember = () => {
-    if (!newMember.nom.trim()) return;
-    const m: TeamMember = {
-      id: `m${Date.now()}`,
-      nom: newMember.nom,
-      poste: newMember.poste,
-      ratings: {},
-    };
-    saveGrid({ ...grid, members: [...grid.members, m] });
-    setNewMember({ nom: "", poste: "" });
-    setAddingMember(false);
-  };
+  // ── Cycle niveau (callback form avoids stale closure) ───────
+  const cycleNiveau = useCallback((collabId: string, compId: string) => {
+    setMatrix(prev => {
+      const current = (prev[collabId]?.[compId] ?? 0) as NiveauCell;
+      const next = ((current + 1) % 4) as NiveauCell;
+      return {
+        ...prev,
+        [collabId]: { ...(prev[collabId] ?? {}), [compId]: next },
+      };
+    });
+  }, []);
 
-  const removeMember = (id: string) => {
-    saveGrid({ ...grid, members: grid.members.filter((m) => m.id !== id) });
-  };
+  // ── Stats ────────────────────────────────────────────────────
+  const totalCells  = collabs.length * COMPETENCES.length;
+  const filledCells = collabs.reduce((acc, c) =>
+    acc + COMPETENCES.filter(comp => (matrix[c.id]?.[comp.id] ?? 0) > 0).length, 0);
+  const pctRenseigne = totalCells > 0 ? Math.round((filledCells / totalCells) * 100) : 0;
 
-  // ── Calculations ─────────────────────────────────────────────
-  const memberScore = (m: TeamMember) => {
-    const total = grid.competences.length * 3;
-    const sum = grid.competences.reduce((s, c) => s + (m.ratings[c.id] ?? 0), 0);
+  const securiteComps   = COMPETENCES.filter(c => c.niveauOp === "securite");
+  const alertesCritiques = securiteComps.filter(comp =>
+    collabs.filter(c => (matrix[c.id]?.[comp.id] ?? 0) === 3).length <= 1
+  );
+  const besoinFormation  = securiteComps.filter(comp =>
+    collabs.filter(c => (matrix[c.id]?.[comp.id] ?? 0) >= 2).length < 2
+  );
+  const collabsEnAlerte  = collabs.filter(c => {
+    const nb0 = COMPETENCES.filter(comp => (matrix[c.id]?.[comp.id] ?? 0) === 0).length;
+    return nb0 / COMPETENCES.length > 0.5;
+  });
+
+  const getScore = (collabId: string) => {
+    const total = COMPETENCES.length * 3;
+    const sum   = COMPETENCES.reduce((acc, comp) => acc + (matrix[collabId]?.[comp.id] ?? 0), 0);
     return total > 0 ? Math.round((sum / total) * 100) : 0;
   };
 
-  const compPolyvalence = (compId: string) => {
-    const scores = grid.members.map((m) => m.ratings[compId] ?? 0);
-    const mastered = scores.filter((s) => s >= 2).length;
-    return grid.members.length > 0 ? Math.round((mastered / grid.members.length) * 100) : 0;
+  // ── Scénario absence ────────────────────────────────────────
+  const absenceCritical = new Set<string>();
+  if (simulerAbsenceId) {
+    COMPETENCES.forEach(comp => {
+      const myLevel = matrix[simulerAbsenceId]?.[comp.id] ?? 0;
+      if (myLevel === 3) {
+        const othersOk = collabs
+          .filter(c => c.id !== simulerAbsenceId)
+          .some(c => (matrix[c.id]?.[comp.id] ?? 0) >= 2);
+        if (!othersOk) absenceCritical.add(comp.id);
+      }
+    });
+  }
+
+  // ── Add/Remove collab ────────────────────────────────────────
+  const addCollab = () => {
+    if (!newCollabNom.trim()) return;
+    const newC: Collab = { id: `c${Date.now()}`, nom: newCollabNom.trim(), poste: "Vendeur" };
+    setCollabs(prev => [...prev, newC]);
+    setNewCollabNom("");
+    setShowAddCollab(false);
   };
 
-  const catScore = (categorie: string) => {
-    const comps = grid.competences.filter((c) => c.categorie === categorie);
-    if (comps.length === 0 || grid.members.length === 0) return 0;
-    const total = comps.length * grid.members.length * 3;
-    const sum = grid.members.reduce((s, m) =>
-      s + comps.reduce((cs, c) => cs + (m.ratings[c.id] ?? 0), 0), 0
-    );
-    return total > 0 ? Math.round((sum / total) * 100) : 0;
+  const removeCollab = (id: string) => {
+    setCollabs(prev => prev.filter(c => c.id !== id));
+    setMatrix(prev => { const copy = { ...prev }; delete copy[id]; return copy; });
   };
 
-  const categories = Array.from(new Set(grid.competences.map((c) => c.categorie)));
-
-  // Radar data (per member profile) or per category
-  const radarData = categories.map((cat) => {
-    const entry: Record<string, string | number> = { cat: cat.replace(" & ", "\n& ") };
-    const comps = grid.competences.filter((c) => c.categorie === cat);
-    grid.members.forEach((m) => {
-      const maxScore = comps.length * 3;
-      const score = comps.reduce((s, c) => s + (m.ratings[c.id] ?? 0), 0);
-      entry[m.nom] = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+  // ── Radar / bar data ────────────────────────────────────────
+  const radarData = FAMILLES.map(famille => {
+    const comps = COMPETENCES.filter(c => c.famille === famille);
+    const entry: Record<string, string | number> = { famille };
+    collabs.forEach(c => {
+      const sum = comps.reduce((acc, comp) => acc + (matrix[c.id]?.[comp.id] ?? 0), 0);
+      entry[c.nom] = comps.length > 0 ? Math.round((sum / (comps.length * 3)) * 100) : 0;
     });
     return entry;
   });
 
-  // Training needs
-  const trainingNeeds = grid.competences
-    .map((comp) => {
-      const members = grid.members.filter((m) => (m.ratings[comp.id] ?? 0) < 2);
-      return { comp, members, urgency: members.filter((m) => (m.ratings[comp.id] ?? 0) === 0).length };
-    })
-    .filter((n) => n.members.length > 0)
-    .sort((a, b) => b.urgency - a.urgency);
+  const barData = FAMILLES.map(famille => {
+    const comps = COMPETENCES.filter(c => c.famille === famille);
+    const entry: Record<string, string | number> = { name: famille };
+    collabs.forEach(c => {
+      const sum = comps.reduce((acc, comp) => acc + (matrix[c.id]?.[comp.id] ?? 0), 0);
+      entry[c.nom] = comps.length > 0 ? Math.round((sum / (comps.length * 3)) * 100) : 0;
+    });
+    return entry;
+  });
 
-  // Global team polyvalence
-  const globalPoly = grid.competences.length > 0 && grid.members.length > 0
-    ? Math.round(
-        grid.competences.reduce((s, c) => s + compPolyvalence(c.id), 0) / grid.competences.length
-      )
-    : 0;
-
+  // ─────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <div className="text-[16px] font-bold" style={{ color: "var(--text)" }}>
-            Grille de Compétences ISEOR
-          </div>
-          <div className="text-[12px] mt-0.5" style={{ color: "var(--textMuted)" }}>
-            {grid.members.length} collaborateurs · {grid.competences.length} compétences · Polyvalence globale : {" "}
-            <span style={{ color: globalPoly >= 70 ? "#00d4aa" : globalPoly >= 50 ? "#ffb347" : "#ff4d6a", fontWeight: "bold" }}>
-              {globalPoly}%
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {saved && <span className="text-[11px]" style={{ color: "#00d4aa" }}>✓ Sauvegardé</span>}
-          {(["grid", "radar", "besoins"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all"
-              style={{
-                background: view === v ? "var(--accent)" : "var(--surface)",
-                borderColor: view === v ? "var(--accent)" : "var(--border)",
-                color: view === v ? "#000" : "var(--textMuted)",
-              }}
-            >
-              {v === "grid" ? "🗂 Grille" : v === "radar" ? "🕸 Radar" : "📚 Formation"}
-            </button>
-          ))}
-          <button
-            onClick={() => setAddingMember(true)}
-            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
-            style={{ background: "var(--accent)", color: "#000" }}
-          >
-            + Collaborateur
-          </button>
-        </div>
-      </div>
+    <div className="space-y-5">
 
-      {/* Legend */}
-      <div className="flex gap-3 flex-wrap">
-        {Object.entries(RATING_CONFIG).map(([r, cfg]) => (
-          <div key={r} className="flex items-center gap-1.5 text-[10px]">
-            <span className="w-5 h-5 rounded flex items-center justify-center text-[11px] font-bold" style={{ background: cfg.bg, color: cfg.color }}>{cfg.symbol}</span>
-            <span style={{ color: "var(--textMuted)" }}>{cfg.label}</span>
-          </div>
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Collaborateurs",   value: collabs.length,            color: "#4da6ff", icon: "👥" },
+          { label: "Alertes critiques", value: alertesCritiques.length,  color: "#ff4d6a", icon: "🚨" },
+          { label: "Besoins formation", value: besoinFormation.length,   color: "#ffb347", icon: "📚" },
+          { label: "% Renseigné",       value: `${pctRenseigne}%`,       color: "#00d4aa", icon: "✅" },
+        ].map((card, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.07 }}
+            className="rounded-2xl p-4 border"
+            style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[18px]">{card.icon}</span>
+              <span className="text-[11px]" style={{ color: "var(--textMuted)" }}>{card.label}</span>
+            </div>
+            <div className="text-[26px] font-bold" style={{ color: card.color }}>{card.value}</div>
+          </motion.div>
         ))}
       </div>
 
-      {/* Add member form */}
+      {/* Alert banners */}
       <AnimatePresence>
-        {addingMember && (
+        {alertesCritiques.length > 0 && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="flex items-center gap-3 p-4 rounded-xl border"
-            style={{ background: "var(--surface)", borderColor: "var(--accent)40" }}
+            className="rounded-xl p-4 text-[13px] font-medium"
+            style={{ background: "#ff4d6a15", border: "1px solid #ff4d6a40", color: "#ff4d6a" }}
           >
-            <input
-              value={newMember.nom}
-              onChange={(e) => setNewMember((p) => ({ ...p, nom: e.target.value }))}
-              placeholder="Nom du collaborateur"
-              className="rounded-lg px-3 py-2 text-[12px] border"
-              style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
-              onKeyDown={(e) => e.key === "Enter" && addMember()}
-            />
-            <input
-              value={newMember.poste}
-              onChange={(e) => setNewMember((p) => ({ ...p, poste: e.target.value }))}
-              placeholder="Poste"
-              className="rounded-lg px-3 py-2 text-[12px] border"
-              style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
-            />
-            <button onClick={addMember} className="px-4 py-2 rounded-lg text-[12px] font-semibold" style={{ background: "var(--accent)", color: "#000" }}>
-              Ajouter
-            </button>
-            <button onClick={() => setAddingMember(false)} className="px-3 py-2 rounded-lg text-[12px] border" style={{ borderColor: "var(--border)", color: "var(--textMuted)" }}>
-              ✕
-            </button>
+            🚨 <strong>{alertesCritiques.length} compétence(s) sécurité</strong> avec ≤1 personne maîtrisée :{" "}
+            {alertesCritiques.slice(0, 5).map(c => c.nom).join(", ")}{alertesCritiques.length > 5 ? "…" : ""}
+          </motion.div>
+        )}
+        {collabsEnAlerte.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="rounded-xl p-4 text-[13px] font-medium"
+            style={{ background: "#ffb34715", border: "1px solid #ffb34740", color: "#ffb347" }}
+          >
+            ⚠ <strong>{collabsEnAlerte.map(c => c.nom).join(", ")}</strong> — plus de 50% des compétences non renseignées
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── GRID VIEW ────────────────────────────────────────── */}
-      {view === "grid" && (
-        <div className="rounded-xl border overflow-auto" style={{ borderColor: "var(--border)" }}>
-          <table className="w-full text-[11px]" style={{ minWidth: 700 }}>
-            <thead>
-              <tr style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
-                <th className="text-left px-4 py-3 font-bold w-48" style={{ color: "var(--textMuted)" }}>Compétence</th>
-                <th className="px-3 py-3 font-bold text-center text-[9px] uppercase tracking-wider" style={{ color: "var(--textDim)", minWidth: 60 }}>
-                  Poly. %
-                </th>
-                {grid.members.map((m, i) => (
-                  <th key={m.id} className="px-3 py-3 text-center" style={{ minWidth: 72 }}>
-                    <div className="font-bold text-[11px]" style={{ color: MEMBER_COLORS[i % MEMBER_COLORS.length] }}>
-                      {m.nom.split(" ")[0]}
-                    </div>
-                    <div className="text-[9px]" style={{ color: "var(--textDim)" }}>{m.poste}</div>
-                    <div className="text-[10px] font-bold mt-0.5" style={{ color: MEMBER_COLORS[i % MEMBER_COLORS.length] }}>
-                      {memberScore(m)}%
-                    </div>
-                    <button
-                      onClick={() => removeMember(m.id)}
-                      className="text-[9px] mt-0.5 hover:opacity-70"
-                      style={{ color: "#ff4d6a55" }}
-                    >✕</button>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((cat) => (
-                <>
-                  {/* Category header row */}
-                  <tr key={`cat-${cat}`} style={{ background: `${CAT_COLORS[cat]}12` }}>
-                    <td colSpan={2 + grid.members.length} className="px-4 py-1.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: CAT_COLORS[cat] ?? "var(--accent)" }}>
-                        {cat}
-                      </span>
-                      <span className="text-[9px] ml-2" style={{ color: "var(--textDim)" }}>
-                        Score moyen : {catScore(cat)}%
-                      </span>
-                    </td>
-                  </tr>
-                  {/* Competency rows */}
-                  {grid.competences.filter((c) => c.categorie === cat).map((comp, ci) => {
-                    const poly = compPolyvalence(comp.id);
-                    return (
-                      <motion.tr
-                        key={comp.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: ci * 0.03 }}
-                        className="border-b hover:opacity-90"
-                        style={{
-                          background: ci % 2 === 0 ? "var(--surfaceAlt)" : "var(--surface)",
-                          borderColor: "var(--border)",
-                        }}
-                      >
-                        <td className="px-4 py-2.5" style={{ color: "var(--text)" }}>{comp.nom}</td>
-                        <td className="px-3 py-2.5 text-center">
-                          <span
-                            className="text-[11px] font-bold"
-                            style={{ color: poly >= 80 ? "#00d4aa" : poly >= 50 ? "#ffb347" : "#ff4d6a" }}
-                          >
-                            {poly}%
-                          </span>
-                        </td>
-                        {grid.members.map((m) => (
-                          <td key={m.id} className="px-3 py-2 text-center">
-                            <div className="flex justify-center">
-                              <RatingCell
-                                rating={(m.ratings[comp.id] ?? 0) as 0 | 1 | 2 | 3}
-                                onChange={() => cycleRating(m.id, comp.id)}
-                              />
-                            </div>
-                          </td>
-                        ))}
-                      </motion.tr>
-                    );
-                  })}
-                </>
-              ))}
-
-              {/* Polyvalence footer */}
-              <tr style={{ background: "var(--surface)", borderTop: "2px solid var(--border)" }}>
-                <td className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--textMuted)" }}>
-                  Score individuel
-                </td>
-                <td className="px-3 py-3 text-center text-[11px] font-bold" style={{ color: globalPoly >= 70 ? "#00d4aa" : "#ffb347" }}>
-                  {globalPoly}%
-                </td>
-                {grid.members.map((m, i) => {
-                  const score = memberScore(m);
-                  return (
-                    <td key={m.id} className="px-3 py-3 text-center">
-                      <div>
-                        <div className="text-[14px] font-bold" style={{ color: MEMBER_COLORS[i % MEMBER_COLORS.length] }}>
-                          {score}%
-                        </div>
-                        <div className="mx-auto mt-1 w-12 h-1.5 rounded-full overflow-hidden" style={{ background: "#2a2e3a" }}>
-                          <div className="h-full rounded-full" style={{ width: `${score}%`, background: MEMBER_COLORS[i % MEMBER_COLORS.length] }} />
-                        </div>
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            </tbody>
-          </table>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* View toggle */}
+        <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: "var(--border)" }}>
+          {(["grille", "radar"] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className="px-4 py-2 text-[12px] font-semibold transition-colors"
+              style={{
+                background: view === v ? "var(--accent)" : "var(--surface)",
+                color: view === v ? "#000" : "var(--textMuted)",
+                fontFamily: "inherit",
+                cursor: "pointer",
+                border: "none",
+              }}
+            >
+              {v === "grille" ? "📋 Grille" : "📡 Radar"}
+            </button>
+          ))}
         </div>
-      )}
 
-      {/* ── RADAR VIEW ───────────────────────────────────────── */}
-      {view === "radar" && (
-        <div className="grid gap-5" style={{ gridTemplateColumns: "1fr 320px" }}>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="rounded-2xl p-6 border"
-            style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-          >
-            <div className="text-[12px] font-bold mb-3" style={{ color: "var(--text)" }}>
-              Profil de compétences par catégorie
-            </div>
-            <ResponsiveContainer width="100%" height={400}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="#2a2e3a" />
-                <PolarAngleAxis dataKey="cat" tick={{ fill: "#8b8fa3", fontSize: 10 }} />
-                {grid.members.map((m, i) => (
-                  <Radar
-                    key={m.id}
-                    name={m.nom}
-                    dataKey={m.nom}
-                    stroke={MEMBER_COLORS[i % MEMBER_COLORS.length]}
-                    fill={MEMBER_COLORS[i % MEMBER_COLORS.length]}
-                    fillOpacity={0.1}
-                    strokeWidth={2}
-                  />
-                ))}
-                <Legend wrapperStyle={{ fontSize: 11, color: "var(--textMuted)" }} />
-                <Tooltip
-                  contentStyle={{ background: "#1a1d27", border: "1px solid #2a2e3a", borderRadius: 8, fontSize: 11 }}
-                  formatter={(v: number) => [`${v}%`]}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
+        {/* Simuler absence */}
+        <select
+          value={simulerAbsenceId}
+          onChange={e => setSimulerAbsenceId(e.target.value)}
+          className="rounded-xl px-3 py-2 text-[12px] border"
+          style={{
+            background: simulerAbsenceId ? "#ff4d6a15" : "var(--surface)",
+            borderColor: simulerAbsenceId ? "#ff4d6a60" : "var(--border)",
+            color: simulerAbsenceId ? "#ff4d6a" : "var(--textMuted)",
+            fontFamily: "inherit",
+            cursor: "pointer",
+          }}
+        >
+          <option value="">👁 Simuler absence…</option>
+          {collabs.map(c => (
+            <option key={c.id} value={c.id}>{c.nom}</option>
+          ))}
+        </select>
+
+        {/* Add collab */}
+        <button
+          onClick={() => setShowAddCollab(v => !v)}
+          className="rounded-xl px-4 py-2 text-[12px] font-semibold"
+          style={{ background: "var(--accent)", color: "#000", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+        >
+          + Collaborateur
+        </button>
+
+        {showAddCollab && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex gap-2">
+            <input
+              autoFocus
+              value={newCollabNom}
+              onChange={e => setNewCollabNom(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addCollab()}
+              placeholder="Prénom Nom"
+              className="rounded-xl px-3 py-2 text-[12px] border"
+              style={{
+                background: "var(--surfaceAlt)", borderColor: "var(--border)",
+                color: "var(--text)", fontFamily: "inherit", outline: "none",
+              }}
+            />
+            <button
+              onClick={addCollab}
+              className="rounded-xl px-3 py-2 text-[12px] font-semibold"
+              style={{ background: "#00d4aa30", color: "#00d4aa", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+            >
+              ✓
+            </button>
           </motion.div>
+        )}
+      </div>
 
-          {/* Individual scores */}
-          <div className="space-y-3">
-            {grid.members.map((m, i) => {
-              const score = memberScore(m);
-              const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
-              return (
-                <motion.div
-                  key={m.id}
-                  initial={{ opacity: 0, x: 16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.08 }}
-                  className="rounded-xl p-4 border cursor-pointer"
-                  onClick={() => setSelectedMember(selectedMember === m.id ? null : m.id)}
-                  style={{
-                    background: "var(--surface)",
-                    borderColor: selectedMember === m.id ? color : "var(--border)",
-                    boxShadow: selectedMember === m.id ? `0 0 16px ${color}30` : "none",
-                  }}
-                >
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[12px]" style={{ background: `${color}20`, color }}>
-                      {m.nom[0]}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-[12px]" style={{ color: "var(--text)" }}>{m.nom}</div>
-                      <div className="text-[10px]" style={{ color: "var(--textMuted)" }}>{m.poste}</div>
-                    </div>
-                    <div className="ml-auto text-[18px] font-bold" style={{ color }}>{score}%</div>
-                  </div>
-                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "#2a2e3a" }}>
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${score}%` }}
-                      transition={{ duration: 0.8, ease: "easeOut" }}
-                      className="h-full rounded-full"
-                      style={{ background: color }}
-                    />
-                  </div>
-                  {/* Category breakdown */}
-                  <AnimatePresence>
-                    {selectedMember === m.id && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="mt-3 space-y-1.5"
-                        style={{ overflow: "hidden" }}
-                      >
-                        {categories.map((cat) => {
-                          const comps = grid.competences.filter((c) => c.categorie === cat);
-                          const maxCat = comps.length * 3;
-                          const sumCat = comps.reduce((s, c) => s + (m.ratings[c.id] ?? 0), 0);
-                          const pct = maxCat > 0 ? Math.round((sumCat / maxCat) * 100) : 0;
-                          const catColor = CAT_COLORS[cat] ?? color;
-                          return (
-                            <div key={cat} className="flex items-center gap-2">
-                              <span className="text-[9px] w-28 shrink-0" style={{ color: "var(--textMuted)" }}>{cat}</span>
-                              <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "#2a2e3a" }}>
-                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: catColor }} />
-                              </div>
-                              <span className="text-[9px] w-6 text-right font-bold" style={{ color: catColor }}>{pct}%</span>
-                            </div>
-                          );
-                        })}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </div>
+      {/* Absence scenario banner */}
+      {simulerAbsenceId && absenceCritical.size > 0 && (
+        <div
+          className="rounded-xl p-4 text-[13px]"
+          style={{ background: "#ff4d6a10", border: "1px solid #ff4d6a50" }}
+        >
+          <span style={{ color: "#ff4d6a", fontWeight: 700 }}>
+            ⛔ En cas d&apos;absence de {collabs.find(c => c.id === simulerAbsenceId)?.nom} :
+          </span>
+          <span style={{ color: "var(--textMuted)" }} className="ml-2">
+            {absenceCritical.size} compétence(s) sans backup —{" "}
+            {Array.from(absenceCritical).map(id => COMPETENCES.find(c => c.id === id)?.nom).join(", ")}
+          </span>
         </div>
       )}
 
-      {/* ── TRAINING NEEDS VIEW ──────────────────────────────── */}
-      {view === "besoins" && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-          <div className="p-4 rounded-xl border" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-            <div className="text-[12px] font-semibold mb-1" style={{ color: "var(--text)" }}>
-              Plan de Formation Prioritaire
+      {/* Views */}
+      <AnimatePresence mode="wait">
+        {view === "grille" ? (
+          <motion.div key="grille" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse" style={{ minWidth: 600 }}>
+                  <thead>
+                    <tr style={{ background: "var(--surfaceAlt)", borderBottom: "1px solid var(--border)" }}>
+                      <th
+                        className="text-left px-4 py-3 text-[11px] font-semibold sticky left-0 z-10"
+                        style={{ background: "var(--surfaceAlt)", color: "var(--textMuted)", minWidth: 200 }}
+                      >
+                        Compétence
+                      </th>
+                      {collabs.map((c, ci) => (
+                        <th
+                          key={c.id}
+                          className="px-3 py-3 text-center text-[11px] font-semibold group"
+                          style={{ color: COLLAB_COLORS[ci % COLLAB_COLORS.length], minWidth: 88 }}
+                        >
+                          <div className="flex flex-col items-center gap-1">
+                            <span>{c.nom}</span>
+                            <span className="text-[10px] font-normal" style={{ color: "var(--textDim)" }}>
+                              {getScore(c.id)}%
+                            </span>
+                            <button
+                              onClick={() => removeCollab(c.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
+                              style={{
+                                background: "#ff4d6a20", color: "#ff4d6a",
+                                border: "none", cursor: "pointer", fontFamily: "inherit",
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {FAMILLES.map(famille => {
+                      const comps = COMPETENCES.filter(c => c.famille === famille);
+                      return (
+                        <>
+                          <tr key={`fam-${famille}`}>
+                            <td
+                              colSpan={collabs.length + 1}
+                              className="px-4 py-2 text-[11px] font-bold tracking-wider uppercase sticky left-0"
+                              style={{
+                                background: "var(--bg)", color: "var(--textDim)",
+                                borderTop: "1px solid var(--border)",
+                                borderBottom: "1px solid var(--border)",
+                              }}
+                            >
+                              {famille}
+                            </td>
+                          </tr>
+                          {comps.map((comp, rowIdx) => {
+                            const isCritical = absenceCritical.has(comp.id);
+                            const rowBg = isCritical
+                              ? "#ff4d6a08"
+                              : rowIdx % 2 === 0 ? "var(--surface)" : "var(--surfaceAlt)";
+                            return (
+                              <tr
+                                key={comp.id}
+                                style={{ background: rowBg, borderBottom: "1px solid var(--border)" }}
+                              >
+                                <td
+                                  className="px-4 py-2 text-[12px] sticky left-0 z-10"
+                                  style={{ color: isCritical ? "#ff4d6a" : "var(--text)", background: rowBg, minWidth: 200 }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full shrink-0"
+                                      style={{ background: OP_COLORS[comp.niveauOp] }} />
+                                    {comp.nom}
+                                    {isCritical && <span className="text-[10px]">⛔</span>}
+                                  </div>
+                                </td>
+                                {collabs.map(c => (
+                                  <td key={c.id} className="px-3 py-2 text-center">
+                                    <SkillCell
+                                      niveau={matrix[c.id]?.[comp.id] ?? 0}
+                                      niveauOp={comp.niveauOp}
+                                      compNom={comp.nom}
+                                      onCycle={() => cycleNiveau(c.id, comp.id)}
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
-              {trainingNeeds.length === 0
-                ? "✓ Toutes les compétences sont maîtrisées — Félicitations !"
-                : `${trainingNeeds.length} compétences nécessitent une action de formation.`}
+          </motion.div>
+        ) : (
+          <motion.div key="radar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+            <div className="rounded-2xl border p-5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+              <div className="text-[13px] font-semibold mb-4" style={{ color: "var(--text)" }}>
+                Radar équipe — par famille (%)
+              </div>
+              <ResponsiveContainer width="100%" height={320}>
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke="var(--border)" />
+                  <PolarAngleAxis dataKey="famille" tick={{ fill: "var(--textMuted)", fontSize: 11 }} />
+                  {collabs.map((c, ci) => (
+                    <Radar
+                      key={c.id}
+                      name={c.nom}
+                      dataKey={c.nom}
+                      stroke={COLLAB_COLORS[ci % COLLAB_COLORS.length]}
+                      fill={COLLAB_COLORS[ci % COLLAB_COLORS.length]}
+                      fillOpacity={0.12}
+                      dot={false}
+                    />
+                  ))}
+                  <Legend wrapperStyle={{ fontSize: 11, color: "var(--textMuted)" }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--surface)", border: "1px solid var(--border)",
+                      borderRadius: 8, color: "var(--text)", fontSize: 12,
+                    }}
+                    formatter={(v: number | string) => [`${v}%`]}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="rounded-2xl border p-5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+              <div className="text-[13px] font-semibold mb-4" style={{ color: "var(--text)" }}>
+                Score par famille et par collaborateur (%)
+              </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={barData} barGap={4}>
+                  <XAxis dataKey="name" tick={{ fill: "var(--textMuted)", fontSize: 11 }} />
+                  <YAxis domain={[0, 100]} tick={{ fill: "var(--textMuted)", fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--surface)", border: "1px solid var(--border)",
+                      borderRadius: 8, color: "var(--text)", fontSize: 12,
+                    }}
+                    formatter={(v: number | string) => [`${v}%`]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11, color: "var(--textMuted)" }} />
+                  {collabs.map((c, ci) => (
+                    <Bar key={c.id} dataKey={c.nom} fill={COLLAB_COLORS[ci % COLLAB_COLORS.length]} radius={[3, 3, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Légende */}
+      <div className="rounded-2xl border p-5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+        <div className="text-[12px] font-semibold mb-3" style={{ color: "var(--textMuted)" }}>Légende</div>
+        <div className="flex flex-wrap gap-8">
+          <div>
+            <div className="text-[11px] font-semibold mb-2 uppercase tracking-wider" style={{ color: "var(--textDim)" }}>
+              4 états
+            </div>
+            <div className="flex flex-col gap-2">
+              {([0, 1, 2, 3] as NiveauCell[]).map(n => (
+                <div key={n} className="flex items-center gap-2">
+                  <SkillCell niveau={n} niveauOp="gestion" compNom="" onCycle={() => {}} />
+                  <span className="text-[12px]" style={{ color: "var(--textMuted)" }}>{NIVEAU_LABELS[n]}</span>
+                </div>
+              ))}
             </div>
           </div>
-
-          {trainingNeeds.map((need, i) => {
-            const catColor = CAT_COLORS[need.comp.categorie] ?? "#8b8fa3";
-            const urgencyColor = need.urgency >= 2 ? "#ff4d6a" : need.urgency >= 1 ? "#ffb347" : "#ffd700";
-            return (
-              <motion.div
-                key={need.comp.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.06 }}
-                className="rounded-xl p-4 border"
-                style={{ background: "var(--surface)", borderColor: `${urgencyColor}30` }}
-              >
-                <div className="flex items-start gap-4">
-                  <div
-                    className="px-2 py-1 rounded-lg text-[10px] font-bold shrink-0"
-                    style={{ background: `${urgencyColor}20`, color: urgencyColor }}
-                  >
-                    {need.urgency >= 2 ? "URGENT" : need.urgency >= 1 ? "PRIORITÉ" : "SUIVI"}
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-[13px] mb-0.5" style={{ color: "var(--text)" }}>
-                      {need.comp.nom}
-                    </div>
-                    <div className="text-[10px] mb-2" style={{ color: catColor }}>
-                      {need.comp.categorie}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {need.members.map((m, mi) => {
-                        const rating = m.ratings[need.comp.id] ?? 0;
-                        const rc = RATING_CONFIG[rating];
-                        return (
-                          <span
-                            key={m.id}
-                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium"
-                            style={{ background: rc.bg, color: rc.color }}
-                          >
-                            <span>{rc.symbol}</span>
-                            <span>{m.nom}</span>
-                            <span style={{ opacity: 0.7 }}>· {rc.label}</span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
-                      {need.members.length}/{grid.members.length} à former
-                    </div>
-                    <div className="text-[11px] font-bold mt-0.5" style={{ color: urgencyColor }}>
-                      Poly. {compPolyvalence(need.comp.id)}%
-                    </div>
-                  </div>
+          <div>
+            <div className="text-[11px] font-semibold mb-2 uppercase tracking-wider" style={{ color: "var(--textDim)" }}>
+              Niveaux opérationnels
+            </div>
+            <div className="flex flex-col gap-2">
+              {(Object.entries(OP_COLORS) as [NiveauOp, string][]).map(([op, color]) => (
+                <div key={op} className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ background: color }} />
+                  <span className="text-[12px]" style={{ color: "var(--textMuted)" }}>
+                    {op.charAt(0).toUpperCase() + op.slice(1)}
+                  </span>
                 </div>
-              </motion.div>
-            );
-          })}
-        </motion.div>
-      )}
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
