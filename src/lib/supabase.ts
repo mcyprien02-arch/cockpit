@@ -1,31 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+// Hardcoded fallbacks ensure the app works even if Vercel doesn't inject env vars at runtime
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  "https://bgreukjqujstgzulgabz.supabase.co";
 
-export const SUPABASE_CONFIGURED =
-  supabaseUrl.startsWith("http") && supabaseAnonKey.length > 0;
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJncmV1a2pxdWpzdGd6dWxnYWJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNDY0NDAsImV4cCI6MjA4OTkyMjQ0MH0.TuiB0xveQ27QWIn_bEW74m3E1heVc4yKY7DQzhZoasY";
 
-// Lazy singleton
-let _client: ReturnType<typeof createClient<Database>> | null = null;
+export const SUPABASE_CONFIGURED = true; // always true — fallback hardcoded above
+
+// Singleton client
+const _client = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export function getSupabase() {
-  if (!_client) {
-    if (!SUPABASE_CONFIGURED) {
-      throw new Error(
-        "Variables d'environnement Supabase manquantes.\n" +
-          "Ajoutez NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY dans Vercel → Settings → Environment Variables."
-      );
-    }
-    _client = createClient<Database>(supabaseUrl, supabaseAnonKey);
-  }
   return _client;
 }
 
-// Convenience re-export — never throws at module level
-export const supabase = new Proxy({} as ReturnType<typeof createClient<Database>>, {
-  get(_target, prop) {
-    return (getSupabase() as any)[prop];
-  },
-});
+export const supabase = _client;

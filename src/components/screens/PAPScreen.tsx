@@ -1,27 +1,44 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { motion, AnimatePresence, Reorder } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { getStatus } from "@/lib/scoring";
+import { formatEuro } from "@/lib/hiddenCosts";
 import type { ValeurAvecIndicateur } from "@/types";
 
-type PAPPeriode = "semaine" | "mois" | "trimestre";
+// ── Types ─────────────────────────────────────────────────────
 type PAPStatut = "À lancer" | "En cours" | "Terminé" | "Abandonné";
+type PAPDuree = "court" | "moyen" | "long"; // <1m, 1-3m, 3-6m
 
 interface PAPAction {
   id: string;
-  ordre: number;
-  objectif: string;          // Résultat attendu (SMART)
-  action: string;             // Action concrète
+  axeId: string;
+  objectif: string;
+  action: string;
   responsable: string;
-  echeance: string;
-  kpiImpacte: string;         // KPI qui sera amélioré
-  avancement: number;         // 0-100%
+  echeance: string;      // ISO date
+  kpiImpacte: string;
+  avancement: number;    // 0-100
   statut: PAPStatut;
-  periode: PAPPeriode;
-  impact: "fort" | "moyen" | "faible";
+  duree: PAPDuree;
+  impactFinancier: number; // €/an recyclage estimé
 }
+
+interface PAPAxe {
+  id: string;
+  label: string;
+  description: string;
+  couleur: string;
+}
+
+const DEFAULT_AXES: PAPAxe[] = [
+  { id: "a1", label: "Qualité téléphonie", description: "Picea, authentification, retours", couleur: "#4da6ff" },
+  { id: "a2", label: "Performance commerciale", description: "TLAC, ventes additionnelles, fidélisation", couleur: "#00d4aa" },
+  { id: "a3", label: "Gestion du stock", description: "Stock âgé, délai de vente, rotation", couleur: "#ffb347" },
+  { id: "a4", label: "Management & RH", description: "Turnover, polyvalence, compétences", couleur: "#a78bfa" },
+  { id: "a5", label: "Digital & E-réputation", description: "Note Google, marketplace, web", couleur: "#f472b6" },
+];
 
 const STATUT_COLORS: Record<PAPStatut, { color: string; bg: string }> = {
   "À lancer": { color: "#8b8fa3", bg: "#8b8fa318" },
@@ -30,447 +47,506 @@ const STATUT_COLORS: Record<PAPStatut, { color: string; bg: string }> = {
   "Abandonné":{ color: "#555a6e", bg: "#555a6e18" },
 };
 
-const IMPACT_COLORS: Record<string, { color: string; bg: string; label: string }> = {
-  fort:   { color: "#ff4d6a", bg: "#ff4d6a18", label: "Impact fort" },
-  moyen:  { color: "#ffb347", bg: "#ffb34720", label: "Impact moyen" },
-  faible: { color: "#4da6ff", bg: "#4da6ff18", label: "Impact faible" },
+const DUREE_LABELS: Record<PAPDuree, { label: string; color: string; weeks: number }> = {
+  court: { label: "Court terme < 1 mois",  color: "#ff4d6a", weeks: 4 },
+  moyen: { label: "Moyen terme 1–3 mois",  color: "#ffb347", weeks: 12 },
+  long:  { label: "Long terme 3–6 mois",   color: "#4da6ff", weeks: 26 },
 };
 
-const MAX_PAP_ACTIONS = 10;
+const MONTHS = ["M1", "M2", "M3", "M4", "M5", "M6"];
+
+// ── Helpers ────────────────────────────────────────────────────
+function mkId() { return Math.random().toString(36).slice(2, 10); }
 
 export function PAPScreen({ magasinId }: { magasinId: string }) {
-  const [actions, setActions] = useState<PAPAction[]>([]);
-  const [periode, setPeriode] = useState<PAPPeriode>("mois");
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [valeurs, setValeurs] = useState<ValeurAvecIndicateur[]>([]);
+  const actionsKey = `pap_actions_${magasinId}`;
+  const axesKey    = `pap_axes_${magasinId}`;
+  const chvacvKey  = `chvacv_${magasinId}`;
+
+  const [actions, setActions]       = useState<PAPAction[]>([]);
+  const [axes, setAxes]             = useState<PAPAxe[]>(DEFAULT_AXES);
+  const [valeurs, setValeurs]       = useState<ValeurAvecIndicateur[]>([]);
+  const [chvacv, setChvacv]         = useState(40);
+  const [view, setView]             = useState<"axes" | "gantt">("axes");
+  const [editingAxe, setEditingAxe] = useState<string | null>(null);
+  const [showForm, setShowForm]     = useState(false);
+  const [formAxeId, setFormAxeId]   = useState<string>("");
+  const [editActionId, setEditActionId] = useState<string | null>(null);
+
   const [form, setForm] = useState<Partial<PAPAction>>({
-    statut: "À lancer", impact: "fort", avancement: 0, periode: "mois",
-    objectif: "", action: "", responsable: "", echeance: "", kpiImpacte: "",
+    statut: "À lancer", duree: "court", avancement: 0,
+    objectif: "", action: "", responsable: "", echeance: "", kpiImpacte: "", impactFinancier: 0,
   });
 
-  const storageKey = `pap_${magasinId}_${periode}`;
-
-  // Load PAP from localStorage
+  // Load
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
-      try { setActions(JSON.parse(stored)); } catch {}
-    } else {
-      setActions([]);
-    }
-  }, [storageKey]);
+    try {
+      const sa = localStorage.getItem(actionsKey);
+      if (sa) setActions(JSON.parse(sa));
+      const sx = localStorage.getItem(axesKey);
+      if (sx) setAxes(JSON.parse(sx));
+      const sc = localStorage.getItem(chvacvKey);
+      if (sc) {
+        const p = JSON.parse(sc);
+        if (p.ca_annuel && p.cv_annuelles && p.nb_etp && p.heures_semaine && p.semaines_an) {
+          const va = p.ca_annuel - p.cv_annuelles;
+          const h = p.nb_etp * p.heures_semaine * p.semaines_an;
+          if (h > 0) setChvacv(Math.round(va / h * 100) / 100);
+        }
+      }
+    } catch { /* noop */ }
+  }, [actionsKey, axesKey, chvacvKey]);
 
-  // Load KPI values for auto-generate
-  useEffect(() => {
-    if (!magasinId) return;
-    supabase.from("v_dernieres_valeurs").select("*").eq("magasin_id", magasinId)
-      .then(({ data }) => {
-        type VRow = {
-          magasin_id: string; indicateur_id: string; valeur: number; date_saisie: string;
-          indicateur_nom: string; unite: string | null; direction: "up" | "down";
-          seuil_ok: number | null; seuil_vigilance: number | null; categorie: string;
-          poids: number; action_defaut: string | null; magasin_nom: string;
-        };
-        setValeurs(((data ?? []) as VRow[]).map((r) => ({
-          ...r,
-          status: getStatus(r.valeur, r.direction, r.seuil_ok, r.seuil_vigilance),
-        })));
-      });
+  // Load KPI alerts
+  const loadValeurs = useCallback(async () => {
+    const { data } = await supabase.from("v_dernieres_valeurs").select("*").eq("magasin_id", magasinId);
+    type VRow = { magasin_id: string; indicateur_id: string; valeur: number; date_saisie: string; indicateur_nom: string; unite: string | null; direction: "up" | "down"; seuil_ok: number | null; seuil_vigilance: number | null; categorie: string; poids: number; action_defaut: string | null; magasin_nom: string; };
+    const enriched: ValeurAvecIndicateur[] = ((data ?? []) as VRow[]).map((r) => ({
+      ...r, status: getStatus(r.valeur, r.direction, r.seuil_ok, r.seuil_vigilance),
+    }));
+    setValeurs(enriched);
   }, [magasinId]);
 
-  const saveActions = useCallback((updated: PAPAction[]) => {
-    setActions(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-    }
-  }, [storageKey]);
+  useEffect(() => { loadValeurs(); }, [loadValeurs]);
 
-  const handleSave = () => {
-    if (!form.objectif || !form.action) return;
-    let updated: PAPAction[];
-    if (editingId) {
-      updated = actions.map((a) =>
-        a.id === editingId ? { ...a, ...form } as PAPAction : a
-      );
+  const saveActions = (next: PAPAction[]) => {
+    setActions(next);
+    localStorage.setItem(actionsKey, JSON.stringify(next));
+  };
+
+  const saveAxes = (next: PAPAxe[]) => {
+    setAxes(next);
+    localStorage.setItem(axesKey, JSON.stringify(next));
+  };
+
+  // ── Stats ──────────────────────────────────────────────────
+  const stats = {
+    total: actions.length,
+    enCours: actions.filter((a) => a.statut === "En cours").length,
+    terminees: actions.filter((a) => a.statut === "Terminé").length,
+    enRetard: actions.filter((a) => a.statut !== "Terminé" && a.statut !== "Abandonné" && a.echeance && new Date(a.echeance) < new Date()).length,
+    recyclageTotal: actions.filter((a) => a.statut !== "Abandonné").reduce((s, a) => s + (a.impactFinancier || 0), 0),
+  };
+
+  // ── Gantt helpers ──────────────────────────────────────────
+  const today = new Date();
+  const ganttStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const ganttEnd = new Date(ganttStart);
+  ganttEnd.setMonth(ganttEnd.getMonth() + 6);
+
+  function ganttPos(date: string): number {
+    const d = new Date(date);
+    const total = ganttEnd.getTime() - ganttStart.getTime();
+    const offset = d.getTime() - ganttStart.getTime();
+    return Math.max(0, Math.min(100, (offset / total) * 100));
+  }
+
+  function dureeWidth(duree: PAPDuree): number {
+    return { court: 16, moyen: 33, long: 50 }[duree];
+  }
+
+  // ── Open form ─────────────────────────────────────────────
+  const openForm = (axeId: string, existing?: PAPAction) => {
+    setFormAxeId(axeId);
+    if (existing) {
+      setEditActionId(existing.id);
+      setForm({ ...existing });
     } else {
-      if (actions.length >= MAX_PAP_ACTIONS) return;
-      const newAction: PAPAction = {
-        id: `pap_${Date.now()}`,
-        ordre: actions.length + 1,
-        objectif: form.objectif ?? "",
-        action: form.action ?? "",
-        responsable: form.responsable ?? "",
-        echeance: form.echeance ?? "",
-        kpiImpacte: form.kpiImpacte ?? "",
-        avancement: form.avancement ?? 0,
-        statut: form.statut ?? "À lancer",
-        periode: periode,
-        impact: form.impact ?? "fort",
-      };
-      updated = [...actions, newAction];
+      setEditActionId(null);
+      setForm({ statut: "À lancer", duree: "court", avancement: 0, axeId, objectif: "", action: "", responsable: "", echeance: "", kpiImpacte: "", impactFinancier: 0 });
     }
-    saveActions(updated);
-    setShowForm(false);
-    setEditingId(null);
-    setForm({ statut: "À lancer", impact: "fort", avancement: 0, periode, objectif: "", action: "", responsable: "", echeance: "", kpiImpacte: "" });
-  };
-
-  const handleDelete = (id: string) => {
-    saveActions(actions.filter((a) => a.id !== id).map((a, i) => ({ ...a, ordre: i + 1 })));
-  };
-
-  const handleEdit = (a: PAPAction) => {
-    setForm({ ...a });
-    setEditingId(a.id);
     setShowForm(true);
   };
 
-  const handleAvancement = (id: string, val: number) => {
-    const updated = actions.map((a) =>
-      a.id === id ? { ...a, avancement: val, statut: val >= 100 ? "Terminé" as PAPStatut : val > 0 ? "En cours" as PAPStatut : a.statut } : a
-    );
-    saveActions(updated);
+  const submitForm = () => {
+    if (!form.action) return;
+    const action: PAPAction = {
+      id: editActionId ?? mkId(),
+      axeId: formAxeId,
+      objectif: form.objectif ?? "",
+      action: form.action ?? "",
+      responsable: form.responsable ?? "",
+      echeance: form.echeance ?? "",
+      kpiImpacte: form.kpiImpacte ?? "",
+      avancement: form.avancement ?? 0,
+      statut: form.statut ?? "À lancer",
+      duree: form.duree ?? "court",
+      impactFinancier: form.impactFinancier ?? 0,
+    };
+    if (editActionId) {
+      saveActions(actions.map((a) => a.id === editActionId ? action : a));
+    } else {
+      saveActions([...actions, action]);
+    }
+    setShowForm(false);
   };
 
-  const handleStatut = (id: string, statut: PAPStatut) => {
-    const updated = actions.map((a) =>
-      a.id === id ? { ...a, statut, avancement: statut === "Terminé" ? 100 : a.avancement } : a
-    );
-    saveActions(updated);
-  };
-
-  const handleAutoGenerate = () => {
-    const alerts = valeurs
-      .filter((v) => v.status === "dg")
-      .sort((a, b) => b.poids - a.poids)
-      .slice(0, MAX_PAP_ACTIONS - actions.length);
-
-    const newActions: PAPAction[] = alerts.map((v, i) => ({
-      id: `pap_auto_${Date.now()}_${i}`,
-      ordre: actions.length + i + 1,
-      objectif: `Corriger ${v.indicateur_nom} : passer de ${v.valeur}${v.unite ?? ""} à ${v.seuil_ok}${v.unite ?? ""}`,
-      action: v.action_defaut ?? "À définir",
+  // ── Auto-generate from KPI alerts ─────────────────────────
+  const autoGenerate = () => {
+    const alerts = valeurs.filter((v) => v.status === "dg" && v.action_defaut);
+    const generated: PAPAction[] = alerts.slice(0, 5).map((v) => ({
+      id: mkId(),
+      axeId: axes[0]?.id ?? "a1",
+      objectif: `Améliorer ${v.indicateur_nom}`,
+      action: v.action_defaut ?? `Action sur ${v.indicateur_nom}`,
       responsable: "",
-      echeance: new Date(Date.now() + (i + 1) * 14 * 86400000).toISOString().split("T")[0],
+      echeance: new Date(Date.now() + 30 * 24 * 3600000).toISOString().split("T")[0],
       kpiImpacte: v.indicateur_nom,
       avancement: 0,
       statut: "À lancer",
-      periode,
-      impact: v.poids >= 3 ? "fort" : v.poids >= 2 ? "moyen" : "faible",
+      duree: "court",
+      impactFinancier: 0,
     }));
-
-    saveActions([...actions, ...newActions]);
+    saveActions([...actions, ...generated.filter((g) => !actions.some((a) => a.action === g.action))]);
   };
 
-  const handleReorder = (reordered: PAPAction[]) => {
-    saveActions(reordered.map((a, i) => ({ ...a, ordre: i + 1 })));
-  };
-
-  // ── Stats ────────────────────────────────────────────────────
-  const total = actions.length;
-  const done = actions.filter((a) => a.statut === "Terminé").length;
-  const inProgress = actions.filter((a) => a.statut === "En cours").length;
-  const avgProgress = total > 0 ? Math.round(actions.reduce((s, a) => s + a.avancement, 0) / total) : 0;
-  const globalCompletion = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  const daysUntil = (dateStr: string) =>
-    dateStr ? Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000) : null;
+  const alerts = valeurs.filter((v) => v.status === "dg");
 
   return (
-    <div className="space-y-4">
-      {/* Header KPIs */}
+    <div className="space-y-5">
+      {/* ── Header stats ─────────────────────────────────── */}
       <div className="grid grid-cols-5 gap-3">
         {[
-          { label: "Actions PAP", value: `${total}/${MAX_PAP_ACTIONS}`, color: "#4da6ff" },
-          { label: "En cours", value: inProgress, color: "#4da6ff" },
-          { label: "Terminées", value: done, color: "#00d4aa" },
-          { label: "Avancement moyen", value: `${avgProgress}%`, color: avgProgress >= 70 ? "#00d4aa" : "#ffb347" },
-          { label: "Taux de réussite", value: `${globalCompletion}%`, color: globalCompletion >= 80 ? "#00d4aa" : "#ffb347" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="rounded-xl p-4 border text-center" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-            <div className="text-[22px] font-bold" style={{ color }}>{value}</div>
-            <div className="text-[10px] mt-1 uppercase tracking-wider" style={{ color: "var(--textMuted)" }}>{label}</div>
+          { label: "Total actions", value: stats.total, color: "var(--text)", bg: "var(--surface)" },
+          { label: "En cours", value: stats.enCours, color: "#4da6ff", bg: "#4da6ff12" },
+          { label: "Terminées", value: stats.terminees, color: "#00d4aa", bg: "#00d4aa12" },
+          { label: "En retard", value: stats.enRetard, color: "var(--danger)", bg: "#ff4d6a12" },
+          { label: "Recyclage estimé", value: formatEuro(stats.recyclageTotal), color: "#00d4aa", bg: "#00d4aa12", isText: true },
+        ].map(({ label, value, color, bg, isText }) => (
+          <div key={label} className="rounded-xl p-4 border text-center" style={{ background: bg, borderColor: "transparent" }}>
+            <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "var(--textMuted)" }}>{label}</div>
+            {isText
+              ? <div className="text-[16px] font-black" style={{ color }}>{value}</div>
+              : <div className="text-[28px] font-black" style={{ color }}>{value}</div>
+            }
           </div>
         ))}
       </div>
 
-      {/* Progress bar */}
-      {total > 0 && (
-        <div className="rounded-xl p-4 border" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--textMuted)" }}>
-              Progression du PAP — {periode}
-            </span>
-            <span className="text-[13px] font-bold" style={{ color: globalCompletion >= 70 ? "#00d4aa" : "#ffb347" }}>
-              {globalCompletion}%
-            </span>
-          </div>
-          <div className="h-3 rounded-full overflow-hidden" style={{ background: "#2a2e3a" }}>
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${globalCompletion}%` }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-              className="h-full rounded-full"
-              style={{ background: `linear-gradient(90deg, ${globalCompletion >= 70 ? "#00d4aa" : "#ffb347"}, ${globalCompletion >= 70 ? "#4da6ff" : "#ff4d6a"})` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Toolbar */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        {/* Period selector */}
-        <div className="flex gap-2">
-          {(["semaine", "mois", "trimestre"] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriode(p)}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold border capitalize transition-all"
-              style={{
-                background: periode === p ? "var(--accent)" : "var(--surface)",
-                borderColor: periode === p ? "var(--accent)" : "var(--border)",
-                color: periode === p ? "#000" : "var(--textMuted)",
-              }}
-            >
-              {p === "semaine" ? "Cette semaine" : p === "mois" ? "Ce mois" : "Ce trimestre"}
+      {/* ── Toolbar ──────────────────────────────────────── */}
+      <div className="flex items-center gap-3">
+        {/* View toggle */}
+        <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+          {(["axes", "gantt"] as const).map((v) => (
+            <button key={v} onClick={() => setView(v)}
+              className="px-4 py-2 text-[11px] font-semibold"
+              style={{ background: view === v ? "var(--accent)" : "var(--surface)", color: view === v ? "#000" : "var(--textMuted)" }}>
+              {v === "axes" ? "🎯 Axes" : "📅 Timeline"}
             </button>
           ))}
         </div>
-        <div className="flex gap-2">
-          {valeurs.some((v) => v.status === "dg") && actions.length < MAX_PAP_ACTIONS && (
-            <button
-              onClick={handleAutoGenerate}
-              className="px-4 py-2 rounded-xl text-[11px] font-semibold border"
-              style={{ borderColor: "#ffb347", color: "#ffb347", background: "#ffb34712" }}
-            >
-              ⚡ Générer depuis alertes
-            </button>
-          )}
-          {actions.length < MAX_PAP_ACTIONS && (
-            <button
-              onClick={() => { setShowForm(true); setEditingId(null); }}
-              className="px-4 py-2 rounded-xl text-[11px] font-semibold"
-              style={{ background: "var(--accent)", color: "#000" }}
-            >
-              + Ajouter action
-            </button>
-          )}
+
+        {alerts.length > 0 && (
+          <button onClick={autoGenerate} className="px-4 py-2 rounded-xl text-[11px] font-semibold border"
+            style={{ borderColor: "#ff4d6a40", color: "var(--danger)", background: "#ff4d6a08" }}>
+            ⚡ Générer depuis {alerts.length} alerte{alerts.length > 1 ? "s" : ""}
+          </button>
+        )}
+
+        <div className="flex-1" />
+        <div className="text-[11px]" style={{ color: "var(--textDim)" }}>
+          CHVACV : <span style={{ color: "#00d4aa" }}>{formatEuro(chvacv)}/h</span>
         </div>
       </div>
 
-      {/* Add/Edit form */}
+      {/* ── Vue AXES ─────────────────────────────────────── */}
+      {view === "axes" && (
+        <div className="space-y-4">
+          {axes.map((axe) => {
+            const axeActions = actions.filter((a) => a.axeId === axe.id);
+            const done = axeActions.filter((a) => a.statut === "Terminé").length;
+            const pct = axeActions.length > 0 ? Math.round((done / axeActions.length) * 100) : 0;
+            const isEditing = editingAxe === axe.id;
+
+            return (
+              <motion.div key={axe.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl border overflow-hidden"
+                style={{ borderColor: axe.couleur + "40", background: "var(--surface)" }}>
+                {/* Axe header */}
+                <div className="flex items-center gap-4 px-5 py-4 border-b" style={{ borderColor: axe.couleur + "20", background: axe.couleur + "08" }}>
+                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: axe.couleur }} />
+                  {isEditing ? (
+                    <input value={axe.label}
+                      onChange={(e) => saveAxes(axes.map((a) => a.id === axe.id ? { ...a, label: e.target.value } : a))}
+                      className="flex-1 rounded-lg px-3 py-1.5 text-[13px] font-bold border"
+                      style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
+                      onBlur={() => setEditingAxe(null)}
+                      autoFocus />
+                  ) : (
+                    <div className="flex-1">
+                      <div className="text-[13px] font-bold" style={{ color: "var(--text)" }}>{axe.label}</div>
+                      <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>{axe.description}</div>
+                    </div>
+                  )}
+                  {/* Progress */}
+                  <div className="flex items-center gap-3">
+                    <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>{done}/{axeActions.length} actions</div>
+                    <div className="w-24 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surfaceAlt)" }}>
+                      <motion.div className="h-full rounded-full" animate={{ width: `${pct}%` }}
+                        style={{ background: axe.couleur }} />
+                    </div>
+                    <div className="text-[11px] font-bold" style={{ color: axe.couleur }}>{pct}%</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setEditingAxe(isEditing ? null : axe.id)}
+                      className="text-[10px] px-2 py-1 rounded border"
+                      style={{ borderColor: "var(--border)", color: "var(--textMuted)" }}>
+                      {isEditing ? "✓" : "✏"}
+                    </button>
+                    <button onClick={() => openForm(axe.id)}
+                      className="text-[11px] px-3 py-1.5 rounded-lg font-semibold"
+                      style={{ background: axe.couleur + "22", color: axe.couleur }}>
+                      + Action
+                    </button>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                {axeActions.length === 0 ? (
+                  <div className="px-5 py-4 text-[12px]" style={{ color: "var(--textDim)" }}>
+                    Aucune action — cliquez sur &quot;+ Action&quot; pour en ajouter
+                  </div>
+                ) : (
+                  <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+                    {axeActions.sort((a, b) => {
+                      const order: Record<PAPDuree, number> = { court: 0, moyen: 1, long: 2 };
+                      return order[a.duree] - order[b.duree];
+                    }).map((action) => {
+                      const sc = STATUT_COLORS[action.statut];
+                      const dc = DUREE_LABELS[action.duree];
+                      const isLate = action.statut !== "Terminé" && action.statut !== "Abandonné" && action.echeance && new Date(action.echeance) < new Date();
+                      return (
+                        <div key={action.id} className="px-5 py-3 flex items-start gap-4"
+                          style={{ background: isLate ? "#ff4d6a04" : "transparent" }}>
+                          <div className="mt-0.5">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: dc.color + "20", color: dc.color }}>
+                              {action.duree === "court" ? "C" : action.duree === "moyen" ? "M" : "L"}
+                            </span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            {action.objectif && (
+                              <div className="text-[10px] mb-0.5 italic" style={{ color: "var(--textDim)" }}>{action.objectif}</div>
+                            )}
+                            <div className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>{action.action}</div>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              {action.responsable && (
+                                <span className="text-[10px]" style={{ color: "var(--textMuted)" }}>👤 {action.responsable}</span>
+                              )}
+                              {action.echeance && (
+                                <span className="text-[10px]" style={{ color: isLate ? "var(--danger)" : "var(--textMuted)" }}>
+                                  📅 {new Date(action.echeance).toLocaleDateString("fr-FR")} {isLate && "⚠ En retard"}
+                                </span>
+                              )}
+                              {action.kpiImpacte && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: axe.couleur + "18", color: axe.couleur }}>
+                                  KPI: {action.kpiImpacte}
+                                </span>
+                              )}
+                              {action.impactFinancier > 0 && (
+                                <span className="text-[10px] font-bold" style={{ color: "#00d4aa" }}>
+                                  ~{formatEuro(action.impactFinancier)}/an recyclé
+                                </span>
+                              )}
+                            </div>
+                            {/* Progress bar */}
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surfaceAlt)" }}>
+                                <div className="h-full rounded-full transition-all" style={{ width: `${action.avancement}%`, background: sc.color }} />
+                              </div>
+                              <span className="text-[10px] shrink-0" style={{ color: sc.color }}>{action.avancement}%</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <select value={action.statut}
+                              onChange={(e) => saveActions(actions.map((a) => a.id === action.id ? { ...a, statut: e.target.value as PAPStatut } : a))}
+                              className="rounded-lg px-2 py-1 text-[10px] border font-semibold"
+                              style={{ background: sc.bg, borderColor: "transparent", color: sc.color }}>
+                              {(["À lancer", "En cours", "Terminé", "Abandonné"] as PAPStatut[]).map((s) => (
+                                <option key={s} value={s} style={{ background: "var(--surface)" }}>{s}</option>
+                              ))}
+                            </select>
+                            <button onClick={() => openForm(action.axeId, action)}
+                              className="text-[10px] px-1.5 py-1 rounded" style={{ color: "var(--textDim)" }}>✏</button>
+                            <button onClick={() => saveActions(actions.filter((a) => a.id !== action.id))}
+                              className="text-[10px] px-1.5 py-1 rounded" style={{ color: "var(--textDim)" }}>✕</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Vue GANTT ─────────────────────────────────────── */}
+      {view === "gantt" && (
+        <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+          {/* Header mois */}
+          <div className="flex border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+            <div className="w-48 px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest shrink-0" style={{ color: "var(--textMuted)" }}>
+              Action
+            </div>
+            <div className="flex-1 grid border-l" style={{ gridTemplateColumns: `repeat(6, 1fr)`, borderColor: "var(--border)" }}>
+              {MONTHS.map((m, i) => {
+                const d = new Date(ganttStart);
+                d.setMonth(d.getMonth() + i);
+                return (
+                  <div key={m} className="px-2 py-2.5 text-center text-[10px] font-semibold border-r last:border-r-0"
+                    style={{ borderColor: "var(--border)", color: "var(--textMuted)" }}>
+                    {d.toLocaleString("fr-FR", { month: "short" })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {actions.filter((a) => a.statut !== "Abandonné").sort((a, b) => {
+            const order: Record<PAPDuree, number> = { court: 0, moyen: 1, long: 2 };
+            return order[a.duree] - order[b.duree];
+          }).map((action, idx) => {
+            const axe = axes.find((ax) => ax.id === action.axeId);
+            const dc = DUREE_LABELS[action.duree];
+            const sc = STATUT_COLORS[action.statut];
+            const startPct = action.echeance ? Math.max(0, ganttPos(action.echeance) - dureeWidth(action.duree)) : idx * 10;
+            const widthPct = dureeWidth(action.duree);
+            return (
+              <div key={action.id} className="flex items-center border-b last:border-b-0"
+                style={{ background: idx % 2 === 0 ? "var(--surfaceAlt)" : "var(--surface)", borderColor: "var(--border)" }}>
+                <div className="w-48 px-4 py-3 shrink-0">
+                  <div className="text-[11px] font-semibold truncate" style={{ color: "var(--text)" }}>{action.action}</div>
+                  {axe && <div className="text-[10px]" style={{ color: axe.couleur }}>{axe.label}</div>}
+                </div>
+                <div className="flex-1 relative h-10 border-l" style={{ borderColor: "var(--border)" }}>
+                  {/* Today marker */}
+                  <div className="absolute top-0 bottom-0 w-px z-10" style={{ left: `${ganttPos(new Date().toISOString())}%`, background: "#ff4d6a60" }} />
+                  {/* Bar */}
+                  <div className="absolute top-1/2 -translate-y-1/2 h-5 rounded-lg flex items-center px-2"
+                    style={{ left: `${startPct}%`, width: `${widthPct}%`, background: dc.color + "30", border: `1px solid ${dc.color}40` }}>
+                    <span className="text-[9px] font-semibold truncate" style={{ color: dc.color }}>{action.responsable || "—"}</span>
+                  </div>
+                  {/* Progress */}
+                  <div className="absolute top-1/2 -translate-y-1/2 h-5 rounded-lg overflow-hidden"
+                    style={{ left: `${startPct}%`, width: `${widthPct * action.avancement / 100}%`, background: dc.color + "60" }} />
+                </div>
+                <div className="w-24 px-3 text-right shrink-0">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: sc.bg, color: sc.color }}>{action.statut}</span>
+                </div>
+              </div>
+            );
+          })}
+
+          {actions.filter((a) => a.statut !== "Abandonné").length === 0 && (
+            <div className="px-5 py-8 text-center text-[13px]" style={{ color: "var(--textMuted)" }}>
+              Aucune action planifiée — ajoutez des actions dans la vue Axes.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Modal formulaire ─────────────────────────────── */}
       <AnimatePresence>
         {showForm && (
-          <motion.div
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            className="rounded-2xl p-6 border"
-            style={{ background: "var(--surface)", borderColor: "var(--accent)30" }}
-          >
-            <div className="text-[13px] font-bold mb-4" style={{ color: "var(--text)" }}>
-              {editingId ? "Modifier l'action PAP" : `Nouvelle action PAP (${actions.length + 1}/${MAX_PAP_ACTIONS})`}
-            </div>
-            <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <div className="col-span-2">
-                <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>
-                  Objectif (résultat attendu — SMART) *
-                </label>
-                <input
-                  value={form.objectif ?? ""}
-                  onChange={(e) => setForm((p) => ({ ...p, objectif: e.target.value }))}
-                  placeholder="Ex: Augmenter le taux d'achat externe de 8.9% à 15% d'ici fin avril"
-                  className="w-full rounded-lg px-3 py-2 text-[12px] border"
-                  style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
-                />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "#00000080" }}
+            onClick={(e) => e.target === e.currentTarget && setShowForm(false)}>
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
+              className="rounded-2xl border p-6 w-full max-w-lg space-y-4"
+              style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+              <div className="text-[14px] font-bold" style={{ color: "var(--text)" }}>
+                {editActionId ? "Modifier" : "Nouvelle action"} — {axes.find((a) => a.id === formAxeId)?.label}
               </div>
-              <div className="col-span-2">
-                <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>
-                  Action concrète *
-                </label>
-                <textarea
-                  value={form.action ?? ""}
-                  onChange={(e) => setForm((p) => ({ ...p, action: e.target.value }))}
-                  rows={2}
-                  className="w-full rounded-lg px-3 py-2 text-[12px] border resize-none"
-                  style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
-                />
-              </div>
+
               {[
-                { key: "responsable", label: "Responsable", type: "text", placeholder: "Nom" },
-                { key: "echeance", label: "Échéance", type: "date", placeholder: "" },
-                { key: "kpiImpacte", label: "KPI impacté", type: "text", placeholder: "Ex: Taux d'achat ext." },
-              ].map(({ key, label, type, placeholder }) => (
+                { key: "objectif" as const, label: "Objectif SMART (résultat attendu)", placeholder: "ex: Réduire le stock âgé de 48% à 30% d'ici 3 mois" },
+                { key: "action" as const, label: "Action concrète *", placeholder: "ex: Identifier les 20 références les plus anciennes et lancer une promo" },
+                { key: "responsable" as const, label: "Porteur de l'action", placeholder: "ex: Marie" },
+                { key: "kpiImpacte" as const, label: "KPI impacté", placeholder: "ex: Stock âgé" },
+              ].map(({ key, label, placeholder }) => (
                 <div key={key}>
-                  <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>{label}</label>
-                  <input
-                    type={type}
-                    value={(form as Record<string, string>)[key] ?? ""}
+                  <label className="block text-[10px] mb-1" style={{ color: "var(--textMuted)" }}>{label}</label>
+                  <input value={form[key] ?? ""} placeholder={placeholder}
                     onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))}
-                    placeholder={placeholder}
-                    className="w-full rounded-lg px-3 py-2 text-[12px] border"
-                    style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
-                  />
+                    className="w-full rounded-xl px-3 py-2 text-[12px] border"
+                    style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }} />
                 </div>
               ))}
-              <div>
-                <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>Impact</label>
-                <select
-                  value={form.impact ?? "fort"}
-                  onChange={(e) => setForm((p) => ({ ...p, impact: e.target.value as "fort" | "moyen" | "faible" }))}
-                  className="w-full rounded-lg px-3 py-2 text-[12px] border"
-                  style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
-                >
-                  <option value="fort">Fort</option>
-                  <option value="moyen">Moyen</option>
-                  <option value="faible">Faible</option>
-                </select>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] mb-1" style={{ color: "var(--textMuted)" }}>Durée</label>
+                  <select value={form.duree ?? "court"} onChange={(e) => setForm((p) => ({ ...p, duree: e.target.value as PAPDuree }))}
+                    className="w-full rounded-xl px-3 py-2 text-[12px] border"
+                    style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}>
+                    {(Object.entries(DUREE_LABELS) as [PAPDuree, typeof DUREE_LABELS[PAPDuree]][]).map(([k, v]) => (
+                      <option key={k} value={k} style={{ background: "var(--surface)" }}>{v.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] mb-1" style={{ color: "var(--textMuted)" }}>Échéance</label>
+                  <input type="date" value={form.echeance ?? ""} onChange={(e) => setForm((p) => ({ ...p, echeance: e.target.value }))}
+                    className="w-full rounded-xl px-3 py-2 text-[12px] border"
+                    style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }} />
+                </div>
+                <div>
+                  <label className="block text-[10px] mb-1" style={{ color: "var(--textMuted)" }}>Statut</label>
+                  <select value={form.statut ?? "À lancer"} onChange={(e) => setForm((p) => ({ ...p, statut: e.target.value as PAPStatut }))}
+                    className="w-full rounded-xl px-3 py-2 text-[12px] border"
+                    style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}>
+                    {(["À lancer", "En cours", "Terminé", "Abandonné"] as PAPStatut[]).map((s) => (
+                      <option key={s} value={s} style={{ background: "var(--surface)" }}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] mb-1" style={{ color: "var(--textMuted)" }}>
+                    Impact financier estimé ({formatEuro(chvacv)}/h CHVACV)
+                  </label>
+                  <div className="relative">
+                    <input type="number" min={0} value={form.impactFinancier ?? 0}
+                      onChange={(e) => setForm((p) => ({ ...p, impactFinancier: Number(e.target.value) || 0 }))}
+                      className="w-full rounded-xl px-3 py-2 pr-8 text-[12px] border"
+                      style={{ background: "var(--surfaceAlt)", borderColor: "#00d4aa40", color: "#00d4aa" }} />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px]" style={{ color: "var(--textDim)" }}>€</span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex gap-3 mt-4">
-              <button onClick={handleSave} className="px-5 py-2 rounded-xl text-[12px] font-semibold" style={{ background: "var(--accent)", color: "#000" }}>
-                {editingId ? "Mettre à jour" : "Ajouter au PAP"}
-              </button>
-              <button onClick={() => { setShowForm(false); setEditingId(null); }} className="px-5 py-2 rounded-xl text-[12px] border" style={{ borderColor: "var(--border)", color: "var(--textMuted)" }}>
-                Annuler
-              </button>
-            </div>
+
+              <div>
+                <label className="block text-[10px] mb-1" style={{ color: "var(--textMuted)" }}>Avancement ({form.avancement ?? 0}%)</label>
+                <input type="range" min={0} max={100} step={5} value={form.avancement ?? 0}
+                  onChange={(e) => setForm((p) => ({ ...p, avancement: Number(e.target.value) }))}
+                  className="w-full" />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={submitForm} disabled={!form.action}
+                  className="flex-1 py-2.5 rounded-xl text-[12px] font-bold disabled:opacity-40"
+                  style={{ background: "var(--accent)", color: "#000" }}>
+                  {editActionId ? "Mettre à jour" : "Ajouter l'action"}
+                </button>
+                <button onClick={() => setShowForm(false)} className="px-5 py-2.5 rounded-xl text-[12px] border"
+                  style={{ borderColor: "var(--border)", color: "var(--textMuted)" }}>
+                  Annuler
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* PAP Actions — Reorderable list */}
-      {actions.length === 0 ? (
-        <div className="text-center py-16" style={{ color: "var(--textMuted)" }}>
-          <div className="text-[48px] mb-3">🎯</div>
-          <div className="text-[15px] font-semibold mb-2" style={{ color: "var(--text)" }}>
-            PAP vide pour {periode === "semaine" ? "cette semaine" : periode === "mois" ? "ce mois" : "ce trimestre"}
-          </div>
-          <div className="text-[12px] mb-6" style={{ color: "var(--textMuted)" }}>
-            Ajoutez jusqu&apos;à 10 actions prioritaires. Focalisez-vous sur l&apos;essentiel.
-          </div>
-          {valeurs.some((v) => v.status === "dg") && (
-            <button onClick={handleAutoGenerate} className="px-5 py-2.5 rounded-xl text-[12px] font-semibold" style={{ background: "var(--accent)", color: "#000" }}>
-              ⚡ Générer depuis les alertes KPI
-            </button>
-          )}
-        </div>
-      ) : (
-        <Reorder.Group axis="y" values={actions} onReorder={handleReorder} className="space-y-3">
-          {actions.map((action, i) => {
-            const sc = STATUT_COLORS[action.statut];
-            const ic = IMPACT_COLORS[action.impact];
-            const days = daysUntil(action.echeance);
-            const isLate = days !== null && days < 0 && action.statut !== "Terminé";
-
-            return (
-              <Reorder.Item key={action.id} value={action}>
-                <motion.div
-                  initial={{ opacity: 0, x: -16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  className="rounded-2xl p-5 border"
-                  style={{
-                    background: "var(--surface)",
-                    borderColor: action.statut === "Terminé" ? "#00d4aa30" : isLate ? "#ff4d6a30" : "var(--border)",
-                    cursor: "grab",
-                  }}
-                >
-                  <div className="flex items-start gap-4">
-                    {/* Number */}
-                    <div
-                      className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-[14px] shrink-0 mt-0.5"
-                      style={{ background: ic.bg, color: ic.color }}
-                    >
-                      {action.ordre}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      {/* Objectif */}
-                      <div className="font-semibold text-[13px] mb-1" style={{ color: "var(--text)" }}>
-                        {action.objectif}
-                      </div>
-
-                      {/* Action */}
-                      <div className="text-[11px] mb-2" style={{ color: "var(--textMuted)" }}>
-                        → {action.action}
-                      </div>
-
-                      {/* Meta */}
-                      <div className="flex items-center gap-3 flex-wrap text-[10px] mb-3" style={{ color: "var(--textDim)" }}>
-                        {action.responsable && <span>👤 {action.responsable}</span>}
-                        {action.echeance && (
-                          <span style={{ color: isLate ? "#ff4d6a" : days !== null && days <= 3 ? "#ffb347" : "var(--textDim)" }}>
-                            📅 {new Date(action.echeance).toLocaleDateString("fr-FR")}
-                            {days !== null && ` · ${isLate ? `${Math.abs(days)}j retard` : days === 0 ? "Aujourd'hui" : `${days}j`}`}
-                          </span>
-                        )}
-                        {action.kpiImpacte && (
-                          <span className="px-1.5 py-0.5 rounded" style={{ background: "#4da6ff12", color: "#4da6ff" }}>
-                            📊 {action.kpiImpacte}
-                          </span>
-                        )}
-                        <span className="px-1.5 py-0.5 rounded" style={{ background: ic.bg, color: ic.color }}>
-                          {ic.label}
-                        </span>
-                      </div>
-
-                      {/* Progress bar + slider */}
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 h-2.5 rounded-full overflow-hidden" style={{ background: "#2a2e3a" }}>
-                          <motion.div
-                            animate={{ width: `${action.avancement}%` }}
-                            transition={{ duration: 0.4 }}
-                            className="h-full rounded-full"
-                            style={{
-                              background: action.avancement >= 100 ? "#00d4aa" :
-                                action.avancement >= 50 ? "linear-gradient(90deg, #ffb347, #4da6ff)" :
-                                "#ff4d6a",
-                            }}
-                          />
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          step={10}
-                          value={action.avancement}
-                          onChange={(e) => handleAvancement(action.id, parseInt(e.target.value))}
-                          className="w-20"
-                          style={{ accentColor: "var(--accent)" }}
-                        />
-                        <span className="text-[11px] font-bold w-8" style={{ color: action.avancement >= 100 ? "#00d4aa" : "var(--textMuted)" }}>
-                          {action.avancement}%
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Right actions */}
-                    <div className="flex flex-col items-end gap-2 shrink-0">
-                      <select
-                        value={action.statut}
-                        onChange={(e) => handleStatut(action.id, e.target.value as PAPStatut)}
-                        className="text-[10px] font-bold px-2 py-1 rounded-lg border"
-                        style={{ background: sc.bg, borderColor: `${sc.color}40`, color: sc.color }}
-                      >
-                        {(["À lancer", "En cours", "Terminé", "Abandonné"] as PAPStatut[]).map((s) => (
-                          <option key={s} style={{ background: "var(--surface)", color: STATUT_COLORS[s].color }}>{s}</option>
-                        ))}
-                      </select>
-                      <div className="flex gap-1.5">
-                        <button onClick={() => handleEdit(action)} className="text-[11px] p-1 rounded hover:opacity-70" style={{ color: "var(--textMuted)" }}>✏️</button>
-                        <button onClick={() => handleDelete(action.id)} className="text-[11px] p-1 rounded hover:opacity-70" style={{ color: "#ff4d6a55" }}>🗑</button>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              </Reorder.Item>
-            );
-          })}
-        </Reorder.Group>
-      )}
+      {/* ── Note MSE ─────────────────────────────────────── */}
+      <div className="rounded-2xl p-4 border text-[11px]"
+        style={{ background: "var(--surface)", borderColor: "#4da6ff30", borderLeft: "3px solid #4da6ff", color: "var(--textMuted)" }}>
+        <strong style={{ color: "#4da6ff" }}>Méthode ISEOR — PAP.</strong>
+        {" "}Le PAP n&apos;est pas une liste de tâches. C&apos;est un plan structuré en <strong style={{ color: "var(--text)" }}>axes stratégiques</strong>,
+        chacun avec des objectifs SMART et des actions portées par des personnes nommées.
+        Revue tous les 6 mois. <strong style={{ color: "var(--text)" }}>Chaque action est liée à un coût caché recyclé.</strong>
+      </div>
     </div>
   );
 }
