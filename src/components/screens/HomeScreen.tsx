@@ -12,6 +12,77 @@ import { generateNarrative } from "@/lib/narrative";
 import { computeHiddenCosts, formatEuro } from "@/lib/hiddenCosts";
 import type { ValeurAvecIndicateur, CategorieScore } from "@/types";
 
+// ─── Cash Circle SVG ───────────────────────────────────────────
+function CashCircle({ valeurs }: { valeurs: ValeurAvecIndicateur[] }) {
+  const labels = ["Trésorerie", "Achats", "Stock", "Vitrine", "Vente"];
+  const N = labels.length;
+  const CX = 200; const CY = 140; const RN = 90; const rN = 28;
+
+  const stockAge = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("stock âg"));
+  const tlac = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("tlac") || v.indicateur_nom?.toLowerCase().includes("taux achat"));
+  const achat = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("achat ext"));
+
+  const nodeHealth: string[] = labels.map((l) => {
+    if (l === "Achats") return achat?.status === "wn" ? "#ffb347" : achat?.status === "dg" ? "#ff4d6a" : "#00d4aa";
+    if (l === "Stock") return stockAge?.status === "dg" ? "#ff4d6a" : stockAge?.status === "wn" ? "#ffb347" : "#00d4aa";
+    if (l === "Vitrine") return stockAge?.status === "dg" ? "#ff4d6a" : "#00d4aa";
+    if (l === "Vente") return tlac?.status === "wn" ? "#ffb347" : tlac?.status === "dg" ? "#ff4d6a" : "#00d4aa";
+    return "#00d4aa";
+  });
+
+  const nodes = labels.map((_, i) => {
+    const angle = (i / N) * 2 * Math.PI - Math.PI / 2;
+    return { x: CX + RN * Math.cos(angle), y: CY + RN * Math.sin(angle) };
+  });
+
+  return (
+    <div className="rounded-2xl border p-4" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--textMuted)" }}>💰 Cercle du cash</span>
+        <span className="text-[10px]" style={{ color: "var(--textDim)" }}>— La boucle se casse où le stock dort</span>
+      </div>
+      <svg width="100%" viewBox="0 0 400 280" style={{ maxHeight: 200 }}>
+        <style>{`@keyframes flowArrow{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}`}</style>
+        {nodes.map((node, i) => {
+          const next = nodes[(i + 1) % N];
+          const color = nodeHealth[(i + 1) % N];
+          const mx = (node.x + next.x) / 2; const my = (node.y + next.y) / 2;
+          const dx = next.x - node.x; const dy = next.y - node.y;
+          const len = Math.sqrt(dx*dx+dy*dy);
+          const ux = dx/len; const uy = dy/len;
+          const sx = node.x + ux*rN; const sy = node.y + uy*rN;
+          const ex = next.x - ux*rN; const ey = next.y - uy*rN;
+          return (
+            <g key={i}>
+              <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={color} strokeWidth="2.5"
+                strokeDasharray="6 4" strokeLinecap="round"
+                style={{ animation: "flowArrow 0.8s linear infinite" }} />
+              <polygon
+                points={`${ex},${ey} ${ex - ux*8 + uy*5},${ey - uy*8 - ux*5} ${ex - ux*8 - uy*5},${ey - uy*8 + ux*5}`}
+                fill={color} />
+              <text x={mx} y={my - 6} textAnchor="middle" fontSize="8" fill={color} opacity="0.7">
+                {["→","→","→","→","→"][i]}
+              </text>
+            </g>
+          );
+        })}
+        {nodes.map((node, i) => (
+          <g key={`n${i}`}>
+            <circle cx={node.x} cy={node.y} r={rN} fill="#1a1d27" stroke={nodeHealth[i]} strokeWidth="2.5" />
+            <circle cx={node.x} cy={node.y} r={rN} fill={nodeHealth[i]} opacity="0.08" />
+            <text x={node.x} y={node.y - 2} textAnchor="middle" dominantBaseline="middle" fontSize="9"
+              fontWeight="600" fill={nodeHealth[i]} fontFamily="DM Sans, sans-serif">
+              {labels[i].split(" ").map((w, wi) => (
+                <tspan key={wi} x={node.x} dy={wi === 0 ? (labels[i].includes(" ") ? -5 : 0) : 11}>{w}</tspan>
+              ))}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 // ─── Color helpers ────────────────────────────────────────────
 const scoreColor = (s: number | null) => {
   if (s === null) return "#555a6e";
@@ -409,6 +480,7 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [papActions, setPapActions] = useState<Array<{id:string;kpiImpacte:string;statut:string;action:string;impactFinancier?:number}>>([]);
 
   const loadData = useCallback(async () => {
     if (!magasinId) return;
@@ -458,6 +530,14 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  useEffect(() => {
+    if (!magasinId) return;
+    try {
+      const raw = localStorage.getItem(`pap_actions_${magasinId}`);
+      if (raw) setPapActions(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, [magasinId]);
+
   const score = computeScore(valeurs);
   const categories = computeCategoryScores(valeurs);
   const hiddenCosts = computeHiddenCosts(valeurs);
@@ -481,6 +561,24 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
     const prevCats = computeCategoryScores(enrichedPrev);
     prevCats.forEach((c) => { prevCatScores[c.name] = c.score; });
   }
+
+  // Score prédictif PAP
+  const activeActions = papActions.filter(a => (a.statut === "À lancer" || a.statut === "En cours") && a.kpiImpacte?.trim());
+  const improveableKpis: string[] = [];
+  const simulatedValeurs = valeurs.map(v => {
+    const matched = activeActions.find(a => v.indicateur_nom?.toLowerCase().includes(a.kpiImpacte.toLowerCase()));
+    if (matched && v.status === "dg" && v.seuil_vigilance !== null) {
+      improveableKpis.push(v.indicateur_nom);
+      const simVal = v.direction === "up" ? (v.seuil_vigilance ?? 0) + 0.01 : (v.seuil_vigilance ?? 0) - 0.01;
+      return { ...v, valeur: simVal, status: getStatus(simVal, v.direction, v.seuil_ok, v.seuil_vigilance) };
+    }
+    return v;
+  });
+  const projectedScore = improveableKpis.length > 0 ? computeScore(simulatedValeurs) : null;
+  const scoreGain = projectedScore !== null && score !== null ? projectedScore - score : 0;
+  const papTotal = papActions.length;
+  const papDone = papActions.filter(a => a.statut === "Terminé").length;
+  const savingsAction = papActions.find(a => a.impactFinancier && a.impactFinancier > 0 && a.statut !== "Terminé");
 
   const narrative = generateNarrative({
     score,
@@ -574,6 +672,26 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
           }}
         >
           <CircleGauge score={score} />
+          {/* N-1 delta */}
+          {previousScore !== null && score !== null && (
+            <div className="mt-1 text-[11px] font-semibold" style={{ color: trendColor(score - previousScore) }}>
+              {score - previousScore > 0 ? "↑" : score - previousScore < 0 ? "↓" : "→"}
+              {" "}{score - previousScore > 0 ? "+" : ""}{score - previousScore} pts vs visite précédente
+            </div>
+          )}
+          {/* GMROI widget */}
+          {(() => {
+            const gmroi = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("gmroi"));
+            if (!gmroi) return null;
+            const gColor = gmroi.valeur >= 3.5 ? "#00d4aa" : gmroi.valeur >= 2.5 ? "#ffb347" : "#ff4d6a";
+            return (
+              <div className="mt-2 px-4 py-2 rounded-xl text-center" style={{ background: `${gColor}12`, border: `1px solid ${gColor}30` }}>
+                <div className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "var(--textMuted)" }}>GMROI</div>
+                <div className="text-[24px] font-bold" style={{ color: gColor }}>{gmroi.valeur.toFixed(2)}</div>
+                <div className="text-[9px]" style={{ color: "var(--textDim)" }}>Réseau : 3.84</div>
+              </div>
+            );
+          })()}
           {/* Stat badges */}
           <div className="flex gap-2 mt-3">
             {[
@@ -615,6 +733,9 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
             </p>
           </motion.div>
 
+          {/* Cash Circle */}
+          <CashCircle valeurs={valeurs} />
+
           {/* Category grid */}
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))" }}>
             {categories.map((cat, i) => (
@@ -627,6 +748,42 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
               />
             ))}
           </div>
+
+          {/* Score prédictif PAP */}
+          {scoreGain > 0 && projectedScore !== null && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.6 }}
+              className="rounded-2xl p-4 border"
+              style={{ background: "linear-gradient(135deg, #00d4aa08 0%, #a78bfa08 100%)", borderColor: "#00d4aa30" }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#00d4aa" }}>🎯 Projection si PAP appliqué</span>
+              </div>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="text-center">
+                  <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>Actuel</div>
+                  <div className="text-[22px] font-bold" style={{ color: scoreColor(score) }}>{score}</div>
+                </div>
+                <div className="text-[18px]" style={{ color: "#00d4aa" }}>→</div>
+                <div className="text-center">
+                  <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>Projeté</div>
+                  <div className="text-[22px] font-bold" style={{ color: "#00d4aa" }}>{projectedScore}</div>
+                </div>
+                <div className="ml-auto px-3 py-1.5 rounded-xl text-[13px] font-bold" style={{ background: "#00d4aa22", color: "#00d4aa" }}>
+                  +{scoreGain} pts
+                </div>
+              </div>
+              {improveableKpis.slice(0, 3).length > 0 && (
+                <div className="text-[10px] space-y-0.5" style={{ color: "var(--textMuted)" }}>
+                  {improveableKpis.slice(0, 3).map(k => (
+                    <div key={k}>↗ {k}</div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
         </div>
 
         {/* Right sidebar: Urgent actions */}
@@ -717,6 +874,53 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
             </button>
           </div>
           <Sparkline data={visiteHistory} />
+        </motion.div>
+      )}
+
+      {/* ── Franchisé incitation strip ─────────────────────────── */}
+      {(papTotal > 0 || daysSinceLastVisit !== null) && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.7 }}
+          className="rounded-2xl p-4 border"
+          style={{ background: "linear-gradient(135deg, #1a1d27 0%, #1e2133 100%)", borderColor: "var(--border)" }}
+        >
+          <div className="flex flex-wrap items-center gap-4">
+            {/* PAP progress */}
+            {papTotal > 0 && (
+              <div className="flex-1 min-w-[180px]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[11px] font-semibold" style={{ color: "var(--text)" }}>🎯 Plan d&apos;action</span>
+                  <span className="text-[11px] font-bold" style={{ color: papDone === papTotal ? "#00d4aa" : "var(--textMuted)" }}>
+                    {papDone}/{papTotal}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surface)" }}>
+                  <div className="h-full rounded-full transition-all duration-700" style={{
+                    width: `${papTotal > 0 ? (papDone / papTotal) * 100 : 0}%`,
+                    background: papDone === papTotal ? "#00d4aa" : "#ffb347",
+                  }} />
+                </div>
+              </div>
+            )}
+
+            {/* Next visit */}
+            {daysSinceLastVisit !== null && (
+              <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
+                <span style={{ color: "var(--text)" }}>⏱</span> Dernière visite il y a <span className="font-semibold" style={{ color: "var(--text)" }}>{daysSinceLastVisit}j</span>
+                {daysSinceLastVisit > 25 && <span style={{ color: "#ffb347" }}> — Bientôt la prochaine !</span>}
+              </div>
+            )}
+
+            {/* Savings nudge */}
+            {savingsAction && (
+              <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
+                💡 Terminez <span className="font-semibold" style={{ color: "#00d4aa" }}>&quot;{savingsAction.action.slice(0, 40)}&quot;</span>
+                {" "}→ économisez ~<span className="font-bold" style={{ color: "#00d4aa" }}>{formatEuro(savingsAction.impactFinancier!)}/an</span>
+              </div>
+            )}
+          </div>
         </motion.div>
       )}
     </div>

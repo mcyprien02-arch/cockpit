@@ -20,6 +20,170 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   dg: { color: "#ff4d6a", bg: "#ff4d6a18" },
 };
 
+// ─── Network benchmarks ────────────────────────────────────────
+const BENCHMARKS: Record<string, { value: number | string; unit: string }> = {
+  "ca / m²": { value: 7700, unit: "€/m²" },
+  "panier moyen": { value: 97.5, unit: "€" },
+  "taux de transformation": { value: 25.4, unit: "%" },
+  "taux marge nette": { value: 38.5, unit: "%" },
+  "masse salariale": { value: 15, unit: "%" },
+  "ebe": { value: 8, unit: "%" },
+  "démarque": { value: 3, unit: "%" },
+  "stock âgé": { value: 30, unit: "%" },
+  "note google": { value: 4.5, unit: "/5" },
+  "nps": { value: 72, unit: "" },
+  "sav": { value: 10, unit: "%" },
+  "gmroi": { value: 3.84, unit: "" },
+  "ca par collaborateur": { value: 20000, unit: "€/mois" },
+};
+function getBenchmark(nom: string) {
+  const n = nom.toLowerCase();
+  const key = Object.keys(BENCHMARKS).find(k => n.includes(k));
+  return key ? BENCHMARKS[key] : null;
+}
+
+// ─── VPD Calculator ────────────────────────────────────────────
+function VPDCalculator({ onClose }: { onClose: () => void }) {
+  const questions = [
+    "Famille majeure ?",
+    "Nouveauté ?",
+    "Top vente ?",
+    "Forte rotation ?",
+    "Concurrence sur le rachat ?",
+  ];
+  const [answers, setAnswers] = useState<boolean[]>(Array(5).fill(false));
+  const score = answers.filter(Boolean).length;
+  const result = score >= 4 ? "V" : score >= 2 ? "P" : "D";
+  const resultLabels: Record<string, { label: string; color: string; desc: string }> = {
+    V: { label: "Valorisé", color: "#00d4aa", desc: "Marger davantage, produit recherché" },
+    P: { label: "Prudent", color: "#ffb347", desc: "Prix marché, juste équilibre" },
+    D: { label: "Déstockage", color: "#ff4d6a", desc: "Prix agressif, écouler rapidement" },
+  };
+  const r = resultLabels[result];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+        onClick={e => e.stopPropagation()}
+        className="rounded-2xl p-6 w-full max-w-sm space-y-4"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="text-[14px] font-bold" style={{ color: "var(--text)" }}>Aide VPD — Positionnement Prix</div>
+          <button onClick={onClose} style={{ color: "var(--textMuted)" }}>✕</button>
+        </div>
+        <div className="space-y-2">
+          {questions.map((q, i) => (
+            <div key={i} className="flex items-center justify-between p-3 rounded-xl"
+              style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
+              <span className="text-[12px]" style={{ color: "var(--text)" }}>{q}</span>
+              <button
+                onClick={() => setAnswers(prev => { const n = [...prev]; n[i] = !n[i]; return n; })}
+                className="text-[11px] font-bold px-3 py-1 rounded-lg transition-all"
+                style={{ background: answers[i] ? "#00d4aa22" : "var(--surface)", color: answers[i] ? "#00d4aa" : "var(--textMuted)", border: `1px solid ${answers[i] ? "#00d4aa40" : "var(--border)"}` }}
+              >
+                {answers[i] ? "Oui" : "Non"}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl p-4 text-center" style={{ background: `${r.color}15`, border: `1px solid ${r.color}30` }}>
+          <div className="text-[32px] font-black mb-1" style={{ color: r.color }}>{result}</div>
+          <div className="text-[14px] font-bold" style={{ color: r.color }}>{r.label}</div>
+          <div className="text-[11px] mt-1" style={{ color: "var(--textMuted)" }}>{r.desc}</div>
+          <div className="text-[10px] mt-2" style={{ color: "var(--textDim)" }}>{score}/5 critères valorisants</div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── GPA Diagnostic Widget ─────────────────────────────────────
+function GPAWidget({ onClose }: { onClose: () => void }) {
+  const sections = [
+    { key: "G", label: "Gamme", items: ["Couverture gamme OK ?", "Doublons/triplons ?", "Stock âgé > 30% ?", "Gamme référence respectée ?"] },
+    { key: "P", label: "Prix", items: ["Prix alignés EasyPrice ?", "Écart cote EP achat acceptable ?", "Accélérations vieux stock faites ?", "Prix ronds sur promos ?"] },
+    { key: "A", label: "Animation", items: ["Bonnes affaires visibles ?", "Nouveautés mises en avant ?", "Réassurance affichée (garantie, paiement) ?", "Appels de stock en place ?"] },
+  ];
+  const [answers, setAnswers] = useState<boolean[]>(Array(12).fill(false));
+  const scores = [0, 4, 8].map(start => answers.slice(start, start + 4).filter(Boolean).length);
+  const sColors = ["#6b8fa3", "#ffb347", "#a78bfa"];
+  // Mini radar triangle SVG
+  const CX = 60; const CY = 55; const R = 40;
+  const verts = [0, 1, 2].map(i => {
+    const angle = (i / 3) * 2 * Math.PI - Math.PI / 2;
+    return { x: CX + R * Math.cos(angle), y: CY + R * Math.sin(angle) };
+  });
+  const inner = scores.map((s, i) => {
+    const angle = (i / 3) * 2 * Math.PI - Math.PI / 2;
+    const frac = s / 4;
+    return { x: CX + R * frac * Math.cos(angle), y: CY + R * frac * Math.sin(angle) };
+  });
+  const outerPath = verts.map((v, i) => `${i === 0 ? "M" : "L"}${v.x},${v.y}`).join(" ") + "Z";
+  const innerPath = inner.map((v, i) => `${i === 0 ? "M" : "L"}${v.x},${v.y}`).join(" ") + "Z";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+        onClick={e => e.stopPropagation()}
+        className="rounded-2xl p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="text-[14px] font-bold" style={{ color: "var(--text)" }}>📊 Diagnostic GPA</div>
+          <button onClick={onClose} style={{ color: "var(--textMuted)" }}>✕</button>
+        </div>
+        <div className="flex items-center gap-6">
+          <svg width="120" height="110" viewBox="0 0 120 110">
+            <path d={outerPath} fill="none" stroke="var(--border)" strokeWidth="1.5" />
+            <path d={innerPath} fill="#a78bfa30" stroke="#a78bfa" strokeWidth="2" />
+            {verts.map((v, i) => (
+              <text key={i} x={v.x + (v.x > CX ? 6 : v.x < CX ? -6 : 0)} y={v.y + (v.y > CY ? 14 : -4)}
+                textAnchor={v.x > CX ? "start" : v.x < CX ? "end" : "middle"}
+                fontSize="10" fill={sColors[i]} fontWeight="700">{sections[i].key}</text>
+            ))}
+          </svg>
+          <div className="flex gap-4">
+            {scores.map((s, i) => (
+              <div key={i} className="text-center">
+                <div className="text-[22px] font-bold" style={{ color: sColors[i] }}>{s}/4</div>
+                <div className="text-[10px]" style={{ color: "var(--textMuted)" }}>{sections[i].label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {sections.map((sec, si) => (
+          <div key={sec.key}>
+            <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: sColors[si] }}>
+              {sec.key} — {sec.label}
+            </div>
+            <div className="space-y-1.5">
+              {sec.items.map((q, qi) => {
+                const idx = si * 4 + qi;
+                return (
+                  <div key={qi} className="flex items-center justify-between px-3 py-2 rounded-lg"
+                    style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
+                    <span className="text-[12px]" style={{ color: "var(--text)" }}>{q}</span>
+                    <button
+                      onClick={() => setAnswers(prev => { const n = [...prev]; n[idx] = !n[idx]; return n; })}
+                      className="text-[11px] font-bold px-3 py-1 rounded-lg ml-3 shrink-0 transition-all"
+                      style={{ background: answers[idx] ? "#00d4aa22" : "var(--surface)", color: answers[idx] ? "#00d4aa" : "var(--textMuted)", border: `1px solid ${answers[idx] ? "#00d4aa40" : "var(--border)"}` }}
+                    >
+                      {answers[idx] ? "✓ Oui" : "Non"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </motion.div>
+    </div>
+  );
+}
+
 function TrendChip({ current, previous }: { current: number; previous: number }) {
   const diff = current - previous;
   const pct = previous !== 0 ? Math.abs(diff / previous) * 100 : 0;
@@ -46,6 +210,8 @@ export function SaisieScreen({ magasinId }: { magasinId: string }) {
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [openCats, setOpenCats] = useState<Record<string, boolean>>({});
   const [saveDate, setSaveDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [showVPD, setShowVPD] = useState(false);
+  const [showGPA, setShowGPA] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!magasinId) return;
@@ -220,6 +386,14 @@ export function SaisieScreen({ magasinId }: { magasinId: string }) {
               style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
             />
           </div>
+          <button onClick={() => setShowGPA(true)} className="px-3 py-2 rounded-xl text-[11px] font-semibold border hover:opacity-90"
+            style={{ borderColor: "#6b8fa340", color: "#6b8fa3", background: "#6b8fa312" }}>
+            📊 GPA
+          </button>
+          <button onClick={() => setShowVPD(true)} className="px-3 py-2 rounded-xl text-[11px] font-semibold border hover:opacity-90"
+            style={{ borderColor: "#a78bfa40", color: "#a78bfa", background: "#a78bfa12" }}>
+            🏷 VPD
+          </button>
           {changedCount > 0 && (
             <button
               onClick={handleSaveAll}
@@ -231,6 +405,14 @@ export function SaisieScreen({ magasinId }: { magasinId: string }) {
           )}
         </div>
       </div>
+
+      {/* GPA / VPD modals */}
+      <AnimatePresence>
+        {showGPA && <GPAWidget onClose={() => setShowGPA(false)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showVPD && <VPDCalculator onClose={() => setShowVPD(false)} />}
+      </AnimatePresence>
 
       {/* Categories */}
       {Object.entries(byCategory).map(([cat, catItems]) => {
@@ -316,6 +498,11 @@ export function SaisieScreen({ magasinId }: { magasinId: string }) {
                               <span style={{ color: "var(--textDim)" }}>
                                 {item.indicateur.direction === "up" ? "↑ plus = mieux" : "↓ moins = mieux"}
                               </span>
+                              {(() => {
+                                const bench = getBenchmark(item.indicateur.nom);
+                                if (!bench) return null;
+                                return <span style={{ color: "#a78bfa80" }}>Réseau: {bench.value}{bench.unit}</span>;
+                              })()}
                             </div>
                           </div>
 

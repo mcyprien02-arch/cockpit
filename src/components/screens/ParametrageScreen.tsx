@@ -68,6 +68,19 @@ export function ParametrageScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const saved = localStorage.getItem("rse_checks");
+    if (saved) setRseChecks(JSON.parse(saved));
+  }, []);
+
+  const toggleRse = (key: string) => {
+    setRseChecks(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      localStorage.setItem("rse_checks", JSON.stringify(next));
+      return next;
+    });
+  };
+
   const loadMappings = useCallback(async () => {
     setLoadingMappings(true);
     setMappingsError(false);
@@ -156,7 +169,7 @@ export function ParametrageScreen() {
     <div className="space-y-4">
       {/* Tab selector */}
       <div className="flex gap-2">
-        {(["indicateurs", "magasins"] as const).map((t) => (
+        {(["indicateurs", "magasins", "rse"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -167,7 +180,7 @@ export function ParametrageScreen() {
               color: tab === t ? "#000" : "var(--textMuted)",
             }}
           >
-            {t === "indicateurs" ? "⚙️ Indicateurs" : "🏪 Magasins"}
+            {t === "indicateurs" ? "⚙️ Indicateurs" : t === "magasins" ? "🏪 Magasins" : "♻️ RSE"}
           </button>
         ))}
       </div>
@@ -314,6 +327,46 @@ export function ParametrageScreen() {
           <div className="text-[11px]" style={{ color: "var(--textDim)" }}>
             {filtered.length} indicateur{filtered.length > 1 ? "s" : ""} affiché{filtered.length > 1 ? "s" : ""}
           </div>
+
+          {/* SQL tables info box */}
+          <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+            <button
+              onClick={() => setShowSql(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left"
+              style={{ background: "var(--surface)" }}
+            >
+              <span className="text-[12px] font-semibold" style={{ color: "var(--textMuted)" }}>🛠 Voir SQL tables avancées</span>
+              <span className="text-[11px]" style={{ color: "var(--textDim)" }}>{showSql ? "▲" : "▼"}</span>
+            </button>
+            {showSql && (
+              <pre className="p-4 text-[11px] overflow-x-auto leading-relaxed" style={{ background: "#0d1117", color: "#c9d1d9", borderTop: "1px solid var(--border)" }}>
+{`-- Table diagnostic GPA
+create table if not exists diagnostic_gpa (
+  id uuid default gen_random_uuid() primary key,
+  magasin_id uuid references magasins(id) on delete cascade,
+  date date not null,
+  score numeric,
+  commentaire text,
+  created_at timestamptz default now()
+);
+alter table diagnostic_gpa enable row level security;
+create policy "Accès complet" on diagnostic_gpa for all using (true);
+
+-- Table checklist RSE
+create table if not exists rse_checklist (
+  id uuid default gen_random_uuid() primary key,
+  magasin_id uuid references magasins(id) on delete cascade,
+  periode text not null,
+  checks jsonb default '{}',
+  score integer default 0,
+  created_at timestamptz default now(),
+  unique(magasin_id, periode)
+);
+alter table rse_checklist enable row level security;
+create policy "Accès complet" on rse_checklist for all using (true);`}
+              </pre>
+            )}
+          </div>
         </div>
       )}
 
@@ -404,6 +457,49 @@ export function ParametrageScreen() {
           )}
         </div>
       </div>
+
+      {/* ── RSE TAB ──────────────────────────────────────────── */}
+      {tab === "rse" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[14px] font-semibold" style={{ color: "var(--text)" }}>Checklist RSE</div>
+              <div className="text-[11px] mt-0.5" style={{ color: "var(--textMuted)" }}>Responsabilité sociétale et environnementale</div>
+            </div>
+            <span className="text-[15px] font-bold px-4 py-1.5 rounded-xl" style={{
+              background: rseScore >= 7 ? "#00d4aa22" : rseScore >= 4 ? "#ffb34722" : "#ff4d6a22",
+              color: rseScore >= 7 ? "#00d4aa" : rseScore >= 4 ? "#ffb347" : "#ff4d6a",
+            }}>
+              {rseScore}/10
+            </span>
+          </div>
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--surface)" }}>
+            <div className="h-full rounded-full transition-all duration-500" style={{
+              width: `${rseScore * 10}%`,
+              background: rseScore >= 7 ? "#00d4aa" : rseScore >= 4 ? "#ffb347" : "#ff4d6a",
+            }} />
+          </div>
+          <div className="space-y-2">
+            {RSE_ITEMS.map((item) => (
+              <div
+                key={item.key}
+                onClick={() => toggleRse(item.key)}
+                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:opacity-90 transition-all"
+                style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}
+              >
+                <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={{
+                  background: rseChecks[item.key] ? "#00d4aa" : "var(--surface)",
+                  border: "2px solid",
+                  borderColor: rseChecks[item.key] ? "#00d4aa" : "var(--border)",
+                }}>
+                  {rseChecks[item.key] && <span className="text-[11px] text-black font-bold">✓</span>}
+                </div>
+                <span className="text-[13px]" style={{ color: "var(--text)" }}>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── MAGASINS TAB ─────────────────────────────────────── */}
       {tab === "magasins" && (
