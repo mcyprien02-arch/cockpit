@@ -155,7 +155,7 @@ export default function App() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("app_mode");
-      if (saved === "consultant" || saved === "franchisé" || saved === "visite") {
+      if (saved === "consultant" || saved === "franchisé") {
         setMode(saved);
       }
     } catch { /* ignore */ }
@@ -166,7 +166,7 @@ export default function App() {
     try { localStorage.setItem("app_mode", m); } catch { /* ignore */ }
     // If current tab is restricted in new mode, redirect
     if (m === "franchisé") {
-      const allowedGroups = ["cockpit", "kpis", "pap"];
+      const allowedGroups = ["cockpit", "pap"];
       if (!allowedGroups.includes(getTabGroup(activeTab))) {
         setActiveTab("cockpit");
       }
@@ -175,7 +175,7 @@ export default function App() {
 
   const selectedMagasin = magasins.find(m => m.id === selectedId) ?? null;
 
-  const CONSULTANT_ONLY: TabId[] = ["balance", "chvacv", "competences", "temps"];
+  const CONSULTANT_ONLY: TabId[] = ["balance", "chvacv", "competences", "temps", "comparatif"];
   const isRestricted = (tab: TabId) =>
     CONSULTANT_ONLY.includes(tab) && mode !== "consultant";
 
@@ -252,11 +252,9 @@ export default function App() {
                   <DiagnosticScreen magasinId={selectedId} />
                 )}
 
-                {/* kpis — in visite mode render ImportScreen with visite tab active */}
+                {/* kpis */}
                 {activeTab === "kpis" && selectedId && (
-                  mode === "visite"
-                    ? <ImportScreen magasinId={selectedId} magasin={selectedMagasin} onNavigate={tab => setActiveTab(tab as TabId)} />
-                    : <SaisieScreen magasinId={selectedId} />
+                  <SaisieScreen magasinId={selectedId} />
                 )}
 
                 {/* plan */}
@@ -304,7 +302,9 @@ export default function App() {
 
                 {/* comparatif */}
                 {activeTab === "comparatif" && (
-                  <ComparatifScreen />
+                  isRestricted("comparatif")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <ComparatifScreen />
                 )}
 
                 {/* import */}

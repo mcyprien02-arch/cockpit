@@ -28,6 +28,8 @@ export function VisiteScreen({ magasin, magasinId }: VisiteScreenProps) {
   const [visites, setVisites] = useState<Visite[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [aiNarrative, setAiNarrative] = useState("");
+  const [generatingNarrative, setGeneratingNarrative] = useState(false);
   const [form, setForm] = useState({
     date_visite: new Date().toISOString().split("T")[0],
     consultant: "",
@@ -82,6 +84,38 @@ export function VisiteScreen({ magasin, magasinId }: VisiteScreenProps) {
     openActionsLate: actions.filter((a) => a.echeance && new Date(a.echeance) < new Date()).length,
     magasinNom: magasin?.nom ?? "",
   });
+
+  const handleGenerateAiNarrative = async () => {
+    setGeneratingNarrative(true);
+    try {
+      const kpisEnAlerte = valeurs
+        .filter((v) => v.status === "dg" || v.status === "wn")
+        .map((v) => v.indicateur_nom);
+      const actionsPrioritaires = actions
+        .filter((a) => a.priorite === "P1")
+        .map((a) => a.action);
+      const previousScore = visites[0]?.score_global ?? null;
+
+      const res = await fetch("/api/narrative", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          magasinNom: magasin?.nom ?? "",
+          date: form.date_visite,
+          score: score ?? 0,
+          previousScore,
+          kpisEnAlerte,
+          kpisAmelibres: [],
+          actionsPrioritaires,
+        }),
+      });
+      const { narrative } = await res.json();
+      setAiNarrative(narrative);
+    } catch (err) {
+      console.error("Erreur génération narrative IA:", err);
+    }
+    setGeneratingNarrative(false);
+  };
 
   const handleSave = async () => {
     if (!form.consultant || !form.date_visite) return;
@@ -152,6 +186,11 @@ export function VisiteScreen({ magasin, magasinId }: VisiteScreenProps) {
               heading: HeadingLevel.HEADING_2,
             }),
             new Paragraph({ text: narrative }),
+            ...(aiNarrative ? [
+              new Paragraph({ text: "" }),
+              new Paragraph({ text: "Synthèse IA", heading: HeadingLevel.HEADING_2 }),
+              new Paragraph({ text: aiNarrative }),
+            ] : []),
             new Paragraph({ text: "" }),
             new Paragraph({ text: "Indicateurs détaillés", heading: HeadingLevel.HEADING_2 }),
             new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }),
@@ -251,6 +290,33 @@ export function VisiteScreen({ magasin, magasinId }: VisiteScreenProps) {
               className="w-full rounded-lg px-3 py-2 text-[12px] border resize-none"
               style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
             />
+          </div>
+
+          {/* Synthèse IA */}
+          <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "var(--surfaceAlt)" }}>
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--textMuted)" }}>Synthèse IA</div>
+              <button
+                onClick={handleGenerateAiNarrative}
+                disabled={generatingNarrative}
+                className="px-4 py-1.5 rounded-xl text-[11px] font-semibold border hover:opacity-90 disabled:opacity-50"
+                style={{ borderColor: "#9b59b6", color: "#9b59b6", background: "#9b59b612" }}
+              >
+                {generatingNarrative ? "Génération…" : "✨ Générer la synthèse IA"}
+              </button>
+            </div>
+            {aiNarrative && (
+              <>
+                <textarea
+                  value={aiNarrative}
+                  onChange={(e) => setAiNarrative(e.target.value)}
+                  rows={4}
+                  className="w-full rounded-lg px-3 py-2 text-[12px] border resize-none"
+                  style={{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text)" }}
+                />
+                <div className="text-[10px]" style={{ color: "var(--textDim)" }}>Généré par Claude IA · Modifiable avant export</div>
+              </>
+            )}
           </div>
 
           <div className="flex gap-3">

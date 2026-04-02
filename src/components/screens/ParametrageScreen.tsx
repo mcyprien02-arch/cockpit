@@ -5,7 +5,24 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import type { Indicateur, Magasin } from "@/types";
 
-type Tab = "indicateurs" | "magasins";
+type Tab = "indicateurs" | "magasins" | "rse";
+
+interface ImportMapping {
+  id: string;
+  mot_cle: string;
+  indicateur_id: string | null;
+  indicateur_nom?: string;
+}
+
+const CREATE_TABLE_SQL = `create table if not exists import_mappings (
+  id uuid default gen_random_uuid() primary key,
+  mot_cle text not null,
+  indicateur_id uuid references indicateurs(id) on delete cascade,
+  created_at timestamptz default now(),
+  unique(mot_cle)
+);
+alter table import_mappings enable row level security;
+create policy "Accès complet" on import_mappings for all using (true);`;
 
 export function ParametrageScreen() {
   const [tab, setTab] = useState<Tab>("indicateurs");
@@ -15,6 +32,28 @@ export function ParametrageScreen() {
   const [editingInd, setEditingInd] = useState<Partial<Indicateur> | null>(null);
   const [editingMag, setEditingMag] = useState<Partial<Magasin> | null>(null);
   const [filter, setFilter] = useState("");
+  const [mappings, setMappings] = useState<ImportMapping[]>([]);
+  const [loadingMappings, setLoadingMappings] = useState(false);
+  const [mappingsError, setMappingsError] = useState(false);
+  const [newMotCle, setNewMotCle] = useState("");
+  const [newIndicateurId, setNewIndicateurId] = useState("");
+  const [rseChecks, setRseChecks] = useState<Record<string, boolean>>({});
+  const [showSql, setShowSql] = useState(false);
+
+  const RSE_ITEMS = [
+    { key: "tri_dechets", label: "Tri des déchets en place (carton, D3E, piles)" },
+    { key: "trackdechets", label: "Suivi Trackdéchets actif" },
+    { key: "eclairage_led", label: "Éclairage LED / écrans éteints 1 sur 3" },
+    { key: "espace_don", label: "Espace don en magasin (livres, CD, DVD)" },
+    { key: "partenariat_asso", label: "Partenariat association locale active" },
+    { key: "formation_equipe", label: "Formation équipe proposée ce semestre" },
+    { key: "avantages_salariaux", label: "Avantages salariaux en place (primes, CE, tickets resto)" },
+    { key: "reprise_1pour1", label: "Reprise 1 pour 1 équipements clients" },
+    { key: "sourcing_local", label: "Sourcing local privilégié vs neuf" },
+    { key: "rapport_rse", label: "Rapport RSE communiqué (magasin, Google Business)" },
+  ];
+
+  const rseScore = RSE_ITEMS.filter(item => rseChecks[item.key]).length;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -28,6 +67,39 @@ export function ParametrageScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadMappings = useCallback(async () => {
+    setLoadingMappings(true);
+    setMappingsError(false);
+    const { data, error } = await (supabase as any).from("import_mappings").select("id, mot_cle, indicateur_id, indicateurs(nom)");
+    if (error) {
+      setMappingsError(true);
+      setLoadingMappings(false);
+      return;
+    }
+    setMappings(((data ?? []) as Array<{ id: string; mot_cle: string; indicateur_id: string | null; indicateurs: { nom: string } | null }>).map((r) => ({
+      id: r.id,
+      mot_cle: r.mot_cle,
+      indicateur_id: r.indicateur_id,
+      indicateur_nom: r.indicateurs?.nom ?? "",
+    })));
+    setLoadingMappings(false);
+  }, []);
+
+  useEffect(() => { loadMappings(); }, [loadMappings]);
+
+  const addMapping = async () => {
+    if (!newMotCle.trim() || !newIndicateurId) return;
+    await (supabase as any).from("import_mappings").upsert({ mot_cle: newMotCle.trim(), indicateur_id: newIndicateurId }, { onConflict: "mot_cle" });
+    setNewMotCle("");
+    setNewIndicateurId("");
+    loadMappings();
+  };
+
+  const deleteMapping = async (id: string) => {
+    await (supabase as any).from("import_mappings").delete().eq("id", id);
+    loadMappings();
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
@@ -244,6 +316,94 @@ export function ParametrageScreen() {
           </div>
         </div>
       )}
+
+      {/* ── IMPORT MAPPINGS SECTION ─────────────────────────── */}
+      <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+        <div className="px-5 py-4 border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className="text-[13px] font-bold" style={{ color: "var(--text)" }}>🗂 Mots-clés d&apos;import personnalisés</div>
+          <div className="text-[11px] mt-1" style={{ color: "var(--textMuted)" }}>Ces associations sont utilisées lors du copier-coller intranet</div>
+        </div>
+        <div className="p-5 space-y-4" style={{ background: "var(--surfaceAlt)" }}>
+          {mappingsError ? (
+            <div className="space-y-3">
+              <div className="text-[12px]" style={{ color: "#ff4d6a" }}>
+                Table <code>import_mappings</code> non créée. SQL disponible dans la doc.
+              </div>
+              <pre className="rounded-xl p-4 text-[11px] overflow-x-auto" style={{ background: "var(--bg)", color: "var(--textMuted)", border: "1px solid var(--border)" }}>
+                {CREATE_TABLE_SQL}
+              </pre>
+            </div>
+          ) : loadingMappings ? (
+            <div className="text-[12px]" style={{ color: "var(--textMuted)" }}>Chargement…</div>
+          ) : (
+            <>
+              {/* Add form */}
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>Mot-clé</label>
+                  <input
+                    value={newMotCle}
+                    onChange={(e) => setNewMotCle(e.target.value)}
+                    placeholder="ex: taux_rachat"
+                    className="w-full rounded-lg px-3 py-2 text-[12px] border"
+                    style={{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text)" }}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>Indicateur cible</label>
+                  <select
+                    value={newIndicateurId}
+                    onChange={(e) => setNewIndicateurId(e.target.value)}
+                    className="w-full rounded-lg px-3 py-2 text-[12px] border"
+                    style={{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text)" }}
+                  >
+                    <option value="">— Sélectionner —</option>
+                    {indicateurs.map((ind) => (
+                      <option key={ind.id} value={ind.id}>{ind.nom}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={addMapping}
+                  disabled={!newMotCle.trim() || !newIndicateurId}
+                  className="px-4 py-2 rounded-xl text-[12px] font-semibold disabled:opacity-50"
+                  style={{ background: "var(--accent)", color: "#000" }}
+                >
+                  Ajouter
+                </button>
+              </div>
+
+              {/* Table */}
+              {mappings.length === 0 ? (
+                <div className="text-[12px] text-center py-4" style={{ color: "var(--textDim)" }}>Aucun mot-clé configuré</div>
+              ) : (
+                <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+                        {["Mot-clé", "Indicateur cible", ""].map((h) => (
+                          <th key={h} className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--textMuted)" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mappings.map((m, i) => (
+                        <tr key={m.id} className="border-b" style={{ background: i % 2 === 0 ? "var(--surfaceAlt)" : "var(--surface)", borderColor: "var(--border)" }}>
+                          <td className="px-4 py-2.5 font-mono" style={{ color: "var(--text)" }}>{m.mot_cle}</td>
+                          <td className="px-4 py-2.5" style={{ color: "var(--textMuted)" }}>{m.indicateur_nom ?? "—"}</td>
+                          <td className="px-4 py-2.5">
+                            <button onClick={() => deleteMapping(m.id)} className="hover:opacity-70 text-[11px]" style={{ color: "#ff4d6a" }}>🗑</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
 
       {/* ── MAGASINS TAB ─────────────────────────────────────── */}
       {tab === "magasins" && (

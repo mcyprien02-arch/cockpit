@@ -20,8 +20,27 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   dg: { color: "#ff4d6a", bg: "#ff4d6a18" },
 };
 
+function TrendChip({ current, previous }: { current: number; previous: number }) {
+  const diff = current - previous;
+  const pct = previous !== 0 ? Math.abs(diff / previous) * 100 : 0;
+  if (pct < 1) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "#8b8fa322", color: "#8b8fa3" }}>
+        → stable
+      </span>
+    );
+  }
+  const up = diff > 0;
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: up ? "#00d4aa22" : "#ff4d6a22", color: up ? "#00d4aa" : "#ff4d6a" }}>
+      {up ? "↑" : "↓"} {up ? "+" : "-"}{pct.toFixed(1)}%
+    </span>
+  );
+}
+
 export function SaisieScreen({ magasinId }: { magasinId: string }) {
   const [items, setItems] = useState<SaisieItem[]>([]);
+  const [prevValues, setPrevValues] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
@@ -57,6 +76,31 @@ export function SaisieScreen({ magasinId }: { magasinId: string }) {
     });
 
     setItems(newItems);
+
+    // Load previous values (second-to-last date)
+    const { data: prevDates } = await supabase
+      .from("valeurs")
+      .select("date_saisie")
+      .eq("magasin_id", magasinId)
+      .lt("date_saisie", saveDate)
+      .order("date_saisie", { ascending: false })
+      .limit(1);
+    if (prevDates && prevDates.length > 0) {
+      const prevDate = (prevDates[0] as { date_saisie: string }).date_saisie;
+      const { data: prevData } = await supabase
+        .from("valeurs")
+        .select("indicateur_id, valeur")
+        .eq("magasin_id", magasinId)
+        .eq("date_saisie", prevDate);
+      const pm: Record<string, number> = {};
+      (prevData ?? []).forEach((v: { indicateur_id: string; valeur: number }) => {
+        pm[v.indicateur_id] = v.valeur;
+      });
+      setPrevValues(pm);
+    } else {
+      setPrevValues({});
+    }
+
     // Open first category with alerts by default
     const firstCat = newItems.find((i) => i.status === "dg")?.indicateur.categorie;
     if (firstCat) setOpenCats({ [firstCat]: true });
@@ -298,6 +342,11 @@ export function SaisieScreen({ magasinId }: { magasinId: string }) {
                             >
                               {STATUS_LABELS[s]}
                             </span>
+                          )}
+
+                          {/* Trend chip N vs N-1 */}
+                          {item.saved !== null && prevValues[item.indicateur.id] !== undefined && (
+                            <TrendChip current={item.saved} previous={prevValues[item.indicateur.id]} />
                           )}
 
                           {/* Input */}
