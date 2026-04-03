@@ -1,37 +1,56 @@
 "use client";
 
-import { useRef } from "react";
-
 // ─── Types ────────────────────────────────────────────────────
 export type TabId =
-  | "cockpit" | "diagnostic" | "kpis" | "plan" | "pap"
-  | "balance" | "chvacv" | "competences" | "temps"
-  | "visite" | "comparatif" | "import" | "config";
+  | "cockpit"
+  | "kpis" | "diagnostic" | "import" | "comparatif" | "diagnostic_express"
+  | "balance" | "simulateur" | "chvacv"
+  | "pap" | "plan" | "competences" | "carnet"
+  | "temps" | "visite" | "config";
 
 export type AppMode = "consultant" | "franchisé";
 
 // ─── Tab groups ───────────────────────────────────────────────
 const MAIN_TABS: { id: string; label: string; icon: string }[] = [
-  { id: "cockpit",     label: "Verdict",    icon: "⚡" },
-  { id: "kpis",        label: "KPIs",       icon: "📊" },
-  { id: "pap",         label: "Actions",    icon: "🎯" },
-  { id: "competences", label: "Équipe",     icon: "👥" },
-  { id: "visite",      label: "Visite & CR", icon: "📋" },
+  { id: "cockpit",    label: "Verdict",    icon: "⚡" },
+  { id: "diagnostic_grp", label: "Diagnostic", icon: "🔬" },
+  { id: "decisions",  label: "Décisions",  icon: "💰" },
+  { id: "actions",    label: "Actions",    icon: "🎯" },
+  { id: "equipe",     label: "Équipe",     icon: "👥" },
 ];
 
 export const SUB_TABS: Record<string, { id: TabId; label: string }[]> = {
-  kpis:        [{ id: "kpis",        label: "Saisie" }, { id: "diagnostic", label: "Analyse" }, { id: "import", label: "Import" }, { id: "comparatif", label: "Comparatif" }],
-  pap:         [{ id: "pap",         label: "PAP" }, { id: "plan",       label: "Plan d'action" }, { id: "balance", label: "Balance Éco." }, { id: "chvacv", label: "CHVACV" }],
-  competences: [{ id: "competences", label: "Compétences" }, { id: "temps",      label: "Analyse Temps" }],
-  visite:      [{ id: "visite",      label: "Compte-rendu" }, { id: "config",    label: "Paramétrage" }],
+  diagnostic_grp: [
+    { id: "kpis",               label: "Saisie KPIs" },
+    { id: "diagnostic",         label: "Analyse Radar" },
+    { id: "diagnostic_express", label: "Express (3 min)" },
+    { id: "import",             label: "Import" },
+    { id: "comparatif",         label: "Comparatif" },
+  ],
+  decisions: [
+    { id: "balance",    label: "Balance Éco." },
+    { id: "simulateur", label: "Simulateur" },
+    { id: "chvacv",     label: "CHVACV" },
+  ],
+  actions: [
+    { id: "pap",         label: "PAP" },
+    { id: "plan",        label: "Plan d'action" },
+    { id: "competences", label: "Compétences" },
+    { id: "carnet",      label: "Carnet de bord" },
+  ],
+  equipe: [
+    { id: "temps",  label: "Analyse Temps" },
+    { id: "visite", label: "Compte-rendu" },
+    { id: "config", label: "Paramétrage" },
+  ],
 };
 
 export function getTabGroup(tab: TabId): string {
   if (tab === "cockpit") return "cockpit";
-  if (tab === "kpis" || tab === "diagnostic" || tab === "import" || tab === "comparatif") return "kpis";
-  if (tab === "pap" || tab === "plan" || tab === "balance" || tab === "chvacv") return "pap";
-  if (tab === "competences" || tab === "temps") return "competences";
-  if (tab === "visite" || tab === "config") return "visite";
+  if (["kpis", "diagnostic", "import", "comparatif", "diagnostic_express"].includes(tab)) return "diagnostic_grp";
+  if (["balance", "simulateur", "chvacv"].includes(tab)) return "decisions";
+  if (["pap", "plan", "competences", "carnet"].includes(tab)) return "actions";
+  if (["temps", "visite", "config"].includes(tab)) return "equipe";
   return "cockpit";
 }
 
@@ -46,8 +65,8 @@ export function Navigation({ activeTab, onTabChange, mode }: NavigationProps) {
   const currentGroup = getTabGroup(activeTab);
   const subTabs      = SUB_TABS[currentGroup] ?? [];
 
-  // Tabs visible in franchisé mode
-  const franchiseMainTabs = ["cockpit", "pap"];
+  // Franchisé mode: only Verdict + Actions
+  const franchiseMainTabs = ["cockpit", "actions"];
   const visibleMain = mode === "franchisé"
     ? MAIN_TABS.filter(t => franchiseMainTabs.includes(t.id))
     : MAIN_TABS;
@@ -62,13 +81,11 @@ export function Navigation({ activeTab, onTabChange, mode }: NavigationProps) {
             <button
               key={tab.id}
               onClick={() => {
-                // Navigate to first sub-tab or the tab itself
                 const subs = SUB_TABS[tab.id];
                 onTabChange(subs ? subs[0].id : (tab.id as TabId));
               }}
-              className="flex items-center gap-1.5 px-4 py-3.5 text-[12px] font-semibold border-b-2 transition-all whitespace-nowrap shrink-0"
+              className="flex items-center gap-1.5 px-4 py-3.5 text-[12px] font-semibold transition-all whitespace-nowrap shrink-0"
               style={{
-                borderBottomColor: isActive ? "var(--accent)" : "transparent",
                 color: isActive ? "var(--accent)" : "var(--textMuted)",
                 background: isActive ? "#00d4aa08" : "transparent",
                 fontFamily: "inherit",
@@ -88,7 +105,7 @@ export function Navigation({ activeTab, onTabChange, mode }: NavigationProps) {
       {/* Sub-tab pills */}
       {subTabs.length > 0 && (
         <div
-          className="flex items-center gap-2 max-w-[1600px] mx-auto px-4 py-2"
+          className="flex items-center gap-2 max-w-[1600px] mx-auto px-4 py-2 overflow-x-auto"
           style={{ borderTop: "1px solid var(--border)" }}
         >
           {subTabs.map(sub => {
@@ -97,7 +114,7 @@ export function Navigation({ activeTab, onTabChange, mode }: NavigationProps) {
               <button
                 key={sub.id}
                 onClick={() => onTabChange(sub.id)}
-                className="rounded-full px-3.5 py-1 text-[11px] font-semibold transition-all"
+                className="rounded-full px-3.5 py-1 text-[11px] font-semibold transition-all whitespace-nowrap shrink-0"
                 style={{
                   background: isActive ? "var(--accent)" : "var(--surfaceAlt)",
                   color: isActive ? "#000" : "var(--textMuted)",

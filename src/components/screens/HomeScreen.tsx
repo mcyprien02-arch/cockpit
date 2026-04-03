@@ -464,6 +464,111 @@ function HiddenCostRow({ label, detail, estimatedLoss, severity }: {
   );
 }
 
+// ─── Arbre de décision ───────────────────────────────────────
+interface ArbreProps {
+  valeurs: ValeurAvecIndicateur[];
+  onNavigate: (tab: string) => void;
+}
+function ArbreDecision({ valeurs, onNavigate }: ArbreProps) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const problems = [
+    { id: "argent", icon: "💰", label: "Je ne gagne pas assez d'argent" },
+    { id: "ventes", icon: "📉", label: "Mes ventes baissent" },
+    { id: "stock", icon: "📦", label: "Mon stock me pose problème" },
+    { id: "equipe", icon: "👥", label: "Mon équipe ne performe pas" },
+  ];
+
+  const getCauses = (id: string) => {
+    const find = (nom: string) => valeurs.find(v => v.indicateur_nom?.toLowerCase().includes(nom.toLowerCase()));
+    const marge = find("marge");
+    const stockAge = find("stock âg");
+    const tlac = find("tlac");
+    const panier = find("panier");
+    const transfo = find("transformation");
+    const ms = find("masse salar");
+
+    if (id === "argent") {
+      const causes = [];
+      if (marge && marge.status !== "ok") causes.push({ label: `Taux de marge à ${marge.valeur}%`, detail: `Le réseau est à 38-39%`, action: "Auditer les prix d'achat vs cote EasyPrice", tab: "kpis", color: "#ff4d6a" });
+      if (stockAge && stockAge.status !== "ok") causes.push({ label: `Stock âgé à ${stockAge.valeur}%`, detail: `Marge perdue en accélérations de déstockage`, action: "Lancer un plan de déstockage", tab: "pap", color: "#ff4d6a" });
+      if (tlac && tlac.status !== "ok") causes.push({ label: `TLAC faible (${tlac.valeur})`, detail: `Chaque article additionnel = marge directe`, action: "Formation TLAC équipe", tab: "competences", color: "#ffb347" });
+      if (causes.length === 0) causes.push({ label: "Données insuffisantes", detail: "Saisissez vos KPIs pour un diagnostic précis", action: "Saisir les KPIs", tab: "kpis", color: "#8b8fa3" });
+      return causes;
+    }
+    if (id === "ventes") {
+      const causes = [];
+      if (panier && panier.status !== "ok") causes.push({ label: `Panier moyen faible (${panier.valeur}€)`, detail: `Réseau: 97.5€ — TLAC et ventes additionnelles`, action: "Renforcer le TLAC", tab: "kpis", color: "#ff4d6a" });
+      if (transfo && transfo.status !== "ok") causes.push({ label: `Taux de transformation ${transfo.valeur}%`, detail: `Réseau: 25.4% — argumentaire à renforcer`, action: "Formation argumentation", tab: "competences", color: "#ffb347" });
+      causes.push({ label: "Animation commerciale", detail: "Bonnes affaires visibles ? Nouveautés mises en avant ?", action: "Revoir l'animation vitrine", tab: "pap", color: "#8b8fa3" });
+      return causes;
+    }
+    if (id === "stock") {
+      const causes = [];
+      if (stockAge && stockAge.status !== "ok") causes.push({ label: `${stockAge.valeur}% de stock âgé`, detail: `Argent immobilisé qui dort — réseau: ≤30%`, action: "Déstockage accéléré", tab: "balance", color: "#ff4d6a" });
+      causes.push({ label: "GMROI à optimiser", detail: "Chaque € en stock doit rapporter 3.84€ de marge/an", action: "Analyser le GMROI par rayon", tab: "kpis", color: "#ffb347" });
+      causes.push({ label: "Gamme à affiner", detail: "Doublons ? Gamme de référence respectée ?", action: "Réduire les doublons", tab: "pap", color: "#6b8fa3" });
+      return causes;
+    }
+    if (id === "equipe") {
+      if (ms && ms.status !== "ok") return [
+        { label: `Masse salariale à ${ms.valeur}%`, detail: `Réseau: ≤15% — ratio CA/ETP à améliorer`, action: "Analyser la répartition des tâches", tab: "temps", color: "#ff4d6a" },
+        { label: "Compétences à développer", detail: "La grille ISEOR identifie les lacunes par collaborateur", action: "Remplir la grille compétences", tab: "competences", color: "#a78bfa" },
+      ];
+      return [
+        { label: "Compétences ISEOR", detail: "Identifiez qui maîtrise quoi dans votre équipe", action: "Voir la grille ISEOR", tab: "competences", color: "#a78bfa" },
+        { label: "Analyse du temps", detail: "Combien de temps en vente vs admin ?", action: "Analyser la répartition du temps", tab: "temps", color: "#6b8fa3" },
+      ];
+    }
+    return [];
+  };
+
+  return (
+    <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+      <div className="px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+        <div className="text-[13px] font-bold" style={{ color: "var(--text)" }}>Quel est votre problème aujourd&apos;hui ?</div>
+      </div>
+      <div className="p-4 grid gap-2" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+        {problems.map(p => (
+          <button key={p.id} onClick={() => setSelected(selected === p.id ? null : p.id)}
+            className="text-left rounded-xl p-3 border transition-all hover:scale-[1.01]"
+            style={{
+              background: selected === p.id ? "#00d4aa12" : "var(--surfaceAlt)",
+              borderColor: selected === p.id ? "#00d4aa40" : "var(--border)",
+            }}>
+            <span className="text-[16px]">{p.icon}</span>
+            <div className="text-[11px] font-semibold mt-1 leading-tight" style={{ color: "var(--text)" }}>{p.label}</div>
+          </button>
+        ))}
+      </div>
+      <AnimatePresence>
+        {selected && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+            className="border-t space-y-2 p-4" style={{ borderColor: "var(--border)" }}>
+            <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--textMuted)" }}>
+              Causes identifiées automatiquement
+            </div>
+            {getCauses(selected).map((cause, i) => (
+              <div key={i} className="rounded-xl p-3 flex items-start gap-3" style={{ background: "var(--surfaceAlt)", border: `1px solid ${cause.color}20` }}>
+                <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: cause.color }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px] font-semibold" style={{ color: cause.color }}>{cause.label}</div>
+                  <div className="text-[11px] mt-0.5" style={{ color: "var(--textMuted)" }}>{cause.detail}</div>
+                </div>
+                <button onClick={() => onNavigate(cause.tab)}
+                  className="text-[10px] font-bold px-2 py-1 rounded-lg shrink-0"
+                  style={{ background: `${cause.color}18`, color: cause.color }}>
+                  → Agir
+                </button>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ─── Main Home Screen ─────────────────────────────────────────
 interface HomeScreenProps {
   magasinId: string;
@@ -846,6 +951,9 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
           )}
         </motion.div>
       </div>
+
+      {/* ── Arbre de décision ──────────────────────────────────── */}
+      <ArbreDecision valeurs={valeurs} onNavigate={onNavigate} />
 
       {/* ── Row 2: Score evolution sparkline ──────────────────── */}
       {visiteHistory.length >= 2 && (

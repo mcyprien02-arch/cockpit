@@ -18,6 +18,9 @@ import { BalanceEconomiqueScreen } from "@/components/screens/BalanceEconomiqueS
 import { ParametrageScreen } from "@/components/screens/ParametrageScreen";
 import { CHVACVScreen } from "@/components/screens/CHVACVScreen";
 import { AnalyseTempsScreen } from "@/components/screens/AnalyseTempsScreen";
+import { SimulateurScreen } from "@/components/screens/SimulateurScreen";
+import { DiagnosticExpressScreen } from "@/components/screens/DiagnosticExpressScreen";
+import { CarnetDeBordScreen } from "@/components/screens/CarnetDeBordScreen";
 import type { Magasin } from "@/types";
 
 // ─── Store selector ───────────────────────────────────────────
@@ -164,9 +167,8 @@ export default function App() {
   const handleModeChange = (m: AppMode) => {
     setMode(m);
     try { localStorage.setItem("app_mode", m); } catch { /* ignore */ }
-    // If current tab is restricted in new mode, redirect
     if (m === "franchisé") {
-      const allowedGroups = ["cockpit", "pap"];
+      const allowedGroups = ["cockpit", "actions"];
       if (!allowedGroups.includes(getTabGroup(activeTab))) {
         setActiveTab("cockpit");
       }
@@ -175,7 +177,7 @@ export default function App() {
 
   const selectedMagasin = magasins.find(m => m.id === selectedId) ?? null;
 
-  const CONSULTANT_ONLY: TabId[] = ["balance", "chvacv", "competences", "temps", "comparatif"];
+  const CONSULTANT_ONLY: TabId[] = ["balance", "chvacv", "simulateur", "competences", "temps", "comparatif", "diagnostic_express", "visite", "config"];
   const isRestricted = (tab: TabId) =>
     CONSULTANT_ONLY.includes(tab) && mode !== "consultant";
 
@@ -202,7 +204,7 @@ export default function App() {
     );
   }
 
-  const noStoreNeeded: TabId[] = ["comparatif", "config"];
+  const noStoreNeeded: TabId[] = ["comparatif", "config", "diagnostic_express"];
   const noStore = !selectedId && !noStoreNeeded.includes(activeTab);
 
   return (
@@ -242,84 +244,67 @@ export default function App() {
               </div>
             ) : (
               <>
-                {/* cockpit */}
+                {/* ⚡ VERDICT */}
                 {activeTab === "cockpit" && selectedId && (
                   <HomeScreen magasinId={selectedId} onNavigate={tab => setActiveTab(tab as TabId)} />
                 )}
 
-                {/* diagnostic */}
-                {activeTab === "diagnostic" && selectedId && (
-                  <DiagnosticScreen magasinId={selectedId} />
-                )}
-
-                {/* kpis */}
-                {activeTab === "kpis" && selectedId && (
-                  <SaisieScreen magasinId={selectedId} />
-                )}
-
-                {/* plan */}
-                {activeTab === "plan" && selectedId && (
-                  <PlanActionScreen magasinId={selectedId} />
-                )}
-
-                {/* pap */}
-                {activeTab === "pap" && selectedId && (
-                  <PAPScreen magasinId={selectedId} />
-                )}
-
-                {/* balance */}
-                {activeTab === "balance" && selectedId && (
-                  isRestricted("balance")
+                {/* 🔬 DIAGNOSTIC */}
+                {activeTab === "kpis" && selectedId && <SaisieScreen magasinId={selectedId} />}
+                {activeTab === "diagnostic" && selectedId && <DiagnosticScreen magasinId={selectedId} />}
+                {activeTab === "diagnostic_express" && (
+                  isRestricted("diagnostic_express")
                     ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
-                    : <BalanceEconomiqueScreen magasinId={selectedId} magasin={selectedMagasin} />
+                    : <DiagnosticExpressScreen />
                 )}
-
-                {/* chvacv */}
-                {activeTab === "chvacv" && selectedId && (
-                  isRestricted("chvacv")
-                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
-                    : <CHVACVScreen magasinId={selectedId} magasin={selectedMagasin} />
+                {activeTab === "import" && selectedId && (
+                  <ImportScreen magasinId={selectedId} magasin={selectedMagasin} onNavigate={tab => setActiveTab(tab as TabId)} />
                 )}
-
-                {/* competences */}
-                {activeTab === "competences" && selectedId && (
-                  isRestricted("competences")
-                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
-                    : <CompetencesISEORScreen magasinId={selectedId} />
-                )}
-
-                {/* temps */}
-                {activeTab === "temps" && selectedId && (
-                  isRestricted("temps")
-                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
-                    : <AnalyseTempsScreen magasinId={selectedId} />
-                )}
-
-                {/* visite */}
-                {activeTab === "visite" && selectedId && (
-                  <VisiteScreen magasin={selectedMagasin} magasinId={selectedId} />
-                )}
-
-                {/* comparatif */}
                 {activeTab === "comparatif" && (
                   isRestricted("comparatif")
                     ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
                     : <ComparatifScreen />
                 )}
 
-                {/* import */}
-                {activeTab === "import" && selectedId && (
-                  <ImportScreen
-                    magasinId={selectedId}
-                    magasin={selectedMagasin}
-                    onNavigate={tab => setActiveTab(tab as TabId)}
-                  />
+                {/* 💰 DÉCISIONS */}
+                {activeTab === "balance" && selectedId && (
+                  isRestricted("balance")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <BalanceEconomiqueScreen magasinId={selectedId} magasin={selectedMagasin} />
+                )}
+                {activeTab === "simulateur" && selectedId && (
+                  isRestricted("simulateur")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <SimulateurScreen magasinId={selectedId} />
+                )}
+                {activeTab === "chvacv" && selectedId && (
+                  isRestricted("chvacv")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <CHVACVScreen magasinId={selectedId} magasin={selectedMagasin} />
                 )}
 
-                {/* config */}
-                {activeTab === "config" && (
-                  <ParametrageScreen />
+                {/* 🎯 ACTIONS */}
+                {activeTab === "pap" && selectedId && <PAPScreen magasinId={selectedId} />}
+                {activeTab === "plan" && selectedId && <PlanActionScreen magasinId={selectedId} />}
+                {activeTab === "competences" && selectedId && (
+                  isRestricted("competences")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <CompetencesISEORScreen magasinId={selectedId} />
                 )}
+                {activeTab === "carnet" && selectedId && <CarnetDeBordScreen magasinId={selectedId} />}
+
+                {/* 👥 ÉQUIPE */}
+                {activeTab === "temps" && selectedId && (
+                  isRestricted("temps")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <AnalyseTempsScreen magasinId={selectedId} />
+                )}
+                {activeTab === "visite" && selectedId && (
+                  isRestricted("visite")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <VisiteScreen magasin={selectedMagasin} magasinId={selectedId} />
+                )}
+                {activeTab === "config" && <ParametrageScreen />}
               </>
             )}
           </motion.div>
