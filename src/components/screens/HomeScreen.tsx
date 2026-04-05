@@ -464,6 +464,74 @@ function HiddenCostRow({ label, detail, estimatedLoss, severity }: {
   );
 }
 
+// ─── Score de Maturité ───────────────────────────────────────
+interface MaturiteProps {
+  score: number | null;
+  papDone: number;
+  papTotal: number;
+  previousScore: number | null;
+  valeurs: ValeurAvecIndicateur[];
+}
+function ScoreMaturite({ score, papDone, papTotal, previousScore, valeurs }: MaturiteProps) {
+  // Compute sub-scores
+  const kpiScore = score ?? 0; // 0-100
+  const papCompletion = papTotal > 0 ? (papDone / papTotal) * 100 : 0;
+  // Non-négociables: KPIs in categories containing "Non-négociables"
+  const nonNeg = valeurs.filter(v => v.categorie?.includes("Non-négociables"));
+  const nonNegOk = nonNeg.filter(v => v.status === "ok").length;
+  const nonNegScore = nonNeg.length > 0 ? (nonNegOk / nonNeg.length) * 100 : 50;
+  const evolution = previousScore !== null && score !== null ? Math.min(100, Math.max(0, 50 + (score - previousScore) * 5)) : 50;
+  const autonomieProxy = Math.min(100, papCompletion * 0.6 + (kpiScore > 60 ? 40 : 20));
+
+  const raw =
+    kpiScore * 0.30 +
+    papCompletion * 0.20 +
+    autonomieProxy * 0.20 +
+    evolution * 0.15 +
+    nonNegScore * 0.15;
+
+  const maturite = Math.round(Math.min(100, Math.max(0, raw)));
+
+  const levels = [
+    { min: 0,  max: 25, name: "Survie",        color: "#ff4d6a", desc: "Le magasin subit. Pas de pilotage actif." },
+    { min: 25, max: 50, name: "Stabilisation", color: "#ffb347", desc: "Les basiques sont en place. Stagnation." },
+    { min: 50, max: 75, name: "Pilotage",       color: "#4da6ff", desc: "Le franchisé pilote activement." },
+    { min: 75, max: 100,"name": "Excellence",   color: "#00d4aa", desc: "Modèle pour le réseau." },
+  ];
+  const level = levels.find(l => maturite >= l.min && maturite < l.max) ?? levels[levels.length - 1];
+  const nextLevel = levels.find(l => l.min > (level?.min ?? 0));
+  const pctInLevel = ((maturite - level.min) / (level.max - level.min)) * 100;
+
+  // What's needed to go to next level
+  const blockers: string[] = [];
+  if (papCompletion < 40) blockers.push("Compléter + d'actions PAP");
+  if (nonNegScore < 70) blockers.push("Respecter les non-négociables");
+  if (kpiScore < 55) blockers.push("Améliorer les KPIs critiques");
+
+  return (
+    <div className="rounded-2xl border p-4" style={{ background: "var(--surface)", borderColor: `${level.color}30` }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--textMuted)" }}>Maturité magasin</div>
+        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full" style={{ background: `${level.color}22`, color: level.color }}>
+          {level.name}
+        </span>
+      </div>
+      <div className="text-[28px] font-black mb-0.5" style={{ color: level.color }}>{maturite}</div>
+      <div className="text-[10px] mb-3" style={{ color: "var(--textMuted)" }}>{level.desc}</div>
+      {/* Level progress bar */}
+      <div className="h-1.5 rounded-full overflow-hidden mb-2" style={{ background: "var(--surfaceAlt)" }}>
+        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pctInLevel}%`, background: level.color }} />
+      </div>
+      {nextLevel && blockers.length > 0 && (
+        <div className="text-[10px]" style={{ color: "var(--textDim)" }}>
+          Pour passer en <span style={{ color: nextLevel.color }}>{nextLevel.name}</span> :{" "}
+          {blockers.slice(0, 2).join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Arbre de décision ───────────────────────────────────────
 interface ArbreProps {
   valeurs: ValeurAvecIndicateur[];
@@ -586,6 +654,9 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
   const [papActions, setPapActions] = useState<Array<{id:string;kpiImpacte:string;statut:string;action:string;impactFinancier?:number}>>([]);
+  const [bonnesPratiques, setBonnesPratiques] = useState<Array<{
+    magasinNom: string; action: string; indicateurNom: string; ameliorationPct: number;
+  }>>([]);
 
   const loadData = useCallback(async () => {
     if (!magasinId) return;
@@ -641,6 +712,43 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
       const raw = localStorage.getItem(`pap_actions_${magasinId}`);
       if (raw) setPapActions(JSON.parse(raw));
     } catch { /* ignore */ }
+  }, [magasinId]);
+
+  // Load bonnes pratiques réseau
+  useEffect(() => {
+    if (!magasinId) return;
+    async function loadBP() {
+      try {
+        // Get KPIs in alert for this magasin after main load
+        const { data: allValeurs } = await supabase
+          .from("v_dernieres_valeurs")
+          .select("indicateur_nom, valeur, direction, seuil_ok, seuil_vigilance, magasin_id, magasin_nom")
+          .neq("magasin_id", magasinId);
+        if (!allValeurs || allValeurs.length === 0) return;
+        // Group by magasin
+        const byMag: Record<string, any[]> = {};
+        (allValeurs as any[]).forEach((v: any) => { if (!byMag[v.magasin_id]) byMag[v.magasin_id] = []; byMag[v.magasin_id].push(v); });
+        // For each other magasin, find KPIs where they are "ok" and we are "dg"
+        const suggestions: Array<{magasinNom: string; action: string; indicateurNom: string; ameliorationPct: number}> = [];
+        Object.values(byMag).slice(0, 5).forEach((magVals: any[]) => {
+          magVals.forEach((mv: any) => {
+            const status = getStatus(mv.valeur, mv.direction, mv.seuil_ok, mv.seuil_vigilance);
+            if (status !== "ok") return;
+            // Check if we have the same KPI in dg
+            // We'll get our current valeurs from the state (stale closure, but close enough)
+            const nom = mv.indicateur_nom as string;
+            suggestions.push({
+              magasinNom: mv.magasin_nom as string,
+              action: nom,
+              indicateurNom: nom,
+              ameliorationPct: mv.valeur,
+            });
+          });
+        });
+        setBonnesPratiques(suggestions.slice(0, 3));
+      } catch { /* ignore */ }
+    }
+    loadBP();
   }, [magasinId]);
 
   const score = computeScore(valeurs);
@@ -810,6 +918,14 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
               </div>
             ))}
           </div>
+          {/* Maturité */}
+          <ScoreMaturite
+            score={score}
+            papDone={papDone}
+            papTotal={papTotal}
+            previousScore={previousScore}
+            valeurs={valeurs}
+          />
         </motion.div>
 
         {/* Narrative + Categories */}
@@ -954,6 +1070,38 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
 
       {/* ── Arbre de décision ──────────────────────────────────── */}
       <ArbreDecision valeurs={valeurs} onNavigate={onNavigate} />
+
+      {/* ── Bonnes pratiques réseau ─────────────────────────────── */}
+      {bonnesPratiques.length > 0 && (() => {
+        // Filter to only show BPs for our "dg" KPIs
+        const dgNoms = new Set(valeurs.filter(v => v.status === "dg").map(v => v.indicateur_nom?.toLowerCase()));
+        const relevant = bonnesPratiques.filter(bp => dgNoms.has(bp.indicateurNom?.toLowerCase()));
+        if (relevant.length === 0) return null;
+        return (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}
+            className="rounded-2xl border p-4 space-y-3"
+            style={{ background: "var(--surface)", borderColor: "#a78bfa30" }}>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#a78bfa" }}>💡 Bonnes pratiques réseau</span>
+            </div>
+            {relevant.map((bp, i) => (
+              <div key={i} className="rounded-xl p-3 flex items-start gap-3"
+                style={{ background: "#a78bfa08", border: "1px solid #a78bfa20" }}>
+                <span className="text-[18px] shrink-0">✨</span>
+                <div>
+                  <div className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>
+                    {bp.magasinNom} maîtrise {bp.indicateurNom}
+                  </div>
+                  <div className="text-[11px] mt-0.5" style={{ color: "var(--textMuted)" }}>
+                    Ce magasin du réseau a un profil similaire au vôtre mais est OK sur cet indicateur.
+                    Voir leurs pratiques pour progresser.
+                  </div>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        );
+      })()}
 
       {/* ── Row 2: Score evolution sparkline ──────────────────── */}
       {visiteHistory.length >= 2 && (

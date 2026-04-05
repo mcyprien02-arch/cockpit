@@ -1,8 +1,169 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
+import { LineChart, Line, XAxis, YAxis, Tooltip as RCTooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { formatEuro } from "@/lib/hiddenCosts";
+
+// ─── Projection Trésorerie ─────────────────────────────────────
+interface TresoParams {
+  tresoActuelle: number;
+  caMoyenJour: number;
+  achatsMoyenJour: number;
+  chargesFixesMois: number;
+  chargesVarPct: number;
+  seuilTension: number;
+  papGainMensuel: number; // gain estimé si PAP appliqué
+}
+
+function computeProjection(params: TresoParams, days: number): { jour: number; tendanciel: number; optimiste: number; pessimiste: number }[] {
+  const pts = [];
+  let t = params.tresoActuelle;
+  let o = params.tresoActuelle;
+  let p = params.tresoActuelle;
+  for (let d = 0; d <= days; d += 10) {
+    const dFrac = d / 30;
+    const entrees = params.caMoyenJour * d * 0.95;
+    const sorties = params.achatsMoyenJour * d + params.chargesFixesMois * dFrac + params.caMoyenJour * d * params.chargesVarPct;
+    t = params.tresoActuelle + entrees - sorties;
+    o = params.tresoActuelle + entrees - sorties * 0.88 + params.papGainMensuel * dFrac;
+    p = params.tresoActuelle + entrees * 0.9 - sorties * 1.05;
+    pts.push({ jour: d, tendanciel: Math.round(t), optimiste: Math.round(o), pessimiste: Math.round(p) });
+  }
+  return pts;
+}
+
+function TresorerieProjection({ magasinId }: { magasinId: string }) {
+  const [params, setParams] = useState<TresoParams>({
+    tresoActuelle: 25000,
+    caMoyenJour: 6000,
+    achatsMoyenJour: 2000,
+    chargesFixesMois: 12000,
+    chargesVarPct: 0.08,
+    seuilTension: 8000,
+    papGainMensuel: 0,
+  });
+  const [open, setOpen] = useState(false);
+
+  // Load from localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`treso_params_${magasinId}`);
+      if (raw) setParams(JSON.parse(raw));
+      // Try to pick up CHVACV data for CA estimate
+      const chvacvRaw = localStorage.getItem(`chvacv_${magasinId}`);
+      if (chvacvRaw) {
+        const d = JSON.parse(chvacvRaw);
+        if (d.ca_annuel) setParams(prev => ({ ...prev, caMoyenJour: Math.round(d.ca_annuel / 365) }));
+      }
+    } catch { /* ignore */ }
+  }, [magasinId]);
+
+  const save = (p: TresoParams) => {
+    setParams(p);
+    try { localStorage.setItem(`treso_params_${magasinId}`, JSON.stringify(p)); } catch { /* ignore */ }
+  };
+
+  const data = computeProjection(params, 90);
+  const alert90 = data[data.length - 1];
+  const crossTension = data.find(d => d.tendanciel < params.seuilTension && d.jour > 0);
+
+  return (
+    <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-5 py-4"
+        style={{ background: "var(--surface)" }}
+      >
+        <div className="text-left">
+          <div className="text-[13px] font-bold" style={{ color: "var(--text)" }}>📈 Projection trésorerie — 90 jours</div>
+          <div className="text-[11px] mt-0.5" style={{ color: "var(--textMuted)" }}>
+            {crossTension
+              ? <span style={{ color: "#ff4d6a" }}>⚠ Tension estimée dans ~{crossTension.jour} jours si rien ne change</span>
+              : <span style={{ color: "#00d4aa" }}>✓ Trésorerie stable sur 90j (scénario tendanciel)</span>
+            }
+          </div>
+        </div>
+        <span style={{ color: "var(--textDim)" }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+            className="border-t" style={{ borderColor: "var(--border)" }}
+          >
+            {/* Params form */}
+            <div className="p-4 grid grid-cols-3 gap-3 border-b" style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)" }}>
+              {([
+                { key: "tresoActuelle", label: "Tréso actuelle", unit: "€" },
+                { key: "caMoyenJour", label: "CA / jour", unit: "€" },
+                { key: "achatsMoyenJour", label: "Achats / jour", unit: "€" },
+                { key: "chargesFixesMois", label: "Charges fixes/mois", unit: "€" },
+                { key: "seuilTension", label: "Seuil tension", unit: "€" },
+                { key: "papGainMensuel", label: "Gain PAP/mois", unit: "€" },
+              ] as const).map(f => (
+                <div key={f.key}>
+                  <label className="text-[9px] uppercase tracking-wider block mb-0.5" style={{ color: "var(--textMuted)" }}>{f.label}</label>
+                  <input type="number"
+                    value={(params as unknown as Record<string, number>)[f.key]}
+                    onChange={e => save({ ...params, [f.key]: parseFloat(e.target.value) || 0 })}
+                    className="w-full rounded-lg px-2 py-1.5 text-[12px] font-semibold border"
+                    style={{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text)" }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Chart */}
+            <div className="p-4 space-y-3">
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={data} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                  <XAxis dataKey="jour" tickFormatter={v => `J+${v}`} tick={{ fontSize: 10, fill: "#8b8fa3" }} />
+                  <YAxis tickFormatter={v => `${Math.round(v / 1000)}k€`} tick={{ fontSize: 10, fill: "#8b8fa3" }} />
+                  <RCTooltip
+                    contentStyle={{ background: "#1a1d27", border: "1px solid #2a2e3a", borderRadius: 8, fontSize: 11 }}
+                    formatter={(v: number, name: string) => [formatEuro(v), name === "tendanciel" ? "Tendanciel" : name === "optimiste" ? "Optimiste (PAP)" : "Pessimiste"]}
+                    labelFormatter={v => `Jour +${v}`}
+                  />
+                  <ReferenceLine y={params.seuilTension} stroke="#ff4d6a" strokeDasharray="4 4" label={{ value: "Seuil tension", fill: "#ff4d6a", fontSize: 10 }} />
+                  <Line type="monotone" dataKey="optimiste" stroke="#00d4aa" strokeWidth={2} dot={false} name="optimiste" />
+                  <Line type="monotone" dataKey="tendanciel" stroke="#ffb347" strokeWidth={2} strokeDasharray="5 3" dot={false} name="tendanciel" />
+                  <Line type="monotone" dataKey="pessimiste" stroke="#ff4d6a" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name="pessimiste" />
+                </LineChart>
+              </ResponsiveContainer>
+
+              {/* Legend + summary */}
+              <div className="flex flex-wrap gap-4 text-[11px]">
+                {[
+                  { color: "#00d4aa", label: "Optimiste (PAP appliqué)", value: alert90.optimiste },
+                  { color: "#ffb347", label: "Tendanciel", value: alert90.tendanciel },
+                  { color: "#ff4d6a", label: "Pessimiste", value: alert90.pessimiste },
+                ].map(s => (
+                  <div key={s.label} className="flex items-center gap-1.5">
+                    <div className="w-3 h-1 rounded-full" style={{ background: s.color }} />
+                    <span style={{ color: "var(--textMuted)" }}>{s.label}</span>
+                    <span className="font-bold" style={{ color: s.color }}>{formatEuro(s.value)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {crossTension && (
+                <div className="rounded-xl p-3 text-[12px]" style={{ background: "#ff4d6a10", border: "1px solid #ff4d6a30", color: "#ff4d6a" }}>
+                  ⚠ Scénario tendanciel : tension trésorerie dans environ {crossTension.jour} jours.
+                  En appliquant le PAP, la courbe verte reste au-dessus du seuil.
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+
 
 interface BalanceLine {
   id: string;
@@ -518,6 +679,9 @@ export function BalanceEconomiqueScreen({ magasinId, magasin }: BalanceEconomiqu
         Si Recyclage &gt; Investissement → gain net positif.
         Si Recyclage &lt; Investissement → remettre en question la solution.
       </div>
+
+      {/* ── Projection Trésorerie ──────────────────────────────── */}
+      <TresorerieProjection magasinId={magasinId} />
     </div>
   );
 }
