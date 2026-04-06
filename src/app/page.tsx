@@ -21,6 +21,10 @@ import { AnalyseTempsScreen } from "@/components/screens/AnalyseTempsScreen";
 import { SimulateurScreen } from "@/components/screens/SimulateurScreen";
 import { DiagnosticExpressScreen } from "@/components/screens/DiagnosticExpressScreen";
 import { CarnetDeBordScreen } from "@/components/screens/CarnetDeBordScreen";
+import { MaJourneeScreen } from "@/components/screens/MaJourneeScreen";
+import { AvisClientsScreen } from "@/components/screens/AvisClientsScreen";
+import { VictoiresScreen } from "@/components/screens/VictoiresScreen";
+import { AssistantWidget } from "@/components/AssistantWidget";
 import type { Magasin } from "@/types";
 
 // ─── Store selector ───────────────────────────────────────────
@@ -129,7 +133,7 @@ function RestrictedScreen({ onSwitchMode }: { onSwitchMode: () => void }) {
 export default function App() {
   const [magasins, setMagasins]   = useState<Magasin[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<TabId>("cockpit");
+  const [activeTab, setActiveTab] = useState<TabId>("journee");
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [mode, setMode]           = useState<AppMode>("consultant");
@@ -168,9 +172,9 @@ export default function App() {
     setMode(m);
     try { localStorage.setItem("app_mode", m); } catch { /* ignore */ }
     if (m === "franchisé") {
-      const allowedGroups = ["cockpit", "actions"];
+      const allowedGroups = ["journee_grp", "actions"];
       if (!allowedGroups.includes(getTabGroup(activeTab))) {
-        setActiveTab("cockpit");
+        setActiveTab("journee");
       }
     }
   };
@@ -204,11 +208,12 @@ export default function App() {
     );
   }
 
-  const noStoreNeeded: TabId[] = ["comparatif", "config", "diagnostic_express"];
+  const noStoreNeeded: TabId[] = ["comparatif", "config", "diagnostic_express", "avis_clients"];
   const noStore = !selectedId && !noStoreNeeded.includes(activeTab);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)" }}>
+      <AssistantWidget />
       <AppHeader
         magasins={magasins}
         selectedId={selectedId}
@@ -244,6 +249,11 @@ export default function App() {
               </div>
             ) : (
               <>
+                {/* ☀️ MA JOURNÉE */}
+                {activeTab === "journee" && selectedId && <MaJourneeScreen magasinId={selectedId} />}
+                {activeTab === "avis_clients" && <AvisClientsScreen />}
+                {activeTab === "victoires" && selectedId && <VictoiresScreen magasinId={selectedId} />}
+
                 {/* ⚡ VERDICT */}
                 {activeTab === "cockpit" && selectedId && (
                   <HomeScreen magasinId={selectedId} onNavigate={tab => setActiveTab(tab as TabId)} />

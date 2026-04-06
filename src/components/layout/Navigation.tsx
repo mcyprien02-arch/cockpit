@@ -2,8 +2,8 @@
 
 // ─── Types ────────────────────────────────────────────────────
 export type TabId =
-  | "cockpit"
-  | "kpis" | "diagnostic" | "import" | "comparatif" | "diagnostic_express"
+  | "journee" | "avis_clients" | "victoires"
+  | "cockpit" | "kpis" | "diagnostic" | "import" | "comparatif" | "diagnostic_express"
   | "balance" | "simulateur" | "chvacv"
   | "pap" | "plan" | "competences" | "carnet"
   | "temps" | "visite" | "config";
@@ -12,15 +12,21 @@ export type AppMode = "consultant" | "franchisé";
 
 // ─── Tab groups ───────────────────────────────────────────────
 const MAIN_TABS: { id: string; label: string; icon: string }[] = [
-  { id: "cockpit",    label: "Verdict",    icon: "⚡" },
-  { id: "diagnostic_grp", label: "Diagnostic", icon: "🔬" },
-  { id: "decisions",  label: "Décisions",  icon: "💰" },
-  { id: "actions",    label: "Actions",    icon: "🎯" },
-  { id: "equipe",     label: "Équipe",     icon: "👥" },
+  { id: "journee_grp", label: "Ma journée", icon: "☀️" },
+  { id: "verdict_grp", label: "Verdict",    icon: "⚡" },
+  { id: "decisions",   label: "Décisions",  icon: "💰" },
+  { id: "actions",     label: "Actions",    icon: "🎯" },
+  { id: "equipe",      label: "Équipe",     icon: "👥" },
 ];
 
 export const SUB_TABS: Record<string, { id: TabId; label: string }[]> = {
-  diagnostic_grp: [
+  journee_grp: [
+    { id: "journee",      label: "Rituel du matin" },
+    { id: "avis_clients", label: "Voix du client" },
+    { id: "victoires",    label: "Victoires" },
+  ],
+  verdict_grp: [
+    { id: "cockpit",            label: "Tableau de bord" },
     { id: "kpis",               label: "Saisie KPIs" },
     { id: "diagnostic",         label: "Analyse Radar" },
     { id: "diagnostic_express", label: "Express (3 min)" },
@@ -46,12 +52,12 @@ export const SUB_TABS: Record<string, { id: TabId; label: string }[]> = {
 };
 
 export function getTabGroup(tab: TabId): string {
-  if (tab === "cockpit") return "cockpit";
-  if (["kpis", "diagnostic", "import", "comparatif", "diagnostic_express"].includes(tab)) return "diagnostic_grp";
+  if (["journee", "avis_clients", "victoires"].includes(tab)) return "journee_grp";
+  if (["cockpit", "kpis", "diagnostic", "import", "comparatif", "diagnostic_express"].includes(tab)) return "verdict_grp";
   if (["balance", "simulateur", "chvacv"].includes(tab)) return "decisions";
   if (["pap", "plan", "competences", "carnet"].includes(tab)) return "actions";
   if (["temps", "visite", "config"].includes(tab)) return "equipe";
-  return "cockpit";
+  return "verdict_grp";
 }
 
 // ─── Navigation ───────────────────────────────────────────────
@@ -65,8 +71,8 @@ export function Navigation({ activeTab, onTabChange, mode }: NavigationProps) {
   const currentGroup = getTabGroup(activeTab);
   const subTabs      = SUB_TABS[currentGroup] ?? [];
 
-  // Franchisé mode: only Verdict + Actions
-  const franchiseMainTabs = ["cockpit", "actions"];
+  // Franchisé mode: only Ma journée + Actions
+  const franchiseMainTabs = ["journee_grp", "actions"];
   const visibleMain = mode === "franchisé"
     ? MAIN_TABS.filter(t => franchiseMainTabs.includes(t.id))
     : MAIN_TABS;
