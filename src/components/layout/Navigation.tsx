@@ -2,62 +2,39 @@
 
 // ─── Types ────────────────────────────────────────────────────
 export type TabId =
-  | "journee" | "avis_clients" | "victoires"
-  | "cockpit" | "kpis" | "diagnostic" | "import" | "comparatif" | "diagnostic_express"
-  | "balance" | "simulateur" | "chvacv"
-  | "pap" | "plan" | "competences" | "carnet"
-  | "temps" | "visite" | "config";
+  | "verdict"
+  | "kpis_gps" | "saisie" | "balance" | "chvacv"
+  | "pap" | "competences" | "export" | "config";
 
 export type AppMode = "consultant" | "franchisé";
 
 // ─── Tab groups ───────────────────────────────────────────────
 const MAIN_TABS: { id: string; label: string; icon: string }[] = [
-  { id: "journee_grp", label: "Ma journée", icon: "☀️" },
-  { id: "verdict_grp", label: "Verdict",    icon: "⚡" },
-  { id: "decisions",   label: "Décisions",  icon: "💰" },
-  { id: "actions",     label: "Actions",    icon: "🎯" },
-  { id: "equipe",      label: "Équipe",     icon: "👥" },
+  { id: "verdict",   label: "Verdict",   icon: "⚡" },
+  { id: "decisions", label: "Décisions", icon: "💰" },
+  { id: "actions",   label: "Actions",   icon: "🎯" },
 ];
 
 export const SUB_TABS: Record<string, { id: TabId; label: string }[]> = {
-  journee_grp: [
-    { id: "journee",      label: "Rituel du matin" },
-    { id: "avis_clients", label: "Voix du client" },
-    { id: "victoires",    label: "Victoires" },
-  ],
-  verdict_grp: [
-    { id: "cockpit",            label: "Tableau de bord" },
-    { id: "kpis",               label: "Saisie KPIs" },
-    { id: "diagnostic",         label: "Analyse Radar" },
-    { id: "diagnostic_express", label: "Express (3 min)" },
-    { id: "import",             label: "Import" },
-    { id: "comparatif",         label: "Comparatif" },
-  ],
   decisions: [
-    { id: "balance",    label: "Balance Éco." },
-    { id: "simulateur", label: "Simulateur" },
-    { id: "chvacv",     label: "CHVACV" },
+    { id: "kpis_gps",  label: "KPIs priorités" },
+    { id: "saisie",    label: "Saisir KPIs" },
+    { id: "balance",   label: "Balance éco." },
+    { id: "chvacv",    label: "CHVACV" },
   ],
   actions: [
-    { id: "pap",         label: "PAP" },
-    { id: "plan",        label: "Plan d'action" },
+    { id: "pap",         label: "Plan d'action" },
     { id: "competences", label: "Compétences" },
-    { id: "carnet",      label: "Carnet de bord" },
-  ],
-  equipe: [
-    { id: "temps",  label: "Analyse Temps" },
-    { id: "visite", label: "Compte-rendu" },
-    { id: "config", label: "Paramétrage" },
+    { id: "export",      label: "Export CR" },
+    { id: "config",      label: "Paramétrage" },
   ],
 };
 
 export function getTabGroup(tab: TabId): string {
-  if (["journee", "avis_clients", "victoires"].includes(tab)) return "journee_grp";
-  if (["cockpit", "kpis", "diagnostic", "import", "comparatif", "diagnostic_express"].includes(tab)) return "verdict_grp";
-  if (["balance", "simulateur", "chvacv"].includes(tab)) return "decisions";
-  if (["pap", "plan", "competences", "carnet"].includes(tab)) return "actions";
-  if (["temps", "visite", "config"].includes(tab)) return "equipe";
-  return "verdict_grp";
+  if (tab === "verdict") return "verdict";
+  if (["kpis_gps", "saisie", "balance", "chvacv"].includes(tab)) return "decisions";
+  if (["pap", "competences", "export", "config"].includes(tab)) return "actions";
+  return "verdict";
 }
 
 // ─── Navigation ───────────────────────────────────────────────
@@ -69,10 +46,9 @@ interface NavigationProps {
 
 export function Navigation({ activeTab, onTabChange, mode }: NavigationProps) {
   const currentGroup = getTabGroup(activeTab);
-  const subTabs      = SUB_TABS[currentGroup] ?? [];
+  const subTabs = SUB_TABS[currentGroup] ?? [];
 
-  // Franchisé mode: only Ma journée + Actions
-  const franchiseMainTabs = ["journee_grp", "actions"];
+  const franchiseMainTabs = ["verdict", "actions"];
   const visibleMain = mode === "franchisé"
     ? MAIN_TABS.filter(t => franchiseMainTabs.includes(t.id))
     : MAIN_TABS;
