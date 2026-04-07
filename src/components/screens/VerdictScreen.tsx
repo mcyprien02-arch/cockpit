@@ -341,6 +341,7 @@ interface VerdictScreenProps {
 export function VerdictScreen({ magasinId, onNavigate, mode }: VerdictScreenProps) {
   const [valeurs, setValeurs] = useState<ValeurAvecIndicateur[]>([]);
   const [papActions, setPapActions] = useState<{ id: string; action: string; echeance?: string; priorite?: string }[]>([]);
+  const [bonnesPratiques, setBonnesPratiques] = useState<{ action: string; magasinNom: string; kpi: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -381,6 +382,23 @@ export function VerdictScreen({ magasinId, onNavigate, mode }: VerdictScreenProp
         if (raw) setPapActions(JSON.parse(raw));
       } catch { /* ignore */ }
     }
+
+    // Load bonnes pratiques from DB
+    try {
+      const { data: bpData } = await (supabase as any)
+        .from("bonnes_pratiques")
+        .select("action_source, indicateur_nom, magasins(nom)")
+        .eq("magasin_source_id", magasinId)
+        .order("amelioration_pct", { ascending: false })
+        .limit(3);
+      if (bpData && bpData.length > 0) {
+        setBonnesPratiques(bpData.map((r: any) => ({
+          action: r.action_source,
+          magasinNom: r.magasins?.nom ?? "Autre magasin",
+          kpi: r.indicateur_nom,
+        })));
+      }
+    } catch { /* table may not exist yet */ }
 
     setLoading(false);
   }, [magasinId]);
@@ -552,6 +570,67 @@ export function VerdictScreen({ magasinId, onNavigate, mode }: VerdictScreenProp
       {/* ── GMROI (consultant only, discrete) ─────────────── */}
       {mode === "consultant" && (
         <GmroiWidget valeurs={valeurs} />
+      )}
+
+      {/* ── Stock insight (si problème stock détecté) ──────── */}
+      {(() => {
+        const stockAge = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("stock âg"));
+        const gmroi    = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("gmroi"));
+        const stockVal = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("valeur stock"))?.valeur;
+        if (!stockAge || stockAge.status === "ok") return null;
+        const vieuxEuro = stockVal ? Math.round((stockAge.valeur / 100) * stockVal) : null;
+        const gmroiOk = gmroi && gmroi.valeur >= 3.84;
+        return (
+          <div
+            className="rounded-2xl p-4 flex items-start gap-3"
+            style={{ background: "#ff4d6a08", border: "1px solid #ff4d6a25" }}
+          >
+            <span className="text-[22px] shrink-0">🧊</span>
+            <div className="flex-1">
+              <div className="text-[12px] font-bold mb-0.5" style={{ color: "#ff4d6a" }}>
+                Votre stock âgé ({stockAge.valeur}%) freine votre performance
+              </div>
+              <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
+                {vieuxEuro
+                  ? `~${formatEuro(vieuxEuro)} immobilisés qui ne génèrent plus de marge. `
+                  : "De la trésorerie dort au lieu de tourner. "}
+                {gmroiOk ? "Votre GMROI reste bon — concentrez-vous sur la rotation." : "Chaque jour de retard aggrave votre GMROI."}
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigate("kpis_gps")}
+              className="rounded-xl px-3 py-1.5 text-[10px] font-bold shrink-0"
+              style={{ background: "#ff4d6a18", color: "#ff4d6a", border: "1px solid #ff4d6a30", cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Voir plan →
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* ── Bonnes pratiques réseau ───────────────────────── */}
+      {mode === "consultant" && bonnesPratiques.length > 0 && (
+        <div
+          className="rounded-2xl p-4"
+          style={{ background: "var(--surface)", border: "1px solid #4da6ff30" }}
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: "#4da6ff" }}>
+            💡 BONNES PRATIQUES RÉSEAU
+          </div>
+          <div className="space-y-2">
+            {bonnesPratiques.map((bp, i) => (
+              <div key={i} className="flex items-start gap-2 text-[12px]">
+                <span style={{ color: "#4da6ff" }}>→</span>
+                <div>
+                  <span style={{ color: "var(--text)" }}>{bp.action}</span>
+                  <span className="ml-1.5 text-[10px]" style={{ color: "var(--textDim)" }}>
+                    (KPI : {bp.kpi})
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ── Consultant quick links ────────────────────────── */}

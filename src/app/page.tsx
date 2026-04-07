@@ -242,7 +242,7 @@ export default function App() {
                 {activeTab === "kpis_gps" && selectedId && (
                   isRestricted("kpis_gps")
                     ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
-                    : <KPIsGPSScreen magasinId={selectedId} onNavigate={tab => setActiveTab(tab as TabId)} />
+                    : <KPIsGPSScreen magasinId={selectedId} onNavigate={tab => setActiveTab(tab as TabId)} phaseVie={selectedMagasin?.phase_vie} />
                 )}
                 {activeTab === "saisie" && selectedId && (
                   <SaisieScreen magasinId={selectedId} />

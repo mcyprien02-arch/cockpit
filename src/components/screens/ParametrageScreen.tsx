@@ -506,7 +506,7 @@ create policy "Accès complet" on rse_checklist for all using (true);`}
         <div className="space-y-4">
           <div className="flex justify-end">
             <button
-              onClick={() => setEditingMag({ nom: "", ville: "", franchise: "" })}
+              onClick={() => setEditingMag({ nom: "", ville: "", franchise: "", phase_vie: "maturite" })}
               className="px-4 py-2 rounded-xl text-[12px] font-semibold"
               style={{ background: "var(--accent)", color: "#000" }}
             >
@@ -540,10 +540,84 @@ create policy "Accès complet" on rse_checklist for all using (true);`}
                         value={(editingMag as Record<string, string>)[key] ?? ""}
                         onChange={(e) => setEditingMag((p) => ({ ...p!, [key]: e.target.value }))}
                         className="w-full rounded-lg px-3 py-2 text-[12px] border"
-                        style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
+                        style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)", fontFamily: "inherit" }}
                       />
                     </div>
                   ))}
+                </div>
+
+                {/* Phase de vie + données contextuelles */}
+                <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--border)" }}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: "var(--textDim)" }}>
+                    CONTEXTE MAGASIN
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    {/* Phase de vie */}
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>
+                        Phase de vie
+                      </label>
+                      <select
+                        value={editingMag.phase_vie ?? "maturite"}
+                        onChange={e => setEditingMag(p => ({ ...p!, phase_vie: e.target.value as "lancement" | "croissance" | "maturite" }))}
+                        className="w-full rounded-lg px-3 py-2 text-[12px] border"
+                        style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)", fontFamily: "inherit" }}
+                      >
+                        <option value="lancement">🚀 Lancement (&lt; 2 ans)</option>
+                        <option value="croissance">📈 Croissance (2–5 ans)</option>
+                        <option value="maturite">🏆 Maturité (&gt; 5 ans)</option>
+                      </select>
+                      <div className="text-[9px] mt-1" style={{ color: "var(--textDim)" }}>
+                        {editingMag.phase_vie === "lancement" && "Focus : acquisition stock & gamme de base"}
+                        {editingMag.phase_vie === "croissance" && "Focus : structuration & CA par ETP"}
+                        {(editingMag.phase_vie === "maturite" || !editingMag.phase_vie) && "Focus : rentabilité, GMROI & EBE"}
+                      </div>
+                    </div>
+
+                    {/* Année d'ouverture */}
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>
+                        Année d'ouverture
+                      </label>
+                      <input
+                        type="number"
+                        min={2000}
+                        max={new Date().getFullYear()}
+                        value={editingMag.annee_ouverture ?? ""}
+                        onChange={e => setEditingMag(p => ({ ...p!, annee_ouverture: e.target.value ? parseInt(e.target.value) : null }))}
+                        placeholder={String(new Date().getFullYear())}
+                        className="w-full rounded-lg px-3 py-2 text-[12px] border"
+                        style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)", fontFamily: "inherit" }}
+                      />
+                      {editingMag.annee_ouverture && (
+                        <div className="text-[9px] mt-1" style={{ color: "var(--textDim)" }}>
+                          {new Date().getFullYear() - editingMag.annee_ouverture} an{new Date().getFullYear() - editingMag.annee_ouverture > 1 ? "s" : ""} d'ancienneté
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Surface m² */}
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>
+                        Surface (m²)
+                      </label>
+                      <input
+                        type="number"
+                        min={50}
+                        max={1000}
+                        value={editingMag.surface_m2 ?? ""}
+                        onChange={e => setEditingMag(p => ({ ...p!, surface_m2: e.target.value ? parseInt(e.target.value) : null }))}
+                        placeholder="ex. 200"
+                        className="w-full rounded-lg px-3 py-2 text-[12px] border"
+                        style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)", fontFamily: "inherit" }}
+                      />
+                      {editingMag.surface_m2 && (
+                        <div className="text-[9px] mt-1" style={{ color: "var(--textDim)" }}>
+                          Cible CA : ~{(editingMag.surface_m2 * 7700 / 12).toLocaleString("fr-FR", { maximumFractionDigits: 0 })}€/mois
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 <div className="flex gap-3 mt-4">
                   <button onClick={saveMagasin} className="px-5 py-2 rounded-xl text-[12px] font-semibold" style={{ background: "var(--accent)", color: "#000" }}>
@@ -569,7 +643,27 @@ create policy "Accès complet" on rse_checklist for all using (true);`}
               >
                 <div className="font-semibold text-[13px] mb-1" style={{ color: "var(--text)" }}>{m.nom}</div>
                 <div className="text-[11px] mb-0.5" style={{ color: "var(--textMuted)" }}>{m.ville}</div>
-                <div className="text-[11px] mb-3" style={{ color: "var(--textDim)" }}>{m.franchise}</div>
+                <div className="text-[11px] mb-2" style={{ color: "var(--textDim)" }}>{m.franchise}</div>
+                <div className="flex gap-1.5 flex-wrap mb-3">
+                  {m.phase_vie && (
+                    <span className="rounded-full px-2 py-0.5 text-[9px] font-bold" style={{
+                      background: m.phase_vie === "lancement" ? "#ff4d6a18" : m.phase_vie === "croissance" ? "#ffb34718" : "#00d4aa18",
+                      color: m.phase_vie === "lancement" ? "#ff4d6a" : m.phase_vie === "croissance" ? "#ffb347" : "#00d4aa",
+                    }}>
+                      {m.phase_vie === "lancement" ? "🚀 Lancement" : m.phase_vie === "croissance" ? "📈 Croissance" : "🏆 Maturité"}
+                    </span>
+                  )}
+                  {m.surface_m2 && (
+                    <span className="rounded-full px-2 py-0.5 text-[9px] font-semibold" style={{ background: "var(--surfaceAlt)", color: "var(--textDim)" }}>
+                      {m.surface_m2} m²
+                    </span>
+                  )}
+                  {m.annee_ouverture && (
+                    <span className="rounded-full px-2 py-0.5 text-[9px] font-semibold" style={{ background: "var(--surfaceAlt)", color: "var(--textDim)" }}>
+                      Ouvert {m.annee_ouverture}
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <button onClick={() => setEditingMag({ ...m })} className="text-[11px] px-3 py-1 rounded-lg border hover:opacity-80" style={{ borderColor: "var(--border)", color: "var(--textMuted)" }}>
                     ✏️ Modifier

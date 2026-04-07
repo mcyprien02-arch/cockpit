@@ -5,6 +5,9 @@ export interface Magasin {
   nom: string;
   ville: string | null;
   franchise: string | null;
+  phase_vie?: "lancement" | "croissance" | "maturite" | null;
+  annee_ouverture?: number | null;
+  surface_m2?: number | null;
 }
 
 export interface Indicateur {

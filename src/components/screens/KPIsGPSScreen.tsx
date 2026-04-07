@@ -213,13 +213,233 @@ const CAS_TYPES = [
   },
 ];
 
+// ─── GMROI Stock Pedagogy Panel ───────────────────────────────
+function GmroiStockPanel({ valeurs }: { valeurs: ValeurAvecIndicateur[] }) {
+  const [open, setOpen] = useState(true);
+
+  const gmroi = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("gmroi"));
+  const stockVal = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("valeur stock"))?.valeur ?? null;
+  const stockAge = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("stock âg"))?.valeur ?? null;
+  const marge = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("marge") && !v.indicateur_nom?.toLowerCase().includes("nette"))?.valeur ?? null;
+
+  const currentGmroi = gmroi?.valeur ?? null;
+  const BENCHMARK = 3.84;
+
+  // 3 profils de stock
+  const PROFILS = [
+    { label: "Stock 120k€", stock: 120000, gmroiBas: 2.5, gmroiCible: 3.84, color: "#ff4d6a" },
+    { label: "Stock 200k€", stock: 200000, gmroiBas: 2.5, gmroiCible: 3.84, color: "#ffb347" },
+    { label: "Stock 300k€", stock: 300000, gmroiBas: 2.5, gmroiCible: 3.84, color: "#00d4aa" },
+  ];
+
+  // Annual margin generated at current vs benchmark GMROI
+  const margeBas   = stockVal && currentGmroi ? Math.round(stockVal * currentGmroi)   : null;
+  const margeCible = stockVal ? Math.round(stockVal * BENCHMARK) : null;
+  const gainPotentiel = margeBas !== null && margeCible !== null ? margeCible - margeBas : null;
+
+  // Vieux stock cost
+  const vieuxStockEuro = stockVal && stockAge ? Math.round((stockAge / 100) * stockVal) : null;
+  const vieuxStockCout = vieuxStockEuro ? Math.round(vieuxStockEuro * 0.15) : null; // ~15%/an immobilisation
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--surface)", border: "1px solid #00d4aa30" }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-5 py-4"
+        style={{ background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[16px]" style={{ background: "#00d4aa18" }}>
+            💡
+          </div>
+          <div className="text-left">
+            <div className="text-[13px] font-bold" style={{ color: "var(--text)" }}>
+              Pour 1€ investi en stock, combien vous générez ?
+            </div>
+            <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
+              GMROI · Rendement du stock · Profils réseau
+            </div>
+          </div>
+        </div>
+        <span className="text-[12px]" style={{ color: "var(--textDim)" }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-5 border-t" style={{ borderColor: "var(--border)" }}>
+
+          {/* Message clé */}
+          <div
+            className="rounded-xl p-4 text-[13px] font-medium leading-relaxed mt-4"
+            style={{ background: "#00d4aa0a", border: "1px solid #00d4aa25", color: "var(--text)" }}
+          >
+            <span style={{ color: "#00d4aa", fontWeight: 700 }}>Règle d'or :</span>{" "}
+            Votre stock, c'est votre argent. S'il dort, il vous coûte. S'il tourne, il vous enrichit.
+            <br />
+            <span className="text-[11px] mt-1 block" style={{ color: "var(--textMuted)" }}>
+              On ne double pas la marge en doublant le stock — l'efficacité de chaque euro prime sur le volume.
+            </span>
+          </div>
+
+          {/* GMROI actuel vs cible */}
+          {currentGmroi !== null && (
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: "var(--textDim)" }}>
+                VOTRE GMROI ACTUEL
+              </div>
+              <div className="flex items-end gap-6 flex-wrap">
+                <div>
+                  <div
+                    className="text-[40px] font-black"
+                    style={{ color: currentGmroi >= BENCHMARK ? "#00d4aa" : currentGmroi >= 2.5 ? "#ffb347" : "#ff4d6a" }}
+                  >
+                    {currentGmroi.toFixed(2)}
+                  </div>
+                  <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
+                    Pour 1€ investi → {currentGmroi.toFixed(2)}€ de marge générée/an
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-[13px]">
+                  <div>
+                    <div className="text-[11px] mb-0.5" style={{ color: "var(--textDim)" }}>Réseau cible</div>
+                    <div className="font-black" style={{ color: "#00d4aa" }}>{BENCHMARK}</div>
+                  </div>
+                  {gainPotentiel !== null && gainPotentiel > 0 && (
+                    <div
+                      className="rounded-xl px-4 py-2"
+                      style={{ background: "#ff4d6a12", border: "1px solid #ff4d6a30" }}
+                    >
+                      <div className="text-[10px]" style={{ color: "var(--textDim)" }}>Gain potentiel</div>
+                      <div className="text-[15px] font-black" style={{ color: "#ff4d6a" }}>
+                        +{formatEuro(gainPotentiel)}/an
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: "#ffffff10" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${Math.min(100, (currentGmroi / Math.max(BENCHMARK, currentGmroi)) * 100)}%`,
+                    background: currentGmroi >= BENCHMARK ? "#00d4aa" : currentGmroi >= 2.5 ? "#ffb347" : "#ff4d6a",
+                  }}
+                />
+              </div>
+              <div className="flex justify-between text-[9px] mt-1" style={{ color: "var(--textDim)" }}>
+                <span>0</span>
+                <span>Cible 3.84</span>
+                <span>5+</span>
+              </div>
+            </div>
+          )}
+
+          {/* Vieux stock coût */}
+          {vieuxStockEuro !== null && vieuxStockEuro > 0 && (
+            <div
+              className="rounded-xl p-4 flex items-start gap-3"
+              style={{ background: "#ff4d6a08", border: "1px solid #ff4d6a25" }}
+            >
+              <span className="text-[20px] shrink-0">🧊</span>
+              <div>
+                <div className="text-[12px] font-bold" style={{ color: "#ff4d6a" }}>
+                  Votre vieux stock immobilise ~{formatEuro(vieuxStockEuro)}
+                </div>
+                <div className="text-[11px] mt-0.5" style={{ color: "var(--textMuted)" }}>
+                  Coût d'opportunité estimé : ~{vieuxStockCout ? formatEuro(vieuxStockCout) : "?"}/an
+                  {" "}— c'est de la trésorerie qui dort au lieu de générer de la marge.
+                </div>
+                <div className="text-[11px] mt-1 font-semibold" style={{ color: "#ffb347" }}>
+                  Action : déstockage accéléré (remise progressive) + Ventilation des immos
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3 profils de stock */}
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: "var(--textDim)" }}>
+              GMROI EN € — 3 PROFILS RÉSEAU
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {PROFILS.map(p => {
+                const margeAvec = Math.round(p.stock * p.gmroiCible);
+                const margeSans = Math.round(p.stock * p.gmroiBas);
+                const ecart = margeAvec - margeSans;
+                const isCurrent = stockVal !== null && Math.abs(stockVal - p.stock) < p.stock * 0.4;
+                return (
+                  <div
+                    key={p.label}
+                    className="rounded-xl p-3"
+                    style={{
+                      background: isCurrent ? `${p.color}12` : "var(--surfaceAlt)",
+                      border: isCurrent ? `1px solid ${p.color}40` : "1px solid transparent",
+                    }}
+                  >
+                    <div className="text-[10px] font-bold mb-2" style={{ color: p.color }}>
+                      {p.label}{isCurrent ? " ← vous" : ""}
+                    </div>
+                    <div className="space-y-1 text-[10px]">
+                      <div className="flex justify-between">
+                        <span style={{ color: "var(--textDim)" }}>GMROI 2.5</span>
+                        <span style={{ color: "#ff4d6a" }}>{formatEuro(margeSans)}/an</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span style={{ color: "var(--textDim)" }}>GMROI 3.84</span>
+                        <span style={{ color: "#00d4aa" }}>{formatEuro(margeAvec)}/an</span>
+                      </div>
+                      <div
+                        className="flex justify-between pt-1 mt-1 font-bold border-t"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        <span style={{ color: "var(--textMuted)" }}>Gain possible</span>
+                        <span style={{ color: p.color }}>+{formatEuro(ecart)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-[10px] mt-2 italic" style={{ color: "var(--textDim)" }}>
+              On ne pilote pas un stock de 120k€ comme un stock de 300k€ — mais la logique de rendement s'applique à tous.
+            </div>
+          </div>
+
+          {/* Méthodes d'action */}
+          <div className="grid grid-cols-2 gap-3 text-[11px]">
+            <div className="rounded-xl p-3" style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
+              <div className="font-bold mb-1.5" style={{ color: "var(--text)" }}>🔄 Déstockage</div>
+              <ul className="space-y-1" style={{ color: "var(--textMuted)" }}>
+                <li>• Remises progressives sur immos &gt;90j</li>
+                <li>• Lots promotionnels semaine</li>
+                <li>• Ventilation (transfer inter-magasin)</li>
+                <li>• Don association si stock non vendable</li>
+              </ul>
+            </div>
+            <div className="rounded-xl p-3" style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
+              <div className="font-bold mb-1.5" style={{ color: "var(--text)" }}>📊 KPIs à suivre</div>
+              <ul className="space-y-1" style={{ color: "var(--textMuted)" }}>
+                <li>• GMROI (cible ≥ 3.84)</li>
+                <li>• Stock âgé (cible ≤ 30%)</li>
+                <li>• Délai de vente moyen (≤ 30j)</li>
+                <li>• Stock fin M → marge M+1</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────
 interface KPIsGPSScreenProps {
   magasinId: string;
   onNavigate: (tab: string) => void;
+  phaseVie?: "lancement" | "croissance" | "maturite" | null;
 }
 
-export function KPIsGPSScreen({ magasinId, onNavigate }: KPIsGPSScreenProps) {
+export function KPIsGPSScreen({ magasinId, onNavigate, phaseVie }: KPIsGPSScreenProps) {
   const [valeurs, setValeurs] = useState<ValeurAvecIndicateur[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCasTypes, setShowCasTypes] = useState(false);
@@ -249,13 +469,13 @@ export function KPIsGPSScreen({ magasinId, onNavigate }: KPIsGPSScreenProps) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Phase detection from CA
+  // Phase: DB value takes priority, fallback to CA-based auto-detection
   const caMensuel = valeurs.find(v => {
     const n = v.indicateur_nom?.toLowerCase() ?? "";
     return n.includes("ca mensuel") && !n.includes("/");
   })?.valeur ?? null;
 
-  const phase = detectPhase(caMensuel);
+  const phase: Phase = phaseVie ?? detectPhase(caMensuel);
   const phaseConf = PHASE_CONFIG[phase];
 
   // Compute priority for each KPI
@@ -417,6 +637,9 @@ export function KPIsGPSScreen({ magasinId, onNavigate }: KPIsGPSScreenProps) {
           </div>
         );
       })}
+
+      {/* GMROI Stock pedagogy */}
+      <GmroiStockPanel valeurs={valeurs} />
 
       {/* 3 Cas types (collapsible) */}
       <div
