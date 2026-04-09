@@ -2,7 +2,7 @@
 
 // ─── Types ────────────────────────────────────────────────────
 export type TabId =
-  | "journee" | "avis_clients" | "victoires" | "profil" | "checklist"
+  | "journee" | "avis_clients" | "victoires" | "checklist"
   | "cockpit" | "kpis_gps" | "saisie" | "diagnostic" | "import" | "comparatif" | "diagnostic_express"
   | "balance" | "simulateur" | "chvacv"
   | "pap" | "plan" | "competences" | "carnet"
@@ -25,7 +25,6 @@ export const SUB_TABS: Record<string, { id: TabId; label: string }[]> = {
     { id: "checklist",    label: "✅ Checklist manager" },
     { id: "avis_clients", label: "Voix du client" },
     { id: "victoires",    label: "Victoires" },
-    { id: "profil",       label: "🌱 Mon profil" },
   ],
   verdict_grp: [
     { id: "cockpit",            label: "Tableau de bord" },
@@ -54,7 +53,7 @@ export const SUB_TABS: Record<string, { id: TabId; label: string }[]> = {
 };
 
 export function getTabGroup(tab: TabId): string {
-  if (["journee", "avis_clients", "victoires", "profil", "checklist"].includes(tab)) return "journee_grp";
+  if (["journee", "avis_clients", "victoires", "checklist"].includes(tab)) return "journee_grp";
   if (["cockpit", "kpis_gps", "saisie", "diagnostic", "import", "comparatif", "diagnostic_express"].includes(tab)) return "verdict_grp";
   if (["balance", "simulateur", "chvacv"].includes(tab)) return "decisions";
   if (["pap", "plan", "competences", "carnet"].includes(tab)) return "actions";

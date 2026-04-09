@@ -28,7 +28,6 @@ import { ExportCRScreen }         from "@/components/screens/ExportCRScreen";
 import { MaJourneeScreen }        from "@/components/screens/MaJourneeScreen";
 import { AvisClientsScreen }      from "@/components/screens/AvisClientsScreen";
 import { VictoiresScreen }        from "@/components/screens/VictoiresScreen";
-import { ProfilScreen }           from "@/components/screens/ProfilScreen";
 import { AssistantWidget }        from "@/components/AssistantWidget";
 import { SpiralIndicator }        from "@/components/SpiralIndicator";
 import type { Magasin } from "@/types";
@@ -143,7 +142,7 @@ export default function App() {
     async function loadMagasins() {
       const { data, error } = await supabase
         .from("magasins")
-        .select("id, nom, ville, franchise, phase_vie, annee_ouverture, surface_m2")
+        .select("id, nom, ville, franchise")
         .order("nom");
       if (error) {
         setError("Impossible de charger les magasins : " + error.message);
@@ -207,7 +206,7 @@ export default function App() {
     );
   }
 
-  const noStoreNeeded: TabId[] = ["config", "profil"];
+  const noStoreNeeded: TabId[] = ["config"];
   const noStore = !selectedId && !noStoreNeeded.includes(activeTab);
 
   return (
@@ -277,9 +276,6 @@ export default function App() {
                 {activeTab === "checklist" && selectedId && (
                   <ChecklistScreen magasinId={selectedId} />
                 )}
-                {activeTab === "profil" && (
-                  <ProfilScreen />
-                )}
 
                 {/* ⚡ VERDICT */}
                 {activeTab === "cockpit" && selectedId && (
@@ -295,7 +291,6 @@ export default function App() {
                     : <KPIsGPSScreen
                         magasinId={selectedId}
                         onNavigate={tab => handleTabChange(tab as TabId)}
-                        phaseVie={selectedMagasin?.phase_vie}
                       />
                 )}
                 {activeTab === "saisie" && selectedId && (
