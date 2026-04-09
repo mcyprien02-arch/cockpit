@@ -1,416 +1,356 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { formatEuro } from "@/lib/hiddenCosts";
+import { useEffect, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
-// ─── Types ─────────────────────────────────────────────────────
-interface SimParam {
-  key: string;
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  unit: string;
-  default: number;
-}
-
-interface SimScenario {
-  id: string;
-  icon: string;
-  title: string;
-  description: string;
-  params: SimParam[];
-  compute: (params: Record<string, number>, context: SimContext) => SimResult;
-}
-
-interface SimContext {
-  chvacv: number;
-  caMensuel: number;
-  nbEtp: number;
+// ─── KPI Context from localStorage ───────────────────────────
+interface KPIContext {
+  stockAge: number;
   valeurStock: number;
-  tauxMarge: number;
+  tresorerie: number;
+  marge: number;
+  ca: number;
+  seuilTresorerie: number;
 }
 
-interface SimResult {
-  verdict: "rentable" | "non_rentable" | "conditionnel";
-  headline: string;
-  details: { label: string; value: string; positive?: boolean }[];
-  conditions?: string[];
+function loadKPIContext(magasinId: string): KPIContext | null {
+  try {
+    const chvRaw = localStorage.getItem(`chvacv_${magasinId}`);
+    const chv = chvRaw ? JSON.parse(chvRaw) : {};
+    const kpiRaw = localStorage.getItem(`kpi_snapshot_${magasinId}`);
+    const kpi = kpiRaw ? JSON.parse(kpiRaw) : {};
+    const m = { ...chv, ...kpi };
+    if (!m.valeurStock && !m.ca && !m.ca_annuel) return null;
+    return {
+      stockAge:        m.tauxStockAge ?? m.stockAge ?? 25,
+      valeurStock:     m.valeurStock ?? m.stock_value ?? 150000,
+      tresorerie:      m.tresoActuelle ?? m.tresorerie ?? 20000,
+      marge:           m.tauxMarge ?? m.marge ?? 37,
+      ca:              m.ca_mensuel ?? (m.ca_annuel ? m.ca_annuel / 12 : null) ?? 80000,
+      seuilTresorerie: m.seuilTension ?? 8000,
+    };
+  } catch { return null; }
 }
 
-// ─── Scenarios ────────────────────────────────────────────────
-const SCENARIOS: SimScenario[] = [
-  {
-    id: "embauche",
-    icon: "👤",
-    title: "Et si j'embauchais un salarié ?",
-    description: "Calculez l'impact d'un nouveau collaborateur sur votre rentabilité.",
-    params: [
-      { key: "salaire_brut", label: "Salaire brut mensuel", min: 1500, max: 4000, step: 50, unit: "€", default: 2200 },
-      { key: "heures_sem", label: "Heures / semaine", min: 20, max: 39, step: 1, unit: "h", default: 35 },
-      { key: "gain_ca_pct", label: "Gain CA attendu", min: 0, max: 30, step: 1, unit: "%", default: 8 },
-    ],
-    compute(params, ctx) {
-      const coutTotal = params.salaire_brut * 1.45; // charges patronales
-      const caAdditionnel = ctx.caMensuel * (params.gain_ca_pct / 100);
-      const margeAdditionnelle = caAdditionnel * (ctx.tauxMarge / 100);
-      const gainNet = margeAdditionnelle - coutTotal;
-      const roiMois = gainNet > 0 ? Math.ceil(coutTotal / (margeAdditionnelle - coutTotal + 0.01)) : null;
-      return {
-        verdict: gainNet > 0 ? "rentable" : gainNet > -500 ? "conditionnel" : "non_rentable",
-        headline: gainNet > 0
-          ? `+${formatEuro(gainNet)}/mois de marge nette`
-          : `Déficit de ${formatEuro(Math.abs(gainNet))}/mois`,
-        details: [
-          { label: "Coût total employeur", value: `${formatEuro(coutTotal)}/mois`, positive: false },
-          { label: "CA additionnel estimé", value: `${formatEuro(caAdditionnel)}/mois`, positive: true },
-          { label: "Marge générée", value: `${formatEuro(margeAdditionnelle)}/mois`, positive: margeAdditionnelle > coutTotal },
-          { label: "Gain net", value: `${gainNet >= 0 ? "+" : ""}${formatEuro(gainNet)}/mois`, positive: gainNet > 0 },
-        ],
-        conditions: gainNet <= 0 ? [
-          `Besoin de +${formatEuro(coutTotal / (ctx.tauxMarge / 100))}/mois de CA pour rentabiliser`,
-          `Soit +${Math.ceil(coutTotal / (ctx.tauxMarge / 100) / (ctx.caMensuel / 30))}€/jour supplémentaires`,
-          roiMois ? `ROI en ${roiMois} mois si objectif CA atteint` : undefined,
-        ].filter(Boolean) as string[] : undefined,
-      };
-    },
-  },
-  {
-    id: "stock",
-    icon: "📦",
-    title: "Et si je réduisais mon stock ?",
-    description: "Simulez la libération de trésorerie via la réduction du stock.",
-    params: [
-      { key: "reduction_pct", label: "Réduction du stock", min: 5, max: 50, step: 5, unit: "%", default: 20 },
-      { key: "gmroi_actuel", label: "GMROI actuel", min: 1, max: 8, step: 0.1, unit: "", default: 2.5 },
-    ],
-    compute(params, ctx) {
-      const cashLibere = ctx.valeurStock * (params.reduction_pct / 100);
-      const newStock = ctx.valeurStock * (1 - params.reduction_pct / 100);
-      const margeAnnuelle = ctx.caMensuel * 12 * (ctx.tauxMarge / 100);
-      const newGmroi = newStock > 0 ? margeAnnuelle / newStock : 0;
-      const gainGmroi = newGmroi - params.gmroi_actuel;
-      const rendementCash = ctx.chvacv > 0 ? cashLibere / ctx.chvacv : null;
-      return {
-        verdict: cashLibere > 10000 && newGmroi > 3 ? "rentable" : "conditionnel",
-        headline: `${formatEuro(cashLibere)} de trésorerie libérée`,
-        details: [
-          { label: "Cash libéré", value: formatEuro(cashLibere), positive: true },
-          { label: "Nouveau stock moyen", value: formatEuro(newStock), positive: false },
-          { label: "GMROI actuel → projeté", value: `${params.gmroi_actuel.toFixed(2)} → ${newGmroi.toFixed(2)}`, positive: gainGmroi > 0 },
-          ...(rendementCash ? [{ label: "Équivaut à", value: `${rendementCash.toFixed(1)} heures CHVACV`, positive: true }] : []),
-        ],
-        conditions: newGmroi < 3 ? ["Vérifiez l'impact sur la gamme disponible", "Priorisez l'élimination du stock âgé > 90j"] : undefined,
-      };
-    },
-  },
-  {
-    id: "tlac",
-    icon: "📱",
-    title: "Et si je passais le TLAC à 1.5 ?",
-    description: "Impact d'une meilleure performance sur les ventes additionnelles (Trade-In).",
-    params: [
-      { key: "tlac_actuel", label: "TLAC actuel", min: 0.5, max: 2.5, step: 0.1, unit: "", default: 0.78 },
-      { key: "tlac_cible", label: "TLAC cible", min: 0.8, max: 3, step: 0.1, unit: "", default: 1.5 },
-      { key: "marge_tlac", label: "Marge par article additionnel", min: 10, max: 80, step: 5, unit: "€", default: 35 },
-    ],
-    compute(params, ctx) {
-      const nbVentesEstim = ctx.caMensuel / 97.5; // panier moyen réseau
-      const tlacGain = (params.tlac_cible - params.tlac_actuel) * nbVentesEstim;
-      const margeAdditionnelle = tlacGain * params.marge_tlac;
-      const tempsFormation = Math.round(tlacGain * 0.5); // 30min de coaching par vente à gagner
-      const roiSemaines = margeAdditionnelle > 0 ? Math.ceil((tempsFormation * (ctx.chvacv / 60)) / (margeAdditionnelle / 4)) : 0;
-      return {
-        verdict: margeAdditionnelle > 0 ? "rentable" : "conditionnel",
-        headline: `+${formatEuro(margeAdditionnelle)}/mois de marge additionnelle`,
-        details: [
-          { label: "Articles TLAC gagnés/mois", value: `+${Math.round(tlacGain)}`, positive: true },
-          { label: "Marge additionnelle", value: `${formatEuro(margeAdditionnelle)}/mois`, positive: true },
-          { label: "Formation estimée", value: `${tempsFormation}h de coaching`, positive: false },
-          { label: "ROI formation", value: roiSemaines > 0 ? `${roiSemaines} semaines` : "Immédiat", positive: roiSemaines < 4 },
-        ],
-      };
-    },
-  },
-  {
-    id: "picea",
-    icon: "🔋",
-    title: "Et si je montais Picea à 100% ?",
-    description: "Impact du diagnostic systématique sur les retours et la note Google.",
-    params: [
-      { key: "picea_actuel", label: "Taux Picea actuel", min: 0, max: 90, step: 5, unit: "%", default: 40 },
-      { key: "nb_retours", label: "Retours / mois actuels", min: 0, max: 50, step: 1, unit: "", default: 12 },
-      { key: "cout_retour", label: "Coût moyen par retour", min: 20, max: 200, step: 10, unit: "€", default: 60 },
-    ],
-    compute(params, ctx) {
-      const gainPicea = (100 - params.picea_actuel) / 100;
-      const retoursEvites = Math.round(params.nb_retours * gainPicea * 0.7); // 70% des retours liés à la batterie
-      const economieMensuelle = retoursEvites * params.cout_retour;
-      const noteImpact = retoursEvites > 5 ? "+0.2 à +0.4" : "+0.1";
-      const heuresToimplementation = Math.round((100 - params.picea_actuel) / 10);
-      void ctx;
-      return {
-        verdict: economieMensuelle > 200 ? "rentable" : "conditionnel",
-        headline: `${formatEuro(economieMensuelle)}/mois économisé en retours`,
-        details: [
-          { label: "Retours évités / mois", value: `${retoursEvites}`, positive: true },
-          { label: "Économie mensuelle", value: formatEuro(economieMensuelle), positive: true },
-          { label: "Économie annuelle", value: formatEuro(economieMensuelle * 12), positive: true },
-          { label: "Impact note Google estimé", value: noteImpact, positive: true },
-          { label: "Mise en place", value: `${heuresToimplementation}h de formation`, positive: false },
-        ],
-      };
-    },
-  },
-];
+// ─── Types ────────────────────────────────────────────────────
+type ScenarioId = "destockage" | "achats" | "promo";
+type Gamme = "Téléphonie" | "Jeux vidéo" | "Bijouterie" | "Multimédia" | "Autre";
+type TypePromo = "Semaine -20%" | "Weekend flash" | "Lot 3 pour 2";
+type Verdict = "recommande" | "attendre" | "risque";
 
-// ─── Slider component ─────────────────────────────────────────
-function Slider({ param, value, onChange }: {
-  param: SimParam;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  const pct = ((value - param.min) / (param.max - param.min)) * 100;
+interface ResultatScenario {
+  verdict: Verdict;
+  lignes: { label: string; valeur: string; color?: string }[];
+  conseil: string;
+}
+
+// ─── Calculations ─────────────────────────────────────────────
+function calcDestockage(ctx: KPIContext, remise: number, nbProduits: number): ResultatScenario {
+  const vieuxStock = (ctx.stockAge / 100) * ctx.valeurStock;
+  const tresoRecuperee = Math.round(vieuxStock * (remise / 100) * 0.7);
+  const margeSacrifiee = Math.round(vieuxStock * (remise / 100) * 0.3);
+  const delaiEstime = Math.round(30 * (1 - (remise / 100) * 0.6));
+
+  let verdict: Verdict;
+  let conseil: string;
+  if (ctx.stockAge < 15) {
+    verdict = "attendre";
+    conseil = "Stock âgé déjà sain (< 15%). Un déstockage agressif n'est pas nécessaire maintenant.";
+  } else if (ctx.tresorerie < ctx.seuilTresorerie) {
+    verdict = "recommande";
+    conseil = "Trésorerie sous le seuil critique → déstockage recommandé pour libérer du cash rapidement.";
+  } else {
+    verdict = "recommande";
+    conseil = "Stock âgé significatif → rotation accélérée améliorera votre GMROI.";
+  }
+
+  return {
+    verdict, conseil,
+    lignes: [
+      { label: "Trésorerie récupérée estimée", valeur: `+${tresoRecuperee.toLocaleString("fr-FR")}€`, color: "#00d4aa" },
+      { label: "Marge sacrifiée",              valeur: `-${margeSacrifiee.toLocaleString("fr-FR")}€`,  color: "#ff4d6a" },
+      { label: "Délai de rotation estimé",     valeur: `~${delaiEstime} jours`,                        color: "#ffb347" },
+      { label: "Produits concernés",           valeur: `~${nbProduits}`,                               color: undefined },
+    ],
+  };
+}
+
+const MARGE_PAR_GAMME: Record<Gamme, number> = {
+  "Téléphonie": 32, "Jeux vidéo": 38, "Bijouterie": 48, "Multimédia": 30, "Autre": 35,
+};
+
+function calcAchats(ctx: KPIContext, budget: number, gamme: Gamme): ResultatScenario {
+  const txMarge = MARGE_PAR_GAMME[gamme] / 100;
+  const margeAttendue = Math.round(budget * txMarge * 3.5);
+  const rotationJ30 = Math.round((budget / (ctx.ca / 30)) * 15);
+  const risqueTreso = budget / ctx.tresorerie;
+  let verdict: Verdict;
+  let conseil: string;
+  if (risqueTreso > 0.4) {
+    verdict = "risque";
+    conseil = "Budget > 40% de la trésorerie — risque de tension cash élevé. Échelonnez.";
+  } else if (risqueTreso > 0.2) {
+    verdict = "attendre";
+    conseil = "Budget significatif. Envisagez d'étaler les achats sur 2 semaines.";
+  } else {
+    verdict = "recommande";
+    conseil = `Gamme ${gamme} à ${MARGE_PAR_GAMME[gamme]}% de marge — bon rapport risque/rendement.`;
+  }
+  const risqueLabel = risqueTreso > 0.4 ? "Élevé" : risqueTreso > 0.2 ? "Modéré" : "Faible";
+  const risqueColor = risqueTreso > 0.4 ? "#ff4d6a" : risqueTreso > 0.2 ? "#ffb347" : "#00d4aa";
+  return {
+    verdict, conseil,
+    lignes: [
+      { label: "Marge attendue (12 mois)",  valeur: `+${margeAttendue.toLocaleString("fr-FR")}€`, color: "#00d4aa" },
+      { label: "Délai de vente estimé",     valeur: `~${rotationJ30} jours`,                      color: "#ffb347" },
+      { label: "Risque trésorerie",          valeur: risqueLabel,                                  color: risqueColor },
+      { label: "Taux de marge gamme",        valeur: `${MARGE_PAR_GAMME[gamme]}%`,                color: undefined },
+    ],
+  };
+}
+
+function calcPromo(ctx: KPIContext, type: TypePromo, rayons: string[]): ResultatScenario {
+  const BOOST: Record<TypePromo, { ca: number; marge: number; conseil: string }> = {
+    "Semaine -20%":  { ca: 0.25, marge: -0.08, conseil: "Idéal pour les gammes à fort stock âgé." },
+    "Weekend flash": { ca: 0.40, marge: -0.05, conseil: "Impact max sur 2 jours — préparez la comm 48h avant." },
+    "Lot 3 pour 2":  { ca: 0.30, marge: -0.10, conseil: "Efficace sur les accessoires et petits prix." },
+  };
+  const b = BOOST[type];
+  const caSupp = Math.round(ctx.ca * b.ca * (rayons.length > 0 ? Math.min(1, rayons.length / 3) : 0.5));
+  const impactMarge = Math.round(caSupp * (ctx.marge / 100 + b.marge));
+  const momentOptimal = ctx.stockAge > 35 ? "Maintenant — stock âgé élevé, liquidez" : ctx.stockAge > 20 ? "Semaine prochaine" : "Attendez — stock sain";
+  return {
+    verdict: ctx.stockAge > 25 ? "recommande" : "attendre",
+    conseil: b.conseil,
+    lignes: [
+      { label: "CA supplémentaire estimé", valeur: `+${caSupp.toLocaleString("fr-FR")}€`,         color: "#00d4aa" },
+      { label: "Impact marge",             valeur: `${impactMarge >= 0 ? "+" : ""}${impactMarge.toLocaleString("fr-FR")}€`, color: impactMarge >= 0 ? "#00d4aa" : "#ff4d6a" },
+      { label: "Moment optimal",           valeur: momentOptimal,                                   color: "#ffb347" },
+      { label: "Rayons sélectionnés",      valeur: rayons.length > 0 ? rayons.join(", ") : "Tout le magasin", color: undefined },
+    ],
+  };
+}
+
+function VerdictBadge({ verdict }: { verdict: Verdict }) {
+  const cfg = {
+    recommande: { color: "#00d4aa", bg: "#00d4aa15", label: "✓ Action recommandée" },
+    attendre:   { color: "#ffb347", bg: "#ffb34715", label: "⚠ À peser — attendre" },
+    risque:     { color: "#ff4d6a", bg: "#ff4d6a15", label: "✗ Risqué — prudence" },
+  }[verdict];
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="text-[12px] font-medium" style={{ color: "var(--text)" }}>{param.label}</label>
-        <span className="text-[13px] font-bold" style={{ color: "var(--accent)" }}>
-          {param.step < 1 ? value.toFixed(1) : value}{param.unit}
-        </span>
-      </div>
-      <div className="relative h-5 flex items-center">
-        <div className="absolute inset-x-0 h-1.5 rounded-full" style={{ background: "var(--surface)" }} />
-        <div className="absolute h-1.5 rounded-full" style={{ width: `${pct}%`, background: "var(--accent)" }} />
-        <input
-          type="range"
-          min={param.min}
-          max={param.max}
-          step={param.step}
-          value={value}
-          onChange={e => onChange(parseFloat(e.target.value))}
-          className="absolute inset-0 w-full opacity-0 cursor-pointer h-5"
-          style={{ zIndex: 1 }}
-        />
-        <div
-          className="absolute w-4 h-4 rounded-full border-2 shadow-md"
-          style={{
-            left: `calc(${pct}% - 8px)`,
-            background: "var(--accent)",
-            borderColor: "#fff",
-            pointerEvents: "none",
-          }}
-        />
-      </div>
-      <div className="flex justify-between text-[9px] mt-0.5" style={{ color: "var(--textDim)" }}>
-        <span>{param.min}{param.unit}</span>
-        <span>{param.max}{param.unit}</span>
-      </div>
+    <div className="rounded-xl px-4 py-2.5 text-[13px] font-bold"
+      style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}30` }}>
+      {cfg.label}
     </div>
   );
 }
 
-// ─── Main Screen ───────────────────────────────────────────────
-interface SimulateurScreenProps {
-  magasinId: string;
-}
+const RAYONS = ["Téléphonie", "Jeux vidéo", "Bijouterie", "Multimédia", "Électroménager", "Autre"];
+
+interface SimulateurScreenProps { magasinId: string }
 
 export function SimulateurScreen({ magasinId }: SimulateurScreenProps) {
-  const [activeScenario, setActiveScenario] = useState<string>("embauche");
-  const [params, setParams] = useState<Record<string, Record<string, number>>>({});
-  const [context, setContext] = useState<SimContext>({
-    chvacv: 45,
-    caMensuel: 200000,
-    nbEtp: 5,
-    valeurStock: 150000,
-    tauxMarge: 38,
-  });
-  const [editingCtx, setEditingCtx] = useState(false);
+  const [ctx, setCtx] = useState<KPIContext | null>(null);
+  const [scenario, setScenario] = useState<ScenarioId | null>(null);
+  const [resultat, setResultat] = useState<ResultatScenario | null>(null);
+  const [planValidated, setPlanValidated] = useState(false);
+  const [profilNiveau, setProfilNiveau] = useState(1);
+  const [remise, setRemise] = useState(20);
+  const [nbProduits, setNbProduits] = useState(30);
+  const [budgetAchats, setBudgetAchats] = useState(5000);
+  const [gamme, setGamme] = useState<Gamme>("Téléphonie");
+  const [typePromo, setTypePromo] = useState<TypePromo>("Semaine -20%");
+  const [rayonsSelected, setRayonsSelected] = useState<string[]>([]);
 
-  // Load context from localStorage
   useEffect(() => {
-    if (!magasinId) return;
+    setCtx(loadKPIContext(magasinId));
     try {
-      const chvacvRaw = localStorage.getItem(`chvacv_${magasinId}`);
-      if (chvacvRaw) {
-        const d = JSON.parse(chvacvRaw);
-        if (d.ca_annuel && d.nb_etp && d.heures_semaine && d.semaines_an) {
-          const chvacv = ((d.ca_annuel - (d.cv_annuelles ?? 0)) / (d.nb_etp * d.heures_semaine * d.semaines_an));
-          setContext(prev => ({
-            ...prev,
-            chvacv: Math.round(chvacv * 100) / 100,
-            caMensuel: Math.round(d.ca_annuel / 12),
-            nbEtp: d.nb_etp,
-          }));
-        }
+      const p = localStorage.getItem("profilMaturite");
+      if (p) {
+        const pd = JSON.parse(p);
+        const n = pd.anciennete > 5 && pd.aise === "expert" ? 3 : pd.anciennete >= 2 && pd.aise !== "debutant" ? 2 : 1;
+        setProfilNiveau(n);
       }
     } catch { /* ignore */ }
   }, [magasinId]);
 
-  // Init params for each scenario
-  useEffect(() => {
-    const initial: Record<string, Record<string, number>> = {};
-    SCENARIOS.forEach(s => {
-      initial[s.id] = Object.fromEntries(s.params.map(p => [p.key, p.default]));
-    });
-    setParams(initial);
-  }, []);
+  const compute = useCallback(() => {
+    if (!ctx || !scenario) return;
+    if (scenario === "destockage") setResultat(calcDestockage(ctx, remise, nbProduits));
+    if (scenario === "achats")     setResultat(calcAchats(ctx, budgetAchats, gamme));
+    if (scenario === "promo")      setResultat(calcPromo(ctx, typePromo, rayonsSelected));
+  }, [ctx, scenario, remise, nbProduits, budgetAchats, gamme, typePromo, rayonsSelected]);
 
-  const scenario = SCENARIOS.find(s => s.id === activeScenario);
-  const scenarioParams = params[activeScenario] ?? {};
-  const result = scenario && Object.keys(scenarioParams).length > 0
-    ? scenario.compute(scenarioParams, context)
-    : null;
+  useEffect(() => { if (scenario && ctx) compute(); }, [scenario, remise, nbProduits, budgetAchats, gamme, typePromo, rayonsSelected, compute]);
 
-  const verdictColors = {
-    rentable: { color: "#00d4aa", bg: "#00d4aa18", border: "#00d4aa30", icon: "✅" },
-    non_rentable: { color: "#ff4d6a", bg: "#ff4d6a18", border: "#ff4d6a30", icon: "❌" },
-    conditionnel: { color: "#ffb347", bg: "#ffb34718", border: "#ffb34730", icon: "⚠️" },
+  const validatePlan = () => {
+    if (!resultat || !scenario) return;
+    try {
+      const existing = JSON.parse(localStorage.getItem(`sim_actions_${magasinId}`) ?? "[]");
+      localStorage.setItem(`sim_actions_${magasinId}`, JSON.stringify([
+        { id: `sim_${Date.now()}`, scenario, verdict: resultat.verdict, conseil: resultat.conseil, createdAt: new Date().toISOString() },
+        ...existing,
+      ]));
+    } catch { /* ignore */ }
+    setPlanValidated(true);
+    setTimeout(() => setPlanValidated(false), 2500);
   };
 
-  return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[18px] font-bold" style={{ color: "var(--text)" }}>Simulateur &ldquo;Et si...&rdquo;</div>
-          <div className="text-[12px] mt-0.5" style={{ color: "var(--textMuted)" }}>
-            Flight simulator — jouez avec les curseurs, voyez l&apos;impact en temps réel
-          </div>
+  const toggleRayon = (r: string) =>
+    setRayonsSelected(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
+
+  if (!ctx) {
+    return (
+      <div className="rounded-2xl p-10 text-center" style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
+        <div className="text-[36px] mb-3">📊</div>
+        <div className="text-[15px] font-semibold mb-2" style={{ color: "var(--text)" }}>Simulateur non disponible</div>
+        <div className="text-[12px]" style={{ color: "var(--textMuted)" }}>
+          Saisis d'abord tes KPIs dans Verdict pour activer le simulateur.
         </div>
-        <button
-          onClick={() => setEditingCtx(v => !v)}
-          className="px-3 py-1.5 rounded-xl text-[11px] font-semibold border hover:opacity-90"
-          style={{ borderColor: "var(--border)", color: "var(--textMuted)", background: "var(--surface)" }}
-        >
-          ⚙ Contexte magasin
-        </button>
+      </div>
+    );
+  }
+
+  const SCENARIOS = [
+    { id: "destockage" as ScenarioId, icon: "🧊", title: "Déstockage express",       desc: "Impact d'une remise sur le vieux stock" },
+    { id: "achats"     as ScenarioId, icon: "🛒", title: "Réorientation des achats",  desc: "Choisir une gamme et un budget" },
+    { id: "promo"      as ScenarioId, icon: "🎯", title: "Opération promotionnelle",  desc: "Estimer l'impact d'une action commerciale" },
+  ];
+
+  return (
+    <div className="space-y-5 max-w-[800px]">
+      <div>
+        <h2 className="text-[18px] font-bold" style={{ color: "var(--text)" }}>🔮 Simulateur — Et si ?</h2>
+        <p className="text-[12px] mt-0.5" style={{ color: "var(--textMuted)" }}>Testez l'impact d'une décision avant d'agir.</p>
       </div>
 
-      {/* Context editor */}
-      {editingCtx && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl p-5 border grid grid-cols-2 gap-4 md:grid-cols-5"
-          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-        >
-          {([
-            { key: "caMensuel", label: "CA mensuel", unit: "€" },
-            { key: "nbEtp", label: "Nb ETP", unit: "" },
-            { key: "valeurStock", label: "Valeur stock", unit: "€" },
-            { key: "tauxMarge", label: "Taux marge", unit: "%" },
-            { key: "chvacv", label: "CHVACV", unit: "€/h" },
-          ] as const).map(f => (
-            <div key={f.key}>
-              <label className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: "var(--textMuted)" }}>{f.label}</label>
-              <input
-                type="number"
-                value={(context as unknown as Record<string, number>)[f.key]}
-                onChange={e => setContext(prev => ({ ...prev, [f.key]: parseFloat(e.target.value) || 0 }))}
-                className="w-full rounded-lg px-3 py-2 text-[13px] font-semibold border"
-                style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
-              />
-              <span className="text-[10px]" style={{ color: "var(--textDim)" }}>{f.unit}</span>
-            </div>
-          ))}
-        </motion.div>
-      )}
-
-      {/* Scenario selector */}
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
-        {SCENARIOS.map(s => (
-          <button
-            key={s.id}
-            onClick={() => setActiveScenario(s.id)}
-            className="text-left rounded-2xl p-4 border transition-all hover:scale-[1.01]"
-            style={{
-              background: activeScenario === s.id ? "var(--accent)" : "var(--surface)",
-              borderColor: activeScenario === s.id ? "var(--accent)" : "var(--border)",
-              color: activeScenario === s.id ? "#000" : "var(--text)",
-            }}
-          >
-            <div className="text-[20px] mb-1">{s.icon}</div>
-            <div className="text-[12px] font-semibold leading-tight">{s.title}</div>
-          </button>
+      {/* Context recap */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Stock âgé",  val: `${ctx.stockAge}%`,                   color: ctx.stockAge > 30 ? "#ff4d6a" : ctx.stockAge > 20 ? "#ffb347" : "#00d4aa" },
+          { label: "Trésorerie", val: `${(ctx.tresorerie / 1000).toFixed(0)}k€`, color: ctx.tresorerie < ctx.seuilTresorerie ? "#ff4d6a" : "#00d4aa" },
+          { label: "Marge",      val: `${ctx.marge}%`,                       color: ctx.marge < 30 ? "#ff4d6a" : ctx.marge < 35 ? "#ffb347" : "#00d4aa" },
+        ].map(s => (
+          <div key={s.label} className="rounded-xl p-3 text-center" style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
+            <div className="text-[16px] font-black" style={{ color: s.color }}>{s.val}</div>
+            <div className="text-[10px]" style={{ color: "var(--textDim)" }}>{s.label}</div>
+          </div>
         ))}
       </div>
 
-      {/* Active scenario */}
-      {scenario && (
-        <div className="grid gap-5" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          {/* Left: sliders */}
-          <motion.div
-            key={scenario.id}
-            initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
-            className="rounded-2xl p-6 border space-y-5"
-            style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-          >
-            <div>
-              <div className="text-[15px] font-bold mb-0.5" style={{ color: "var(--text)" }}>
-                {scenario.icon} {scenario.title}
-              </div>
-              <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>{scenario.description}</div>
-            </div>
-            {scenario.params.map(param => (
-              <Slider
-                key={param.key}
-                param={param}
-                value={scenarioParams[param.key] ?? param.default}
-                onChange={v => setParams(prev => ({
-                  ...prev,
-                  [scenario.id]: { ...prev[scenario.id], [param.key]: v },
-                }))}
-              />
-            ))}
-          </motion.div>
+      {/* Scenario selector */}
+      <div className="grid grid-cols-3 gap-3">
+        {SCENARIOS.map(s => (
+          <motion.button key={s.id} whileTap={{ scale: 0.97 }}
+            onClick={() => { setScenario(s.id); setResultat(null); }}
+            className="rounded-2xl p-4 text-left transition-all"
+            style={{
+              background: scenario === s.id ? "#00d4aa10" : "var(--surface)",
+              border: scenario === s.id ? "1px solid #00d4aa40" : "1px solid var(--border)",
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+            <div className="text-[22px] mb-1.5">{s.icon}</div>
+            <div className="text-[12px] font-bold" style={{ color: scenario === s.id ? "#00d4aa" : "var(--text)" }}>{s.title}</div>
+            <div className="text-[10px] mt-0.5" style={{ color: "var(--textDim)" }}>{s.desc}</div>
+          </motion.button>
+        ))}
+      </div>
 
-          {/* Right: results */}
-          {result && (() => {
-            const vc = verdictColors[result.verdict];
-            return (
-              <motion.div
-                key={`${scenario.id}-result`}
-                initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}
-                className="rounded-2xl p-6 border space-y-4"
-                style={{ background: vc.bg, borderColor: vc.border }}
-              >
-                <div className="text-center">
-                  <div className="text-[28px] mb-1">{vc.icon}</div>
-                  <div className="text-[18px] font-bold" style={{ color: vc.color }}>{result.headline}</div>
-                  <div className="text-[11px] mt-0.5 capitalize" style={{ color: "var(--textMuted)" }}>
-                    {result.verdict.replace("_", " ")}
+      {/* Params + results */}
+      <AnimatePresence mode="wait">
+        {scenario && (
+          <motion.div key={scenario} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="rounded-2xl p-5 space-y-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+
+            {scenario === "destockage" && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider block mb-2" style={{ color: "var(--textDim)" }}>Remise appliquée — {remise}%</label>
+                  <input type="range" min={5} max={50} step={5} value={remise} onChange={e => setRemise(+e.target.value)} className="w-full" style={{ accentColor: "var(--accent)" }} />
+                  <div className="flex justify-between text-[9px] mt-1" style={{ color: "var(--textDim)" }}><span>5%</span><span>25%</span><span>50%</span></div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider block mb-2" style={{ color: "var(--textDim)" }}>Nombre de produits — {nbProduits}</label>
+                  <input type="range" min={5} max={200} step={5} value={nbProduits} onChange={e => setNbProduits(+e.target.value)} className="w-full" style={{ accentColor: "var(--accent)" }} />
+                </div>
+              </div>
+            )}
+
+            {scenario === "achats" && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider block mb-2" style={{ color: "var(--textDim)" }}>Budget rachat — {budgetAchats.toLocaleString("fr-FR")}€</label>
+                  <input type="range" min={500} max={20000} step={500} value={budgetAchats} onChange={e => setBudgetAchats(+e.target.value)} className="w-full" style={{ accentColor: "var(--accent)" }} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider block mb-2" style={{ color: "var(--textDim)" }}>Gamme prioritaire</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(Object.keys(MARGE_PAR_GAMME) as Gamme[]).map(g => (
+                      <button key={g} onClick={() => setGamme(g)} className="rounded-full px-3 py-1 text-[11px] font-semibold transition-all"
+                        style={{ background: gamme === g ? "var(--accent)" : "var(--surfaceAlt)", color: gamme === g ? "#000" : "var(--textMuted)", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                        {g} ({MARGE_PAR_GAMME[g]}%)
+                      </button>
+                    ))}
                   </div>
                 </div>
+              </div>
+            )}
 
+            {scenario === "promo" && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider block mb-2" style={{ color: "var(--textDim)" }}>Type d'opération</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(["Semaine -20%", "Weekend flash", "Lot 3 pour 2"] as TypePromo[]).map(t => (
+                      <button key={t} onClick={() => setTypePromo(t)} className="rounded-full px-3 py-1 text-[11px] font-semibold transition-all"
+                        style={{ background: typePromo === t ? "var(--accent)" : "var(--surfaceAlt)", color: typePromo === t ? "#000" : "var(--textMuted)", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider block mb-2" style={{ color: "var(--textDim)" }}>Rayons concernés</label>
+                  <div className="flex flex-wrap gap-2">
+                    {RAYONS.map(r => (
+                      <button key={r} onClick={() => toggleRayon(r)} className="rounded-full px-3 py-1 text-[11px] font-semibold transition-all"
+                        style={{ background: rayonsSelected.includes(r) ? "#00d4aa" : "var(--surfaceAlt)", color: rayonsSelected.includes(r) ? "#000" : "var(--textMuted)", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {resultat && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4 pt-4 border-t" style={{ borderColor: "var(--border)" }}>
+                <VerdictBadge verdict={resultat.verdict} />
                 <div className="space-y-2">
-                  {result.details.map((d, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b" style={{ borderColor: "var(--border)" }}>
-                      <span className="text-[11px]" style={{ color: "var(--textMuted)" }}>{d.label}</span>
-                      <span className="text-[12px] font-bold" style={{ color: d.positive ? "#00d4aa" : d.positive === false ? "#ff4d6a" : vc.color }}>
-                        {d.value}
-                      </span>
+                  {resultat.lignes.map((l, i) => (
+                    <div key={i} className="flex items-center justify-between py-1.5 border-b" style={{ borderColor: "var(--border)" }}>
+                      <span className="text-[12px]" style={{ color: "var(--textMuted)" }}>{l.label}</span>
+                      <span className="text-[13px] font-bold" style={{ color: l.color ?? "var(--text)" }}>{l.valeur}</span>
                     </div>
                   ))}
                 </div>
-
-                {result.conditions && result.conditions.length > 0 && (
-                  <div className="rounded-xl p-3 space-y-1" style={{ background: "var(--surfaceAlt)" }}>
-                    <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--textMuted)" }}>
-                      Conditions / Risques
-                    </div>
-                    {result.conditions.map((c, i) => (
-                      <div key={i} className="text-[11px] flex items-start gap-1.5" style={{ color: "var(--text)" }}>
-                        <span style={{ color: vc.color }}>→</span> {c}
-                      </div>
-                    ))}
+                <div className="rounded-xl p-3 text-[12px]" style={{ background: "var(--surfaceAlt)", color: "var(--textMuted)" }}>
+                  💡 {resultat.conseil}
+                </div>
+                {profilNiveau >= 2 && (
+                  <div className="text-[10px]" style={{ color: "var(--textDim)" }}>
+                    Calculs basés sur : stock âgé {ctx.stockAge}% · tréso {(ctx.tresorerie / 1000).toFixed(0)}k€ · marge {ctx.marge}%
                   </div>
                 )}
+                <button onClick={validatePlan} className="w-full rounded-xl py-2.5 text-[12px] font-bold transition-all"
+                  style={{ background: planValidated ? "#00d4aa" : "var(--accent)", color: "#000", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                  {planValidated ? "✓ Plan sauvegardé !" : "✓ Valider ce plan →"}
+                </button>
               </motion.div>
-            );
-          })()}
-        </div>
-      )}
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

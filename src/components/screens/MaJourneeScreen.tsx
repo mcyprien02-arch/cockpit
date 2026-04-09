@@ -11,6 +11,7 @@ interface Mission {
   priorite: "critique" | "haute" | "normale";
   source: "pap" | "kpi" | "calendrier";
   icone: string;
+  papId?: string;
 }
 
 interface PAPAction {
@@ -56,6 +57,7 @@ function computeMission(papActions: PAPAction[], month: number): Mission[] {
       priorite: "critique",
       source: "pap",
       icone: "🔴",
+      papId: a.id,
     });
   });
 
@@ -68,6 +70,7 @@ function computeMission(papActions: PAPAction[], month: number): Mission[] {
       priorite: "haute",
       source: "pap",
       icone: "🟠",
+      papId: a.id,
     });
   });
 
@@ -179,7 +182,8 @@ export function MaJourneeScreen({ magasinId }: MaJourneeScreenProps) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const toggleMission = (idx: number) => {
+  const toggleMission = async (idx: number) => {
+    const mission = missions[idx];
     setCheckedMissions(prev => {
       const next = new Set(prev);
       if (next.has(idx)) {
@@ -193,6 +197,17 @@ export function MaJourneeScreen({ magasinId }: MaJourneeScreenProps) {
       }
       return next;
     });
+    // Persist PAP completion to DB
+    if (mission?.source === "pap" && mission.papId) {
+      const newStatut = checkedMissions.has(idx) ? "todo" : "done";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from("plans_action")
+        .update({ statut: newStatut })
+        .eq("id", mission.papId);
+      // Refresh list
+      loadData();
+    }
   };
 
   const priColors: Record<string, string> = {
@@ -346,6 +361,61 @@ export function MaJourneeScreen({ magasinId }: MaJourneeScreenProps) {
           ))}
         </div>
       </div>
+
+      {/* Actions du mois */}
+      {(() => {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const actionsMonth = papActions.filter(a => {
+          if (!a.echeance) return false;
+          const d = new Date(a.echeance);
+          return d >= startOfMonth && d <= endOfMonth;
+        });
+        if (actionsMonth.length === 0) return null;
+        return (
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
+            <div className="text-[11px] font-bold mb-3 tracking-wider" style={{ color: "var(--textDim)" }}>
+              ACTIONS DU MOIS ({actionsMonth.length})
+            </div>
+            <div className="space-y-2">
+              {actionsMonth.map(a => {
+                const isLate = new Date(a.echeance!) < now;
+                const isDone = a.statut === "done";
+                return (
+                  <div
+                    key={a.id}
+                    className="flex items-center gap-3 text-[12px] py-1"
+                    style={{ opacity: isDone ? 0.5 : 1 }}
+                  >
+                    <span style={{ color: isDone ? "#00d4aa" : isLate ? "#ff4d6a" : "#ffb347", fontSize: 13 }}>
+                      {isDone ? "✓" : isLate ? "⚠" : "○"}
+                    </span>
+                    <span style={{ color: "var(--text)", textDecoration: isDone ? "line-through" : "none", flex: 1 }}>
+                      {a.titre}
+                    </span>
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[9px] font-semibold"
+                      style={{
+                        background: a.priorite === "critique" ? "#ff4d6a20" : a.priorite === "haute" ? "#ffb34720" : "#ffffff10",
+                        color: a.priorite === "critique" ? "#ff4d6a" : a.priorite === "haute" ? "#ffb347" : "var(--textDim)",
+                      }}
+                    >
+                      {a.priorite}
+                    </span>
+                    <span style={{ color: isLate ? "#ff4d6a" : "var(--textDim)", minWidth: 60, textAlign: "right" }}>
+                      {new Date(a.echeance!).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Commercial calendar */}
       <div

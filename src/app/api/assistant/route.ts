@@ -72,6 +72,52 @@ Formule en JSON structuré : { "positifs": [{"theme":string,"nb":number}], "nega
   }
 }
 
+// ─── Local text analysis for avis ────────────────────────────
+function analyzeAvisLocally(text: string): string {
+  const t = text.toLowerCase();
+  const lines = t.split(/[\n.!?]+/).map(l => l.trim()).filter(Boolean);
+
+  const THEMES_POS: { theme: string; keywords: string[] }[] = [
+    { theme: "Accueil chaleureux",       keywords: ["accueil", "sympa", "sympathique", "gentil", "souriant", "aimable"] },
+    { theme: "Rapport qualité/prix",     keywords: ["prix", "pas cher", "abordable", "rapport qualité", "bonne affaire"] },
+    { theme: "Rapidité du service",      keywords: ["rapide", "vite", "efficace", "sans attente", "réactif"] },
+    { theme: "Qualité des produits",     keywords: ["qualité", "bon état", "propre", "beau", "excellent produit"] },
+    { theme: "Conseil professionnel",    keywords: ["conseil", "bien expliqué", "compétent", "professionnel", "expert"] },
+    { theme: "Choix & disponibilité",    keywords: ["choix", "disponible", "vaste", "large sélection", "bien fourni"] },
+    { theme: "Recommande le magasin",    keywords: ["recommande", "je conseille", "à conseiller", "bravo", "top", "super", "excellent", "parfait", "génial"] },
+  ];
+
+  const THEMES_NEG: { theme: string; keywords: string[]; lien_kpi: string }[] = [
+    { theme: "Temps d'attente",          keywords: ["attente", "longtemps", "attendre", "file", "queue", "lent"],           lien_kpi: "Effectif insuffisant" },
+    { theme: "Prix trop élevés",         keywords: ["cher", "trop cher", "prix élevé", "coûteux", "hors de prix"],          lien_kpi: "Marge brute — prix d'achat à revoir" },
+    { theme: "Manque de stock",          keywords: ["pas en stock", "rupture", "pas disponible", "vide", "pas trouvé"],     lien_kpi: "GMROI — rotation du stock insuffisante" },
+    { theme: "Accueil décevant",         keywords: ["indifférent", "pas aimable", "mal accueil", "désagréable", "froid"],   lien_kpi: "Score client — satisfaction à la baisse" },
+    { theme: "Produits défectueux",      keywords: ["défaut", "cassé", "ne fonctionne pas", "panne", "abîmé", "défectueux"], lien_kpi: "SAV — taux de retour produit" },
+    { theme: "Manque de conseil",        keywords: ["pas conseillé", "seul", "ignoré", "aucune aide", "personne"],          lien_kpi: "TLAC — manque de vente additionnelle" },
+    { theme: "Propreté / organisation",  keywords: ["sale", "désorganisé", "bazar", "en désordre", "propre"],               lien_kpi: "Merchandising — présentation magasin" },
+  ];
+
+  const positifs = THEMES_POS.map(tp => ({
+    theme: tp.theme,
+    nb: lines.filter(l => tp.keywords.some(k => l.includes(k))).length,
+  })).filter(t => t.nb > 0).sort((a, b) => b.nb - a.nb);
+
+  const negatifs = THEMES_NEG.map(tn => ({
+    theme: tn.theme,
+    nb: lines.filter(l => tn.keywords.some(k => l.includes(k))).length,
+    lien_kpi: tn.lien_kpi,
+  })).filter(t => t.nb > 0).sort((a, b) => b.nb - a.nb);
+
+  const topNeg = negatifs[0];
+  const action_prioritaire = topNeg
+    ? `Traitez en priorité "${topNeg.theme}" (${topNeg.nb} mention${topNeg.nb > 1 ? "s" : ""}) — impact direct sur ${topNeg.lien_kpi}.`
+    : positifs.length > 0
+      ? `Capitalisez sur vos points forts : ${positifs[0].theme} est votre meilleur atout client.`
+      : "Analysez les avis manuellement pour identifier les axes d'amélioration prioritaires.";
+
+  return JSON.stringify({ positifs, negatifs, action_prioritaire });
+}
+
 function fallback(mode: string, question: string, ctx: any): string {
   if (mode === "miroir") {
     return `Voici ce que les chiffres disent de votre magasin : Le score santé est de ${ctx?.score ?? "—"}/100. ${
@@ -79,11 +125,7 @@ function fallback(mode: string, question: string, ctx: any): string {
     } ${ctx?.tlac ? `Le TLAC est à ${ctx.tlac}, ce qui signifie moins d'un accessoire vendu par achat principal.` : ""}`;
   }
   if (mode === "avis") {
-    return JSON.stringify({
-      positifs: [{ theme: "Accueil", nb: 8 }, { theme: "Prix", nb: 5 }],
-      negatifs: [{ theme: "Attente", nb: 4, lien_kpi: "Effectif aux heures de pointe" }],
-      action_prioritaire: "Renforcer l'effectif aux heures de pointe du samedi",
-    });
+    return analyzeAvisLocally(question ?? "");
   }
   // assistant fallback
   const q = question?.toLowerCase() ?? "";

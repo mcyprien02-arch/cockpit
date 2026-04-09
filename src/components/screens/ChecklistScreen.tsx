@@ -4,57 +4,62 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 
-const CHECKLIST_DEFAULT: { categorie: string; taches: string[] }[] = [
+// ─── Checklist Manager EasyCash ───────────────────────────────
+const CHECKLIST_MANAGER: { categorie: string; icon: string; taches: string[] }[] = [
   {
-    categorie: "Ouverture",
+    categorie: "Sécurité",
+    icon: "🔒",
     taches: [
-      "Vérifier la caisse (fond de caisse, clôture J-1)",
-      "Allumer les équipements (PC, imprimantes, écrans)",
-      "Vérifier les alertes email / intranet",
-      "Mise à jour des prix sur les produits nouvellement cotés",
-      "Contrôle visuel de la mise en rayon",
+      "Tour contrôle ext/int",
+      "Comptage coffre",
+      "Comptage caisses",
+      "Contrôle sécurité",
+      "Tour fermeture",
+      "Flux financiers",
+      "Extinction matériels",
     ],
   },
   {
-    categorie: "Achats / Sourcing",
+    categorie: "Gestion",
+    icon: "📋",
     taches: [
-      "Traiter les demandes de rachat en attente",
-      "Vérifier les produits en cours de test Picea",
-      "Saisir les achats de la veille dans le logiciel",
-      "Contacter les fournisseurs dépôt-vente",
-      "Vérifier les alertes stock manquant",
+      "Lecture mails",
+      "Notifications intranet",
+      "Analyse résultats",
+      "Pointage heures",
+      "Traiter les Z",
+      "Traiter rebuts",
     ],
   },
   {
-    categorie: "Stock & Inventaire",
+    categorie: "Management",
+    icon: "👥",
     taches: [
-      "Identifier les produits de + de 45 jours (action démarque)",
-      "Vérifier les ruptures sur les gammes prioritaires",
-      "Saisir les entrées/sorties dans le module démarque",
-      "Contrôler les étiquettes (module étiquette)",
-      "Mettre à jour les statuts SAV en cours",
+      "Planification journée",
+      "Tour magasin",
+      "Préparation briefing",
+      "Suivi collaborateurs",
+      "Contrôle tenues",
     ],
   },
   {
-    categorie: "Vente & Relation client",
+    categorie: "Commerce",
+    icon: "💰",
     taches: [
-      "Consulter les avis Google du jour (répondre si besoin)",
-      "Mettre à jour les fiches produits Marketplace",
-      "Traiter les SAV / retours en attente",
-      "Vérifier les garanties 2 ans à échéance",
-      "Relire les objectifs du plan d'action de la semaine",
+      "Ouverture Dashboard",
+      "PLV",
+      "Appel stock ciblé",
+      "Journal achats",
+      "Journal ventes",
     ],
   },
   {
-    categorie: "Fermeture",
+    categorie: "Clients",
+    icon: "🤝",
     taches: [
-      "Clôture de caisse + rapprochement",
-      "Envoyer le bilan journalier",
-      "Mettre à jour les indicateurs dans le cockpit",
-      "Vérifier la sécurité (alarme, fermeture)",
-      "Préparer les achats du lendemain",
-      "Vérifier les commandes Marketplace à expédier",
-      "Mettre les produits certifiés authentiques en avant",
+      "Accueil premiers clients",
+      "Gestion retours",
+      "Accompagnement derniers clients",
     ],
   },
 ];
@@ -69,6 +74,9 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
   const [items, setItems] = useState<CheckItem[]>([]);
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(true);
+  const [openCats, setOpenCats] = useState<Set<string>>(
+    () => new Set(CHECKLIST_MANAGER.map(c => c.categorie))
+  );
 
   const load = useCallback(async () => {
     if (!magasinId) return;
@@ -81,10 +89,12 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
       .eq("date_check", date);
 
     const savedMap: Record<string, boolean> = {};
-    (data ?? []).forEach((r: { tache: string; fait: boolean }) => { savedMap[r.tache] = r.fait; });
+    (data ?? []).forEach((r: { tache: string; fait: boolean }) => {
+      savedMap[r.tache] = r.fait;
+    });
 
-    const all: CheckItem[] = CHECKLIST_DEFAULT.flatMap((cat) =>
-      cat.taches.map((t) => ({
+    const all: CheckItem[] = CHECKLIST_MANAGER.flatMap(cat =>
+      cat.taches.map(t => ({
         categorie: cat.categorie,
         tache: t,
         fait: savedMap[t] ?? false,
@@ -98,11 +108,11 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
   useEffect(() => { load(); }, [load]);
 
   const toggle = async (tache: string) => {
-    const current = items.find((i) => i.tache === tache);
+    const current = items.find(i => i.tache === tache);
     if (!current) return;
     const newFait = !current.fait;
 
-    setItems((prev) => prev.map((i) => i.tache === tache ? { ...i, fait: newFait } : i));
+    setItems(prev => prev.map(i => i.tache === tache ? { ...i, fait: newFait } : i));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from("checklist").upsert(
@@ -111,7 +121,15 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
     );
   };
 
-  const totalDone = items.filter((i) => i.fait).length;
+  const toggleCat = (cat: string) => {
+    setOpenCats(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  };
+
+  const totalDone = items.filter(i => i.fait).length;
   const total = items.length;
   const progress = total > 0 ? Math.round((totalDone / total) * 100) : 0;
   const r = 45;
@@ -119,9 +137,9 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
   const fill = (progress / 100) * circ;
   const progressColor = progress >= 80 ? "#00d4aa" : progress >= 50 ? "#ffb347" : "#ff4d6a";
 
-  const byCategory = CHECKLIST_DEFAULT.map((cat) => ({
+  const byCategory = CHECKLIST_MANAGER.map(cat => ({
     ...cat,
-    items: items.filter((i) => i.categorie === cat.categorie),
+    items: items.filter(i => i.categorie === cat.categorie),
   }));
 
   if (loading) return (
@@ -131,11 +149,15 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-w-[900px]">
+
       {/* Header */}
-      <div className="flex items-center gap-6 p-5 rounded-2xl border" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+      <div
+        className="flex items-center gap-6 p-5 rounded-2xl border"
+        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+      >
         {/* Circle progress */}
-        <svg width={110} height={110} viewBox="0 0 110 110">
+        <svg width={110} height={110} viewBox="0 0 110 110" className="shrink-0">
           <circle cx={55} cy={55} r={r} fill="none" stroke="#2a2e3a" strokeWidth={8} />
           <circle
             cx={55} cy={55} r={r}
@@ -144,7 +166,7 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
             strokeWidth={8}
             strokeLinecap="round"
             strokeDasharray={`${fill} ${circ}`}
-            style={{ transform: "rotate(-90deg)", transformOrigin: "55px 55px", transition: "stroke-dasharray 0.5s ease, stroke 0.3s" }}
+            style={{ transform: "rotate(-90deg)", transformOrigin: "55px 55px", transition: "stroke-dasharray 0.5s ease" }}
           />
           <text x={55} y={52} textAnchor="middle" fill={progressColor} fontSize={22} fontWeight="800" fontFamily="DM Sans">
             {progress}%
@@ -155,7 +177,7 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
         </svg>
 
         <div className="flex-1">
-          <div className="text-[18px] font-bold mb-1" style={{ color: "var(--text)" }}>Checklist quotidienne</div>
+          <div className="text-[18px] font-bold mb-1" style={{ color: "var(--text)" }}>Checklist Manager</div>
           <div className="text-[12px] mb-3" style={{ color: "var(--textMuted)" }}>
             {totalDone === total && total > 0
               ? "🎉 Tout est fait — excellente journée !"
@@ -165,71 +187,145 @@ export function ChecklistScreen({ magasinId }: { magasinId: string }) {
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={e => setDate(e.target.value)}
             className="rounded-lg px-3 py-1.5 text-[12px] border"
-            style={{ background: "var(--surfaceAlt)", borderColor: "var(--border)", color: "var(--text)" }}
+            style={{
+              background: "var(--surfaceAlt)",
+              borderColor: "var(--border)",
+              color: "var(--text)",
+              fontFamily: "inherit",
+            }}
           />
+        </div>
+
+        {/* Category summary */}
+        <div className="hidden md:flex flex-col gap-1.5">
+          {byCategory.map(cat => {
+            const done = cat.items.filter(i => i.fait).length;
+            const tot = cat.items.length;
+            const pct = tot > 0 ? Math.round((done / tot) * 100) : 0;
+            return (
+              <div key={cat.categorie} className="flex items-center gap-2">
+                <span className="text-[14px]">{cat.icon}</span>
+                <div className="h-1.5 rounded-full overflow-hidden w-20" style={{ background: "var(--surfaceAlt)" }}>
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${pct}%`,
+                      background: pct === 100 ? "#00d4aa" : pct >= 50 ? "#ffb347" : "#ff4d6a",
+                    }}
+                  />
+                </div>
+                <span className="text-[10px] font-semibold" style={{ color: pct === 100 ? "#00d4aa" : "var(--textDim)" }}>
+                  {done}/{tot}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Categories */}
-      {byCategory.map((cat) => {
-        const catDone = cat.items.filter((i) => i.fait).length;
+      {byCategory.map(cat => {
+        const catDone = cat.items.filter(i => i.fait).length;
         const catTotal = cat.items.length;
+        const isOpen = openCats.has(cat.categorie);
         return (
-          <div key={cat.categorie} className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-            <div className="flex items-center justify-between px-5 py-3 border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-              <span className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>{cat.categorie}</span>
-              <span className="text-[11px] font-semibold" style={{ color: catDone === catTotal ? "#00d4aa" : "var(--textMuted)" }}>
-                {catDone}/{catTotal}
-              </span>
-            </div>
-            <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-              {cat.items.map((item) => (
-                <motion.div
-                  key={item.tache}
-                  className="flex items-center gap-4 px-5 py-3 cursor-pointer hover:opacity-80 transition-all"
-                  style={{ background: item.fait ? "#00d4aa08" : "var(--surfaceAlt)" }}
-                  onClick={() => toggle(item.tache)}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  {/* Checkbox */}
-                  <motion.div
-                    className="w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0"
-                    style={{
-                      borderColor: item.fait ? "#00d4aa" : "#2a2e3a",
-                      background: item.fait ? "#00d4aa" : "transparent",
-                    }}
-                    animate={{ scale: item.fait ? [1, 1.2, 1] : 1 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <AnimatePresence>
-                      {item.fait && (
-                        <motion.span
-                          initial={{ scale: 0, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          exit={{ scale: 0, opacity: 0 }}
-                          className="text-[10px] font-bold"
-                          style={{ color: "#000" }}
-                        >
-                          ✓
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
-
-                  <span
-                    className="text-[12px]"
-                    style={{
-                      color: item.fait ? "var(--textDim)" : "var(--text)",
-                      textDecoration: item.fait ? "line-through" : "none",
-                    }}
-                  >
-                    {item.tache}
+          <div key={cat.categorie} className="rounded-2xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+            {/* Category header — clickable to collapse */}
+            <button
+              onClick={() => toggleCat(cat.categorie)}
+              className="w-full flex items-center justify-between px-5 py-3 border-b transition-all"
+              style={{
+                background: catDone === catTotal ? "#00d4aa08" : "var(--surface)",
+                borderColor: "var(--border)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                border: "none",
+                borderBottom: `1px solid var(--border)`,
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-[18px]">{cat.icon}</span>
+                <span className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+                  {cat.categorie}
+                </span>
+                {catDone === catTotal && catTotal > 0 && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#00d4aa20", color: "#00d4aa" }}>
+                    ✓ Complet
                   </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <span
+                  className="text-[11px] font-semibold"
+                  style={{ color: catDone === catTotal ? "#00d4aa" : "var(--textMuted)" }}
+                >
+                  {catDone}/{catTotal}
+                </span>
+                <span className="text-[10px]" style={{ color: "var(--textDim)" }}>
+                  {isOpen ? "▲" : "▼"}
+                </span>
+              </div>
+            </button>
+
+            <AnimatePresence initial={false}>
+              {isOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="divide-y overflow-hidden"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  {cat.items.map(item => (
+                    <motion.div
+                      key={item.tache}
+                      className="flex items-center gap-4 px-5 py-3 cursor-pointer hover:opacity-80 transition-all"
+                      style={{ background: item.fait ? "#00d4aa06" : "var(--surfaceAlt)" }}
+                      onClick={() => toggle(item.tache)}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {/* Checkbox */}
+                      <motion.div
+                        className="w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0"
+                        style={{
+                          borderColor: item.fait ? "#00d4aa" : "#2a2e3a",
+                          background: item.fait ? "#00d4aa" : "transparent",
+                        }}
+                        animate={{ scale: item.fait ? [1, 1.2, 1] : 1 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <AnimatePresence>
+                          {item.fait && (
+                            <motion.span
+                              initial={{ scale: 0, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0, opacity: 0 }}
+                              className="text-[10px] font-bold"
+                              style={{ color: "#000" }}
+                            >
+                              ✓
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+
+                      <span
+                        className="text-[13px]"
+                        style={{
+                          color: item.fait ? "var(--textDim)" : "var(--text)",
+                          textDecoration: item.fait ? "line-through" : "none",
+                        }}
+                      >
+                        {item.tache}
+                      </span>
+                    </motion.div>
+                  ))}
                 </motion.div>
-              ))}
-            </div>
+              )}
+            </AnimatePresence>
           </div>
         );
       })}

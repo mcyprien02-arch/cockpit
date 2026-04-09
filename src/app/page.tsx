@@ -5,15 +5,32 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { Navigation, ModeSwitcher, TabId, AppMode, getTabGroup } from "@/components/layout/Navigation";
-import { VerdictScreen } from "@/components/screens/VerdictScreen";
-import { KPIsGPSScreen } from "@/components/screens/KPIsGPSScreen";
-import { SaisieScreen } from "@/components/screens/SaisieScreen";
+
+// Screens
+import { VerdictScreen }          from "@/components/screens/VerdictScreen";
+import { KPIsGPSScreen }          from "@/components/screens/KPIsGPSScreen";
+import { SaisieScreen }           from "@/components/screens/SaisieScreen";
+import { DiagnosticScreen }       from "@/components/screens/DiagnosticScreen";
+import { DiagnosticExpressScreen } from "@/components/screens/DiagnosticExpressScreen";
+import { ImportScreen }           from "@/components/screens/ImportScreen";
+import { ComparatifScreen }       from "@/components/screens/ComparatifScreen";
 import { BalanceEconomiqueScreen } from "@/components/screens/BalanceEconomiqueScreen";
-import { CHVACVScreen } from "@/components/screens/CHVACVScreen";
-import { PAPScreen } from "@/components/screens/PAPScreen";
+import { SimulateurScreen }       from "@/components/screens/SimulateurScreen";
+import { CHVACVScreen }           from "@/components/screens/CHVACVScreen";
+import { PAPScreen }              from "@/components/screens/PAPScreen";
+import { PlanActionScreen }       from "@/components/screens/PlanActionScreen";
 import { CompetencesISEORScreen } from "@/components/screens/CompetencesISEORScreen";
-import { ExportCRScreen } from "@/components/screens/ExportCRScreen";
-import { ParametrageScreen } from "@/components/screens/ParametrageScreen";
+import { CarnetDeBordScreen }     from "@/components/screens/CarnetDeBordScreen";
+import { ChecklistScreen }         from "@/components/screens/ChecklistScreen";
+import { JournalVisiteScreen }    from "@/components/screens/JournalVisiteScreen";
+import { ParametrageScreen }      from "@/components/screens/ParametrageScreen";
+import { ExportCRScreen }         from "@/components/screens/ExportCRScreen";
+import { MaJourneeScreen }        from "@/components/screens/MaJourneeScreen";
+import { AvisClientsScreen }      from "@/components/screens/AvisClientsScreen";
+import { VictoiresScreen }        from "@/components/screens/VictoiresScreen";
+import { ProfilScreen }           from "@/components/screens/ProfilScreen";
+import { AssistantWidget }        from "@/components/AssistantWidget";
+import { SpiralIndicator }        from "@/components/SpiralIndicator";
 import type { Magasin } from "@/types";
 
 // ─── Store selector ───────────────────────────────────────────
@@ -115,18 +132,18 @@ function RestrictedScreen({ onSwitchMode }: { onSwitchMode: () => void }) {
 
 // ─── Main App ─────────────────────────────────────────────────
 export default function App() {
-  const [magasins, setMagasins]   = useState<Magasin[]>([]);
+  const [magasins, setMagasins]     = useState<Magasin[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<TabId>("verdict");
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [mode, setMode]           = useState<AppMode>("consultant");
+  const [activeTab, setActiveTab]   = useState<TabId>("cockpit");
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [mode, setMode]             = useState<AppMode>("consultant");
 
   useEffect(() => {
     async function loadMagasins() {
       const { data, error } = await supabase
         .from("magasins")
-        .select("id, nom, ville, franchise")
+        .select("id, nom, ville, franchise, phase_vie, annee_ouverture, surface_m2")
         .order("nom");
       if (error) {
         setError("Impossible de charger les magasins : " + error.message);
@@ -145,6 +162,8 @@ export default function App() {
     try {
       const saved = localStorage.getItem("app_mode");
       if (saved === "consultant" || saved === "franchisé") setMode(saved);
+      const savedTab = localStorage.getItem("active_tab") as TabId | null;
+      if (savedTab) setActiveTab(savedTab);
     } catch { /* ignore */ }
   }, []);
 
@@ -152,15 +171,21 @@ export default function App() {
     setMode(m);
     try { localStorage.setItem("app_mode", m); } catch { /* ignore */ }
     if (m === "franchisé") {
-      const allowed = ["verdict", "actions"];
-      if (!allowed.includes(getTabGroup(activeTab))) setActiveTab("verdict");
+      const allowed = ["journee_grp", "actions"];
+      if (!allowed.includes(getTabGroup(activeTab))) setActiveTab("journee");
     }
+  };
+
+  const handleTabChange = (tab: TabId) => {
+    setActiveTab(tab);
+    try { localStorage.setItem("active_tab", tab); } catch { /* ignore */ }
   };
 
   const selectedMagasin = magasins.find(m => m.id === selectedId) ?? null;
 
   const CONSULTANT_ONLY: TabId[] = [
     "balance", "chvacv", "kpis_gps", "competences", "config",
+    "diagnostic", "comparatif", "import", "journal_visite", "export",
   ];
   const isRestricted = (tab: TabId) =>
     CONSULTANT_ONLY.includes(tab) && mode !== "consultant";
@@ -182,7 +207,7 @@ export default function App() {
     );
   }
 
-  const noStoreNeeded: TabId[] = ["config"];
+  const noStoreNeeded: TabId[] = ["config", "profil"];
   const noStore = !selectedId && !noStoreNeeded.includes(activeTab);
 
   return (
@@ -195,7 +220,7 @@ export default function App() {
         mode={mode}
         onModeChange={handleModeChange}
       />
-      <Navigation activeTab={activeTab} onTabChange={setActiveTab} mode={mode} />
+      <Navigation activeTab={activeTab} onTabChange={handleTabChange} mode={mode} />
 
       <main className="px-6 py-5 max-w-[1600px] mx-auto">
         {error && (
@@ -204,6 +229,16 @@ export default function App() {
             style={{ background: "#ff4d6a12", color: "var(--danger)", border: "1px solid #ff4d6a30" }}
           >
             ⚠ {error}
+          </div>
+        )}
+
+        {/* Spiral indicator — shown on verdict/cockpit tab */}
+        {(activeTab === "cockpit" || activeTab === "kpis_gps") && selectedId && (
+          <div className="mb-4">
+            <SpiralIndicator
+              magasinId={selectedId}
+              onOpenSimulateur={() => handleTabChange("simulateur")}
+            />
           </div>
         )}
 
@@ -220,7 +255,7 @@ export default function App() {
                 <div className="text-[40px] mb-3">🏪</div>
                 <div className="text-[14px]">Aucun magasin trouvé. Ajoutez-en un dans Paramétrage.</div>
                 <button
-                  onClick={() => setActiveTab("config")}
+                  onClick={() => handleTabChange("config")}
                   className="mt-4 rounded-xl px-5 py-2 text-[13px] font-semibold"
                   style={{ background: "var(--accent)", color: "#000", border: "none", cursor: "pointer", fontFamily: "inherit" }}
                 >
@@ -229,28 +264,70 @@ export default function App() {
               </div>
             ) : (
               <>
+                {/* ☀️ MA JOURNÉE */}
+                {activeTab === "journee" && selectedId && (
+                  <MaJourneeScreen magasinId={selectedId} />
+                )}
+                {activeTab === "avis_clients" && selectedId && (
+                  <AvisClientsScreen />
+                )}
+                {activeTab === "victoires" && selectedId && (
+                  <VictoiresScreen magasinId={selectedId} />
+                )}
+                {activeTab === "checklist" && selectedId && (
+                  <ChecklistScreen magasinId={selectedId} />
+                )}
+                {activeTab === "profil" && (
+                  <ProfilScreen />
+                )}
+
                 {/* ⚡ VERDICT */}
-                {activeTab === "verdict" && selectedId && (
+                {activeTab === "cockpit" && selectedId && (
                   <VerdictScreen
                     magasinId={selectedId}
-                    onNavigate={tab => setActiveTab(tab as TabId)}
+                    onNavigate={tab => handleTabChange(tab as TabId)}
                     mode={mode}
                   />
                 )}
-
-                {/* 💰 DÉCISIONS */}
                 {activeTab === "kpis_gps" && selectedId && (
                   isRestricted("kpis_gps")
                     ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
-                    : <KPIsGPSScreen magasinId={selectedId} onNavigate={tab => setActiveTab(tab as TabId)} phaseVie={selectedMagasin?.phase_vie} />
+                    : <KPIsGPSScreen
+                        magasinId={selectedId}
+                        onNavigate={tab => handleTabChange(tab as TabId)}
+                        phaseVie={selectedMagasin?.phase_vie}
+                      />
                 )}
                 {activeTab === "saisie" && selectedId && (
                   <SaisieScreen magasinId={selectedId} />
                 )}
+                {activeTab === "diagnostic" && selectedId && (
+                  isRestricted("diagnostic")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <DiagnosticScreen magasinId={selectedId} />
+                )}
+                {activeTab === "diagnostic_express" && selectedId && (
+                  <DiagnosticExpressScreen />
+                )}
+                {activeTab === "import" && selectedId && (
+                  isRestricted("import")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <ImportScreen magasinId={selectedId} magasin={selectedMagasin} onNavigate={tab => handleTabChange(tab as TabId)} />
+                )}
+                {activeTab === "comparatif" && selectedId && (
+                  isRestricted("comparatif")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <ComparatifScreen />
+                )}
+
+                {/* 💰 DÉCISIONS */}
                 {activeTab === "balance" && selectedId && (
                   isRestricted("balance")
                     ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
                     : <BalanceEconomiqueScreen magasinId={selectedId} magasin={selectedMagasin} />
+                )}
+                {activeTab === "simulateur" && selectedId && (
+                  <SimulateurScreen magasinId={selectedId} />
                 )}
                 {activeTab === "chvacv" && selectedId && (
                   isRestricted("chvacv")
@@ -262,23 +339,40 @@ export default function App() {
                 {activeTab === "pap" && selectedId && (
                   <PAPScreen magasinId={selectedId} />
                 )}
+                {activeTab === "plan" && selectedId && (
+                  <PlanActionScreen magasinId={selectedId} />
+                )}
                 {activeTab === "competences" && selectedId && (
                   isRestricted("competences")
                     ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
                     : <CompetencesISEORScreen magasinId={selectedId} />
                 )}
-                {activeTab === "export" && selectedId && (
-                  <ExportCRScreen
-                    magasinId={selectedId}
-                    magasinNom={selectedMagasin?.nom}
-                  />
+                {activeTab === "carnet" && selectedId && (
+                  <CarnetDeBordScreen magasinId={selectedId} />
+                )}
+
+                {/* 👥 ÉQUIPE */}
+                {activeTab === "journal_visite" && selectedId && (
+                  isRestricted("journal_visite")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <JournalVisiteScreen magasinId={selectedId} magasinNom={selectedMagasin?.nom} />
                 )}
                 {activeTab === "config" && <ParametrageScreen />}
+                {activeTab === "export" && selectedId && (
+                  isRestricted("export")
+                    ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
+                    : <ExportCRScreen magasinId={selectedId} magasinNom={selectedMagasin?.nom} />
+                )}
               </>
             )}
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {/* Floating assistant — visible on most tabs */}
+      {selectedId && !["config"].includes(activeTab) && (
+        <AssistantWidget />
+      )}
     </div>
   );
 }

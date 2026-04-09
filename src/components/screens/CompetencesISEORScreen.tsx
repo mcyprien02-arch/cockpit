@@ -82,7 +82,12 @@ const DEFAULT_COLLABS: Collab[] = [
 ];
 
 const COLLAB_COLORS = ["#00d4aa", "#4da6ff", "#a78bfa", "#ffb347", "#f472b6", "#ff6b6b"];
-const NIVEAU_LABELS = ["Non renseigné", "En cours", "Acquis partiel", "Maîtrisé"];
+const NIVEAU_LABELS = [
+  "Pas de connaissance, pas de pratique",
+  "Connaissance mais pas de pratique",
+  "Pratique occasionnelle",
+  "Maîtrise parfaite",
+];
 
 // ─── SVG Skill Cell ───────────────────────────────────────────
 function SkillCell({
@@ -172,11 +177,173 @@ function SkillCell({
   );
 }
 
+// ─── CSV Export ───────────────────────────────────────────────
+function exportCSV(magasinId: string, collabs: Collab[], matrix: Matrix) {
+  const header = ["Famille", "Compétence", "Niveau opérationnel", ...collabs.map(c => c.nom)];
+  const rows = COMPETENCES.map(comp => [
+    comp.famille,
+    comp.nom,
+    comp.niveauOp,
+    ...collabs.map(c => NIVEAU_LABELS[matrix[c.id]?.[comp.id] ?? 0]),
+  ]);
+  const csv = [header, ...rows].map(r => r.map(v => `"${v}"`).join(";")).join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `competences_${magasinId}_${new Date().toISOString().split("T")[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── GMROI Calculator ─────────────────────────────────────────
+function GmroiCalculator() {
+  const [stockInvesti, setStockInvesti] = useState(150000);
+  const [margePercent, setMargePercent] = useState(31);
+
+  const gmroi = margePercent > 0 ? ((stockInvesti * (margePercent / 100)) / stockInvesti).toFixed(2) : "0";
+  const margeGeneree = Math.round(stockInvesti * (margePercent / 100));
+  const gmroiNum = parseFloat(gmroi);
+  const verdict = gmroiNum >= 3.5 ? { label: "Excellent", color: "#00d4aa" }
+    : gmroiNum >= 2.5 ? { label: "Bon", color: "#4da6ff" }
+    : gmroiNum >= 1.5 ? { label: "À surveiller", color: "#ffb347" }
+    : { label: "Insuffisant", color: "#ff4d6a" };
+
+  const profils = [
+    { label: "Petit magasin", stock: 120000, marge: 28 },
+    { label: "Magasin moyen", stock: 200000, marge: 31 },
+    { label: "Grand magasin", stock: 300000, marge: 34 },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="text-[13px]" style={{ color: "var(--textMuted)" }}>
+        GMROI = Marge brute générée ÷ Stock investi. Pour 1€ investi en stock, combien générez-vous ?
+      </div>
+
+      {/* Profils réseau */}
+      <div className="grid grid-cols-3 gap-3">
+        {profils.map(p => (
+          <button
+            key={p.label}
+            onClick={() => { setStockInvesti(p.stock); setMargePercent(p.marge); }}
+            className="rounded-2xl p-4 text-left transition-all"
+            style={{
+              background: stockInvesti === p.stock ? "var(--accent)15" : "var(--surfaceAlt)",
+              border: stockInvesti === p.stock ? "1px solid var(--accent)" : "1px solid var(--border)",
+              cursor: "pointer",
+            }}
+          >
+            <div className="text-[11px] font-bold mb-1" style={{ color: "var(--textDim)" }}>{p.label}</div>
+            <div className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+              {p.stock.toLocaleString("fr-FR")} €
+            </div>
+            <div className="text-[10px]" style={{ color: "var(--textMuted)" }}>Marge {p.marge}%</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Sliders */}
+      <div
+        className="rounded-2xl p-6 space-y-5"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+      >
+        <div>
+          <div className="flex justify-between mb-2">
+            <span className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>Stock investi</span>
+            <span className="text-[13px] font-bold" style={{ color: "var(--accent)" }}>
+              {stockInvesti.toLocaleString("fr-FR")} €
+            </span>
+          </div>
+          <input
+            type="range" min={50000} max={500000} step={5000}
+            value={stockInvesti}
+            onChange={e => setStockInvesti(+e.target.value)}
+            className="w-full accent-[#00d4aa]"
+          />
+          <div className="flex justify-between text-[10px] mt-1" style={{ color: "var(--textDim)" }}>
+            <span>50k€</span><span>500k€</span>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex justify-between mb-2">
+            <span className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>Taux de marge brute</span>
+            <span className="text-[13px] font-bold" style={{ color: "#4da6ff" }}>{margePercent}%</span>
+          </div>
+          <input
+            type="range" min={15} max={55} step={1}
+            value={margePercent}
+            onChange={e => setMargePercent(+e.target.value)}
+            className="w-full accent-[#4da6ff]"
+          />
+          <div className="flex justify-between text-[10px] mt-1" style={{ color: "var(--textDim)" }}>
+            <span>15%</span><span>55%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Result */}
+      <div
+        className="rounded-2xl p-6"
+        style={{
+          background: `linear-gradient(135deg, ${verdict.color}15, ${verdict.color}05)`,
+          border: `1px solid ${verdict.color}40`,
+        }}
+      >
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <div className="text-[13px] font-semibold mb-1" style={{ color: "var(--textMuted)" }}>
+              Pour {stockInvesti.toLocaleString("fr-FR")}€ investis en stock…
+            </div>
+            <div className="text-[28px] font-bold" style={{ color: verdict.color }}>
+              vous générez {margeGeneree.toLocaleString("fr-FR")}€ de marge
+            </div>
+            <div className="text-[13px] mt-1" style={{ color: "var(--textMuted)" }}>
+              Soit {margePercent}% de marge sur votre stock
+            </div>
+          </div>
+          <div className="text-center">
+            <div className="text-[44px] font-bold" style={{ color: verdict.color }}>{gmroi}</div>
+            <div className="text-[11px] font-bold" style={{ color: verdict.color }}>GMROI</div>
+            <div
+              className="rounded-full px-3 py-1 text-[11px] font-bold mt-1"
+              style={{ background: verdict.color + "20", color: verdict.color }}
+            >
+              {verdict.label}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${verdict.color}20` }}>
+          <div className="text-[11px] font-bold mb-2" style={{ color: "var(--textDim)" }}>BENCHMARKS RÉSEAU</div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            {[
+              { label: "Minimum acceptable", value: "1.5", color: "#ff4d6a" },
+              { label: "Médiane réseau", value: "3.84", color: "#ffb347" },
+              { label: "Excellent", value: "5.0+", color: "#00d4aa" },
+            ].map(b => (
+              <div
+                key={b.label}
+                className="rounded-xl p-3"
+                style={{ background: "var(--surfaceAlt)", border: `1px solid ${b.color}30` }}
+              >
+                <div className="text-[18px] font-bold" style={{ color: b.color }}>{b.value}</div>
+                <div className="text-[10px] mt-0.5" style={{ color: "var(--textDim)" }}>{b.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────
 export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProps) {
   const [collabs, setCollabs]                   = useState<Collab[]>(DEFAULT_COLLABS);
   const [matrix, setMatrix]                     = useState<Matrix>({});
-  const [view, setView]                         = useState<"grille" | "radar">("grille");
+  const [view, setView]                         = useState<"grille" | "radar" | "gmroi">("grille");
   const [simulerAbsenceId, setSimulerAbsenceId] = useState<string>("");
   const [newCollabNom, setNewCollabNom]         = useState("");
   const [showAddCollab, setShowAddCollab]       = useState(false);
@@ -344,7 +511,7 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
       <div className="flex flex-wrap items-center gap-3">
         {/* View toggle */}
         <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: "var(--border)" }}>
-          {(["grille", "radar"] as const).map(v => (
+          {([["grille", "📋 Grille"], ["radar", "📡 Radar"], ["gmroi", "📊 GMROI"]] as const).map(([v, label]) => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -357,10 +524,19 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
                 border: "none",
               }}
             >
-              {v === "grille" ? "📋 Grille" : "📡 Radar"}
+              {label}
             </button>
           ))}
         </div>
+
+        {/* Export CSV */}
+        <button
+          onClick={() => exportCSV(magasinId, collabs, matrix)}
+          className="rounded-xl px-4 py-2 text-[12px] font-semibold"
+          style={{ background: "var(--surfaceAlt)", color: "var(--textMuted)", border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit" }}
+        >
+          ⬇ Export Excel
+        </button>
 
         {/* Simuler absence */}
         <select
@@ -532,6 +708,10 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
               </div>
             </div>
           </motion.div>
+        ) : view === "gmroi" ? (
+          <motion.div key="gmroi" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <GmroiCalculator />
+          </motion.div>
         ) : (
           <motion.div key="radar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
             <div className="rounded-2xl border p-5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
@@ -597,13 +777,13 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
         <div className="flex flex-wrap gap-8">
           <div>
             <div className="text-[11px] font-semibold mb-2 uppercase tracking-wider" style={{ color: "var(--textDim)" }}>
-              4 états
+              4 niveaux
             </div>
             <div className="flex flex-col gap-2">
               {([0, 1, 2, 3] as NiveauCell[]).map(n => (
-                <div key={n} className="flex items-center gap-2">
+                <div key={n} className="flex items-center gap-3">
                   <SkillCell niveau={n} niveauOp="gestion" compNom="" onCycle={() => {}} />
-                  <span className="text-[12px]" style={{ color: "var(--textMuted)" }}>{NIVEAU_LABELS[n]}</span>
+                  <span className="text-[11px]" style={{ color: "var(--textMuted)" }}>{NIVEAU_LABELS[n]}</span>
                 </div>
               ))}
             </div>
