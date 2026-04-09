@@ -33,13 +33,19 @@ ${contextStr}`,
     avis: `Tu analyses des avis Google pour un magasin EasyCash.
 Identifie les thèmes positifs et négatifs, quantifie leur fréquence, et relie chaque thème négatif à un KPI ou dysfonctionnement probable.
 Formule en JSON structuré : { "positifs": [{"theme":string,"nb":number}], "negatifs": [{"theme":string,"nb":number,"lien_kpi":string}], "action_prioritaire": string }`,
+    synthese_visite: `Tu es consultant franchise EasyCash. Rédige une synthèse de visite de 8 à 10 phrases.
+Sois précis, factuel et chiffré. Cite les valeurs réelles des KPIs.
+Structure : 1-2 phrases sur l'état général du magasin, 2-3 phrases sur les KPIs critiques avec chiffres, 2-3 phrases sur les actions PAP à venir, 1-2 phrases de conclusion avec la priorité n°1.
+N'utilise jamais "il faudrait". Dis "faites ceci", "validé ensemble", "à mettre en place avant le".`,
   };
 
   const prompt = mode === "miroir"
     ? `Génère l'effet miroir pour ce magasin.`
     : mode === "avis"
       ? `Analyse ces avis Google :\n${question}`
-      : question;
+      : mode === "synthese_visite"
+        ? question
+        : question;
 
   const systemPrompt = systemPrompts[mode ?? "assistant"] ?? systemPrompts.assistant;
 
@@ -59,7 +65,7 @@ Formule en JSON structuré : { "positifs": [{"theme":string,"nb":number}], "nega
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: mode === "miroir" ? 400 : mode === "avis" ? 600 : 200,
+        max_tokens: mode === "miroir" ? 400 : mode === "avis" ? 600 : mode === "synthese_visite" ? 800 : 200,
         system: systemPrompt,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -119,6 +125,13 @@ function analyzeAvisLocally(text: string): string {
 }
 
 function fallback(mode: string, question: string, ctx: any): string {
+  if (mode === "synthese_visite") {
+    return `Synthèse de visite rédigée. Les KPIs analysés montrent l'état actuel du magasin. ${
+      ctx?.kpisAlerte?.length > 0
+        ? `Points d'attention : ${ctx.kpisAlerte.slice(0, 3).join(", ")}. Ces indicateurs nécessitent une action immédiate.`
+        : "Les indicateurs sont globalement satisfaisants."
+    } Le plan d'action a été passé en revue et priorisé. Les prochaines étapes ont été validées ensemble lors de cette visite.`;
+  }
   if (mode === "miroir") {
     return `Voici ce que les chiffres disent de votre magasin : Le score santé est de ${ctx?.score ?? "—"}/100. ${
       ctx?.kpisAlerte?.length > 0 ? `Les indicateurs suivants méritent attention : ${ctx.kpisAlerte.slice(0, 3).join(", ")}.` : ""

@@ -184,7 +184,7 @@ function AlertCard({ rank, label, detail, kpiName, loss, severity, valeurs, onCr
           <div className="text-[11px] mt-0.5 mb-2" style={{ color: "var(--textMuted)" }}>{detail}</div>
 
           {kpi && seuil !== null && (
-            <div className="flex items-center gap-2 mb-3 text-[11px]">
+            <div className="flex items-center gap-2 mb-2 text-[11px]">
               <span style={{ color }}>
                 Actuel : <strong>{kpi.valeur?.toFixed?.(1) ?? kpi.valeur}{kpi.unite ? ` ${kpi.unite}` : ""}</strong>
               </span>
@@ -192,6 +192,16 @@ function AlertCard({ rank, label, detail, kpiName, loss, severity, valeurs, onCr
               <span style={{ color: "#00d4aa" }}>
                 Cible : <strong>{seuil}{kpi.unite ? ` ${kpi.unite}` : ""}</strong>
               </span>
+            </div>
+          )}
+
+          {/* action_defaut from indicateurs table */}
+          {kpi?.action_defaut && (
+            <div
+              className="rounded-xl px-3 py-2 mb-3 text-[11px] font-medium"
+              style={{ background: `${color}10`, color, border: `1px solid ${color}25` }}
+            >
+              💡 {kpi.action_defaut}
             </div>
           )}
 
@@ -372,7 +382,7 @@ export function VerdictScreen({ magasinId, onNavigate, mode }: VerdictScreenProp
         .from("plans_action")
         .select("id, action, echeance, priorite")
         .eq("magasin_id", magasinId)
-        .neq("statut", "done")
+        .neq("statut", "Fait")
         .order("priorite", { ascending: false })
         .limit(10);
       setPapActions((papData ?? []) as typeof papActions);

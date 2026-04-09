@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "@/lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────
 type Moral = "😟" | "😐" | "🙂" | "😄";
@@ -194,6 +195,7 @@ export function JournalVisiteScreen({ magasinId, magasinNom }: JournalVisiteScre
   const [moral, setMoral] = useState<Moral | null>(null);
   const [synthese, setSynthese] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [papActions, setPapActions] = useState<{ titre: string; statut: string; priorite: string; echeance?: string }[]>([]);
 
   const reload = useCallback(() => {
     const all = loadVisites(magasinId);
@@ -201,6 +203,21 @@ export function JournalVisiteScreen({ magasinId, magasinNom }: JournalVisiteScre
   }, [magasinId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Load PAP actions from Supabase
+  useEffect(() => {
+    if (!magasinId) return;
+    (supabase as any)
+      .from("plans_action")
+      .select("titre, statut, priorite, echeance")
+      .eq("magasin_id", magasinId)
+      .neq("statut", "Fait")
+      .order("priorite", { ascending: false })
+      .limit(10)
+      .then(({ data }: { data: any }) => {
+        if (data) setPapActions(data);
+      });
+  }, [magasinId]);
 
   const startNewVisite = () => {
     const id = `visite_${Date.now()}`;
@@ -234,20 +251,43 @@ export function JournalVisiteScreen({ magasinId, magasinNom }: JournalVisiteScre
   const generateSynthese = async () => {
     setGenerating(true);
     try {
+      const kpis = loadKPIsSnapshot(magasinId);
+      const kpiLines = Object.entries(kpis)
+        .map(([k, v]) => `- ${k}: ${v}`)
+        .join("\n") || "Aucun KPI disponible";
+
+      const papLines = papActions.length > 0
+        ? papActions.map(a => `- [${a.priorite}] ${a.titre}${a.echeance ? ` (échéance: ${a.echeance})` : ""}`).join("\n")
+        : "Aucune action PAP en cours";
+
+      const checklistDone = Object.values(checklist).filter(Boolean).length;
+      const checklistTotal = Object.values(checklist).length;
+
+      const prompt = `Tu es consultant franchise EasyCash. Rédige une synthèse de visite de 8 à 10 phrases.
+Sois précis, factuel et chiffré. Cite les valeurs réelles des KPIs.
+Structure : état général du magasin (1-2 phrases), KPIs critiques avec chiffres (2-3 phrases), actions PAP prioritaires (2-3 phrases), conclusion avec priorité n°1 (1-2 phrases).
+
+KPIs du magasin :
+${kpiLines}
+
+Constats de la visite :
+${notes || "(pas de notes saisies)"}
+
+Checklist : ${checklistDone}/${checklistTotal} points validés
+Moral du franchisé : ${moral ?? "non évalué"}
+
+PAP en cours :
+${papLines}`;
+
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          question: `Synthèse visite animateur. Notes: "${notes}". Checklist complétée: ${Object.values(checklist).filter(Boolean).length}/5. Moral: ${moral ?? "non évalué"}.`,
-          mode: "assistant",
-          context: loadKPIsSnapshot(magasinId),
-        }),
+        body: JSON.stringify({ question: prompt, mode: "synthese_visite" }),
       });
       const data = await res.json();
-      const text: string = data.response ?? "";
-      setSynthese(text);
+      setSynthese(data.response ?? "");
     } catch {
-      setSynthese("3 points clés : analyse des KPIs effectuée, stock âgé passé en revue, plan d'action validé.\n2 actions convenues : suivi du déstockage, relance du GMROI.\n1 point de vigilance : surveiller la trésorerie dans les 30 prochains jours.");
+      setSynthese("Erreur lors de la génération. Vérifiez la connexion et réessayez.");
     }
     setGenerating(false);
   };

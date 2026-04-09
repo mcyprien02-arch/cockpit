@@ -268,7 +268,7 @@ export default function App() {
                   <MaJourneeScreen magasinId={selectedId} />
                 )}
                 {activeTab === "avis_clients" && selectedId && (
-                  <AvisClientsScreen />
+                  <AvisClientsScreen magasinId={selectedId} />
                 )}
                 {activeTab === "victoires" && selectedId && (
                   <VictoiresScreen magasinId={selectedId} />
