@@ -29,7 +29,7 @@ export function ParametrageScreen() {
   const [indicateurs, setIndicateurs] = useState<Indicateur[]>([]);
   const [magasins, setMagasins] = useState<Magasin[]>([]);
   const [seedingId, setSeedingId] = useState<string | null>(null);
-  const [seedMsg, setSeedMsg] = useState<string | null>(null);
+  const [seedResult, setSeedResult] = useState<{ id: string; msg: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingInd, setEditingInd] = useState<Partial<Indicateur> | null>(null);
   const [editingMag, setEditingMag] = useState<Partial<Magasin> | null>(null);
@@ -157,7 +157,7 @@ export function ParametrageScreen() {
 
   const seedMagasin = async (id: string) => {
     setSeedingId(id);
-    setSeedMsg(null);
+    setSeedResult(null);
     try {
       const res = await fetch("/api/seed", {
         method: "POST",
@@ -165,9 +165,17 @@ export function ParametrageScreen() {
         body: JSON.stringify({ magasinId: id }),
       });
       const data = await res.json();
-      setSeedMsg(data.ok ? `✓ ${data.message}` : `✗ ${data.error}`);
-    } catch {
-      setSeedMsg("✗ Erreur réseau");
+      if (data.ok) {
+        setSeedResult({
+          id,
+          msg: `✓ ${data.valInserted} KPIs + ${data.papInserted} actions PAP injectés — allez dans Diagnostic pour voir les recommandations.`,
+        });
+        load(); // Rafraîchit phase_vie
+      } else {
+        setSeedResult({ id, msg: `✗ ${data.error ?? "Erreur inconnue"}` });
+      }
+    } catch (e) {
+      setSeedResult({ id, msg: `✗ Erreur réseau : ${String(e)}` });
     }
     setSeedingId(null);
   };
@@ -699,9 +707,13 @@ create policy "Accès complet" on rse_checklist for all using (true);`}
                     🗑 Supprimer
                   </button>
                 </div>
-                {seedMsg && seedingId === null && (
-                  <div className="mt-2 text-[10px] rounded-lg px-2 py-1" style={{ background: seedMsg.startsWith("✓") ? "#00d4aa12" : "#ff4d6a12", color: seedMsg.startsWith("✓") ? "#00d4aa" : "#ff4d6a" }}>
-                    {seedMsg}
+                {seedResult?.id === m.id && (
+                  <div className="mt-2 text-[10px] rounded-lg px-2 py-1.5 leading-relaxed"
+                    style={{
+                      background: seedResult.msg.startsWith("✓") ? "#00d4aa12" : "#ff4d6a12",
+                      color: seedResult.msg.startsWith("✓") ? "#00d4aa" : "#ff4d6a",
+                    }}>
+                    {seedResult.msg}
                   </div>
                 )}
               </motion.div>
