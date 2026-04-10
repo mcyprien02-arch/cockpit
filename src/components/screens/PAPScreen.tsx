@@ -58,10 +58,24 @@ const MONTHS = ["M1", "M2", "M3", "M4", "M5", "M6"];
 // ── Helpers ────────────────────────────────────────────────────
 function mkId() { return Math.random().toString(36).slice(2, 10); }
 
+// Mapping statuts PAP UI ↔ DB
+function toDbStatut(s: PAPStatut): string {
+  if (s === "Terminé") return "Fait";
+  if (s === "À lancer") return "À faire";
+  return s;
+}
+function fromDbStatut(s: string): PAPStatut {
+  if (s === "Fait") return "Terminé";
+  if (s === "À faire") return "À lancer";
+  if (s === "En cours") return "En cours";
+  if (s === "Abandonné") return "Abandonné";
+  return "À lancer";
+}
+
 export function PAPScreen({ magasinId }: { magasinId: string }) {
-  const actionsKey = `pap_actions_${magasinId}`;
-  const axesKey    = `pap_axes_${magasinId}`;
-  const chvacvKey  = `chvacv_${magasinId}`;
+  const axesKey   = `pap_axes_${magasinId}`;
+  const extKey    = `pap_ext_${magasinId}`; // axeId, duree, avancement, impactFinancier
+  const chvacvKey = `chvacv_${magasinId}`;
 
   const [actions, setActions]       = useState<PAPAction[]>([]);
   const [axes, setAxes]             = useState<PAPAxe[]>(DEFAULT_AXES);
@@ -72,17 +86,55 @@ export function PAPScreen({ magasinId }: { magasinId: string }) {
   const [showForm, setShowForm]     = useState(false);
   const [formAxeId, setFormAxeId]   = useState<string>("");
   const [editActionId, setEditActionId] = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
 
   const [form, setForm] = useState<Partial<PAPAction>>({
     statut: "À lancer", duree: "court", avancement: 0,
     objectif: "", action: "", responsable: "", echeance: "", kpiImpacte: "", impactFinancier: 0,
   });
 
-  // Load
+  const loadExt = (): Record<string, Partial<PAPAction>> => {
+    try { return JSON.parse(localStorage.getItem(extKey) ?? "{}"); } catch { return {}; }
+  };
+  const saveExt = (ext: Record<string, Partial<PAPAction>>) => {
+    try { localStorage.setItem(extKey, JSON.stringify(ext)); } catch { /* noop */ }
+  };
+
+  // Load from Supabase
+  const loadActions = useCallback(async () => {
+    if (!magasinId) return;
+    setLoading(true);
+    const { data } = await (supabase as any)
+      .from("plans_action")
+      .select("id, action, constat, responsable, echeance, statut, priorite, kpi_cible")
+      .eq("magasin_id", magasinId)
+      .order("echeance", { ascending: true });
+
+    const ext = loadExt();
+    const rows: PAPAction[] = (data ?? []).map((r: any) => {
+      const extra = ext[r.id] ?? {};
+      return {
+        id: r.id,
+        axeId:           extra.axeId ?? axes[0]?.id ?? "a1",
+        objectif:        r.constat ?? "",
+        action:          r.action ?? "",
+        responsable:     r.responsable ?? "",
+        echeance:        r.echeance ?? "",
+        kpiImpacte:      r.kpi_cible ?? "",
+        avancement:      extra.avancement ?? 0,
+        statut:          fromDbStatut(r.statut ?? "À faire"),
+        duree:           extra.duree ?? "court",
+        impactFinancier: extra.impactFinancier ?? 0,
+      };
+    });
+    setActions(rows);
+    setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [magasinId]);
+
+  // Load axes + CHVACV
   useEffect(() => {
     try {
-      const sa = localStorage.getItem(actionsKey);
-      if (sa) setActions(JSON.parse(sa));
       const sx = localStorage.getItem(axesKey);
       if (sx) setAxes(JSON.parse(sx));
       const sc = localStorage.getItem(chvacvKey);
@@ -95,7 +147,9 @@ export function PAPScreen({ magasinId }: { magasinId: string }) {
         }
       }
     } catch { /* noop */ }
-  }, [actionsKey, axesKey, chvacvKey]);
+  }, [axesKey, chvacvKey]);
+
+  useEffect(() => { loadActions(); }, [loadActions]);
 
   // Load KPI alerts
   const loadValeurs = useCallback(async () => {
@@ -109,14 +163,39 @@ export function PAPScreen({ magasinId }: { magasinId: string }) {
 
   useEffect(() => { loadValeurs(); }, [loadValeurs]);
 
-  const saveActions = (next: PAPAction[]) => {
-    setActions(next);
-    localStorage.setItem(actionsKey, JSON.stringify(next));
+  // Save extra fields to localStorage
+  const persistExt = (action: PAPAction) => {
+    const ext = loadExt();
+    ext[action.id] = {
+      axeId: action.axeId,
+      duree: action.duree,
+      avancement: action.avancement,
+      impactFinancier: action.impactFinancier,
+    };
+    saveExt(ext);
   };
 
   const saveAxes = (next: PAPAxe[]) => {
     setAxes(next);
     localStorage.setItem(axesKey, JSON.stringify(next));
+  };
+
+  // Update statut in DB and locally
+  const updateStatut = async (id: string, statut: PAPStatut) => {
+    await (supabase as any)
+      .from("plans_action")
+      .update({ statut: toDbStatut(statut) })
+      .eq("id", id);
+    setActions(prev => prev.map(a => a.id === id ? { ...a, statut } : a));
+  };
+
+  // Delete action
+  const deleteAction = async (id: string) => {
+    await (supabase as any).from("plans_action").delete().eq("id", id);
+    const ext = loadExt();
+    delete ext[id];
+    saveExt(ext);
+    setActions(prev => prev.filter(a => a.id !== id));
   };
 
   // ── Stats ──────────────────────────────────────────────────
@@ -158,46 +237,113 @@ export function PAPScreen({ magasinId }: { magasinId: string }) {
     setShowForm(true);
   };
 
-  const submitForm = () => {
+  const submitForm = async () => {
     if (!form.action) return;
-    const action: PAPAction = {
-      id: editActionId ?? mkId(),
-      axeId: formAxeId,
-      objectif: form.objectif ?? "",
-      action: form.action ?? "",
-      responsable: form.responsable ?? "",
-      echeance: form.echeance ?? "",
-      kpiImpacte: form.kpiImpacte ?? "",
-      avancement: form.avancement ?? 0,
-      statut: form.statut ?? "À lancer",
-      duree: form.duree ?? "court",
-      impactFinancier: form.impactFinancier ?? 0,
-    };
+    const dbStatut = toDbStatut(form.statut ?? "À lancer");
+
     if (editActionId) {
-      saveActions(actions.map((a) => a.id === editActionId ? action : a));
+      // Update existing
+      await (supabase as any)
+        .from("plans_action")
+        .update({
+          action:      form.action,
+          constat:     form.objectif,
+          responsable: form.responsable,
+          echeance:    form.echeance || null,
+          statut:      dbStatut,
+          kpi_cible:   form.kpiImpacte,
+        })
+        .eq("id", editActionId);
+
+      const updated: PAPAction = {
+        id: editActionId,
+        axeId: formAxeId,
+        objectif: form.objectif ?? "",
+        action: form.action ?? "",
+        responsable: form.responsable ?? "",
+        echeance: form.echeance ?? "",
+        kpiImpacte: form.kpiImpacte ?? "",
+        avancement: form.avancement ?? 0,
+        statut: form.statut ?? "À lancer",
+        duree: form.duree ?? "court",
+        impactFinancier: form.impactFinancier ?? 0,
+      };
+      persistExt(updated);
+      setActions(prev => prev.map(a => a.id === editActionId ? updated : a));
     } else {
-      saveActions([...actions, action]);
+      // Insert new
+      const { data: inserted } = await (supabase as any)
+        .from("plans_action")
+        .insert({
+          magasin_id:  magasinId,
+          action:      form.action,
+          constat:     form.objectif,
+          responsable: form.responsable,
+          echeance:    form.echeance || null,
+          statut:      dbStatut,
+          priorite:    form.statut === "À lancer" ? "normale" : "haute",
+          kpi_cible:   form.kpiImpacte,
+        })
+        .select("id")
+        .single();
+
+      if (inserted?.id) {
+        const newAction: PAPAction = {
+          id: inserted.id,
+          axeId: formAxeId,
+          objectif: form.objectif ?? "",
+          action: form.action ?? "",
+          responsable: form.responsable ?? "",
+          echeance: form.echeance ?? "",
+          kpiImpacte: form.kpiImpacte ?? "",
+          avancement: form.avancement ?? 0,
+          statut: form.statut ?? "À lancer",
+          duree: form.duree ?? "court",
+          impactFinancier: form.impactFinancier ?? 0,
+        };
+        persistExt(newAction);
+        setActions(prev => [...prev, newAction]);
+      }
     }
     setShowForm(false);
   };
 
   // ── Auto-generate from KPI alerts ─────────────────────────
-  const autoGenerate = () => {
+  const autoGenerate = async () => {
     const alerts = valeurs.filter((v) => v.status === "dg" && v.action_defaut);
-    const generated: PAPAction[] = alerts.slice(0, 5).map((v) => ({
-      id: mkId(),
-      axeId: axes[0]?.id ?? "a1",
-      objectif: `Améliorer ${v.indicateur_nom}`,
-      action: v.action_defaut ?? `Action sur ${v.indicateur_nom}`,
-      responsable: "",
-      echeance: new Date(Date.now() + 30 * 24 * 3600000).toISOString().split("T")[0],
-      kpiImpacte: v.indicateur_nom,
-      avancement: 0,
-      statut: "À lancer",
-      duree: "court",
-      impactFinancier: 0,
-    }));
-    saveActions([...actions, ...generated.filter((g) => !actions.some((a) => a.action === g.action))]);
+    const toInsert = alerts.slice(0, 5).filter(v => !actions.some(a => a.kpiImpacte === v.indicateur_nom));
+    for (const v of toInsert) {
+      const { data: inserted } = await (supabase as any)
+        .from("plans_action")
+        .insert({
+          magasin_id:  magasinId,
+          action:      v.action_defaut ?? `Action sur ${v.indicateur_nom}`,
+          constat:     `Alerte KPI : ${v.indicateur_nom} = ${v.valeur}${v.unite ?? ""}`,
+          echeance:    new Date(Date.now() + 30 * 24 * 3600000).toISOString().split("T")[0],
+          statut:      "À faire",
+          priorite:    "haute",
+          kpi_cible:   v.indicateur_nom,
+        })
+        .select("id")
+        .single();
+      if (inserted?.id) {
+        const newAction: PAPAction = {
+          id: inserted.id,
+          axeId: axes[0]?.id ?? "a1",
+          objectif: `Alerte KPI : ${v.indicateur_nom}`,
+          action: v.action_defaut ?? `Action sur ${v.indicateur_nom}`,
+          responsable: "",
+          echeance: new Date(Date.now() + 30 * 24 * 3600000).toISOString().split("T")[0],
+          kpiImpacte: v.indicateur_nom,
+          avancement: 0,
+          statut: "À lancer",
+          duree: "court",
+          impactFinancier: 0,
+        };
+        persistExt(newAction);
+        setActions(prev => [...prev, newAction]);
+      }
+    }
   };
 
   const alerts = valeurs.filter((v) => v.status === "dg");
@@ -358,7 +504,7 @@ export function PAPScreen({ magasinId }: { magasinId: string }) {
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <select value={action.statut}
-                              onChange={(e) => saveActions(actions.map((a) => a.id === action.id ? { ...a, statut: e.target.value as PAPStatut } : a))}
+                              onChange={(e) => updateStatut(action.id, e.target.value as PAPStatut)}
                               className="rounded-lg px-2 py-1 text-[10px] border font-semibold"
                               style={{ background: sc.bg, borderColor: "transparent", color: sc.color }}>
                               {(["À lancer", "En cours", "Terminé", "Abandonné"] as PAPStatut[]).map((s) => (
@@ -367,7 +513,7 @@ export function PAPScreen({ magasinId }: { magasinId: string }) {
                             </select>
                             <button onClick={() => openForm(action.axeId, action)}
                               className="text-[10px] px-1.5 py-1 rounded" style={{ color: "var(--textDim)" }}>✏</button>
-                            <button onClick={() => saveActions(actions.filter((a) => a.id !== action.id))}
+                            <button onClick={() => deleteAction(action.id)}
                               className="text-[10px] px-1.5 py-1 rounded" style={{ color: "var(--textDim)" }}>✕</button>
                           </div>
                         </div>

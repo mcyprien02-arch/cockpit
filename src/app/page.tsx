@@ -299,7 +299,7 @@ export default function App() {
                 {activeTab === "diagnostic" && selectedId && (
                   isRestricted("diagnostic")
                     ? <RestrictedScreen onSwitchMode={() => handleModeChange("consultant")} />
-                    : <DiagnosticScreen magasinId={selectedId} />
+                    : <DiagnosticScreen magasinId={selectedId} magasin={selectedMagasin} />
                 )}
                 {activeTab === "diagnostic_express" && selectedId && (
                   <DiagnosticExpressScreen />

@@ -28,6 +28,8 @@ export function ParametrageScreen() {
   const [tab, setTab] = useState<Tab>("indicateurs");
   const [indicateurs, setIndicateurs] = useState<Indicateur[]>([]);
   const [magasins, setMagasins] = useState<Magasin[]>([]);
+  const [seedingId, setSeedingId] = useState<string | null>(null);
+  const [seedMsg, setSeedMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingInd, setEditingInd] = useState<Partial<Indicateur> | null>(null);
   const [editingMag, setEditingMag] = useState<Partial<Magasin> | null>(null);
@@ -151,6 +153,23 @@ export function ParametrageScreen() {
     if (!confirm("Supprimer ce magasin ? TOUTES les données associées seront perdues.")) return;
     await db.from("magasins").delete().eq("id", id);
     load();
+  };
+
+  const seedMagasin = async (id: string) => {
+    setSeedingId(id);
+    setSeedMsg(null);
+    try {
+      const res = await fetch("/api/seed", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ magasinId: id }),
+      });
+      const data = await res.json();
+      setSeedMsg(data.ok ? `✓ ${data.message}` : `✗ ${data.error}`);
+    } catch {
+      setSeedMsg("✗ Erreur réseau");
+    }
+    setSeedingId(null);
   };
 
   const filtered = indicateurs.filter((i) =>
@@ -664,14 +683,27 @@ create policy "Accès complet" on rse_checklist for all using (true);`}
                     </span>
                   )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button onClick={() => setEditingMag({ ...m })} className="text-[11px] px-3 py-1 rounded-lg border hover:opacity-80" style={{ borderColor: "var(--border)", color: "var(--textMuted)" }}>
                     ✏️ Modifier
+                  </button>
+                  <button
+                    onClick={() => seedMagasin(m.id)}
+                    disabled={seedingId === m.id}
+                    className="text-[11px] px-3 py-1 rounded-lg border hover:opacity-80 disabled:opacity-50"
+                    style={{ borderColor: "#00d4aa40", color: "#00d4aa" }}
+                  >
+                    {seedingId === m.id ? "⏳ Injection…" : "🗃 Données démo"}
                   </button>
                   <button onClick={() => deleteMagasin(m.id)} className="text-[11px] px-3 py-1 rounded-lg border hover:opacity-80" style={{ borderColor: "#ff4d6a30", color: "#ff4d6a" }}>
                     🗑 Supprimer
                   </button>
                 </div>
+                {seedMsg && seedingId === null && (
+                  <div className="mt-2 text-[10px] rounded-lg px-2 py-1" style={{ background: seedMsg.startsWith("✓") ? "#00d4aa12" : "#ff4d6a12", color: seedMsg.startsWith("✓") ? "#00d4aa" : "#ff4d6a" }}>
+                    {seedMsg}
+                  </div>
+                )}
               </motion.div>
             ))}
           </div>
