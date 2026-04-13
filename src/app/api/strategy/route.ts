@@ -3,10 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
-});
-
 const SYSTEM_PROMPT = `
 Tu es le "Stratège EasyCash", expert en méthode ISEOR et gestion de seconde main.
 TON OBJECTIF : Convertir les dysfonctionnements en cash.
@@ -37,6 +33,8 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Corps de requête invalide" }, { status: 400 });
   }
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   try {
     const response = await anthropic.messages.create({
