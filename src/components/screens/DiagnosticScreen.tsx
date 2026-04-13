@@ -113,6 +113,18 @@ export function DiagnosticScreen({ magasinId }: { magasinId: string }) {
     setDiagLoading(false);
   };
 
+  // CHVACV = (CA × taux%) / (ETP × 1600h)
+  const chvacv = (() => {
+    const caKpi = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("chiffre") || v.indicateur_nom?.toLowerCase().includes(" ca "));
+    const margeKpi = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("marge"));
+    const etpKpi = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("etp"));
+    const ca = caKpi?.valeur ? caKpi.valeur * 12 : 500000;
+    const taux = margeKpi?.valeur ?? 38;
+    const etp = etpKpi?.valeur ?? 4;
+    const val = (ca * taux / 100) / (etp * 1600);
+    return val > 0 ? val : 40;
+  })();
+
   // Get sparkline data for an indicator
   const getSparkline = (indicateur_id: string) => {
     return history
@@ -224,6 +236,9 @@ export function DiagnosticScreen({ magasinId }: { magasinId: string }) {
                           </div>
                           <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
                             {alerte.cout_cache_annuel.toLocaleString("fr-FR")} €/an
+                          </div>
+                          <div className="text-[10px]" style={{ color: "var(--textDim)" }}>
+                            = {Math.round(alerte.cout_cache_annuel / chvacv)}h perdues
                           </div>
                         </div>
                       </div>

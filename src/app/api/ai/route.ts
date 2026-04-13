@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -58,37 +57,84 @@ function stripFences(text: string): string {
   return text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
 }
 
+function resolveAgent(agent: string, mode?: string): string {
+  if (agent === "redacteur") return mode === "cr" ? "redacteur_cr" : "assistant";
+  return agent;
+}
+
+function buildUserContent(agentKey: string, data: unknown): string {
+  if (agentKey === "assistant" && data && typeof data === "object") {
+    const d = data as Record<string, unknown>;
+    const question = String(d.question ?? "");
+    const kpis = d.kpis ? `\n\nKPIs du magasin:\n${JSON.stringify(d.kpis, null, 2)}` : "";
+    const alertes = d.alertes ? `\n\nAlertes actives:\n${JSON.stringify(d.alertes, null, 2)}` : "";
+    const pap = d.pap ? `\n\nActions en cours:\n${JSON.stringify(d.pap, null, 2)}` : "";
+    return question + kpis + alertes + pap;
+  }
+  return JSON.stringify(data);
+}
+
 export async function POST(req: NextRequest) {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
     return NextResponse.json({ error: "Clé API non configurée" }, { status: 503 });
   }
-  let agent: string, data: unknown;
+
+  let agent: string, mode: string | undefined, data: unknown;
   try {
-    ({ agent, data } = await req.json());
+    const body = await req.json();
+    agent = body.agent;
+    mode = body.mode;
+    data = body.data;
   } catch {
     return NextResponse.json({ error: "Requête invalide" }, { status: 400 });
   }
-  const systemPrompt = PROMPTS[agent];
+
+  const agentKey = resolveAgent(agent, mode);
+  const systemPrompt = PROMPTS[agentKey];
   if (!systemPrompt) {
-    return NextResponse.json({ error: `Agent inconnu: ${agent}` }, { status: 400 });
+    return NextResponse.json({ error: `Agent inconnu: ${agent}${mode ? "/" + mode : ""}` }, { status: 400 });
   }
+
+  const isStructured = ["diagnostiqueur", "decideur"].includes(agentKey);
+
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 2000,
-      system: systemPrompt,
-      messages: [{ role: "user", content: JSON.stringify(data) }],
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: isStructured ? 2000 : 1000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: buildUserContent(agentKey, data) }],
+      }),
     });
-    const raw = response.content[0].type === "text" ? response.content[0].text : "";
-    const cleaned = stripFences(raw);
-    try {
-      return NextResponse.json({ result: JSON.parse(cleaned) });
-    } catch {
-      return NextResponse.json({ result: cleaned });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error("Anthropic API error:", resp.status, errText);
+      return NextResponse.json({ error: `Erreur API Anthropic (${resp.status})` }, { status: 500 });
     }
+
+    const json = await resp.json();
+    const raw: string = json.content?.[0]?.text ?? "";
+
+    if (isStructured) {
+      const cleaned = stripFences(raw);
+      try {
+        return NextResponse.json({ result: JSON.parse(cleaned) });
+      } catch {
+        return NextResponse.json({ result: raw });
+      }
+    }
+
+    return NextResponse.json({ result: raw });
   } catch (err) {
     console.error("AI route error:", err);
-    return NextResponse.json({ error: "Erreur IA — réessayez" }, { status: 500 });
+    return NextResponse.json({ error: "Erreur de connexion IA — réessayez" }, { status: 500 });
   }
 }

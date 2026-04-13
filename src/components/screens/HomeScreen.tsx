@@ -898,6 +898,25 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
               </div>
             );
           })()}
+          {/* CHVACV widget */}
+          {(() => {
+            const caKpi = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("chiffre") || v.indicateur_nom?.toLowerCase().includes(" ca "));
+            const margeKpi = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("marge"));
+            const etpKpi = valeurs.find(v => v.indicateur_nom?.toLowerCase().includes("etp"));
+            const ca = caKpi?.valeur ? caKpi.valeur * 12 : null;
+            const taux = margeKpi?.valeur ?? null;
+            const etp = etpKpi?.valeur ?? null;
+            if (!ca || !taux || !etp) return null;
+            const chvacv = (ca * taux / 100) / (etp * 1600);
+            const chvColor = chvacv >= 50 ? "#00d4aa" : chvacv >= 35 ? "#ffb347" : "#ff4d6a";
+            return (
+              <div className="mt-2 px-4 py-2 rounded-xl text-center" style={{ background: `${chvColor}12`, border: `1px solid ${chvColor}30` }}>
+                <div className="text-[9px] uppercase tracking-widest mb-0.5" style={{ color: "var(--textMuted)" }}>CHVACV</div>
+                <div className="text-[20px] font-bold" style={{ color: chvColor }}>{chvacv.toFixed(0)} €/h</div>
+                <div className="text-[9px]" style={{ color: "var(--textDim)" }}>(CA×marge) ÷ (ETP×1600h)</div>
+              </div>
+            );
+          })()}
           {/* Stat badges */}
           <div className="flex gap-2 mt-3">
             {[

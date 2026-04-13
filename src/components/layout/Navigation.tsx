@@ -8,6 +8,7 @@ export type TabId =
   | "visite"
   | "simulateur"
   | "assistant"
+  | "competences"
   | "config";
 
 export type AppMode = "consultant" | "franchisé";
@@ -20,13 +21,14 @@ export function getTabGroup(tab: TabId): string {
 }
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: "cockpit",    label: "Dashboard",     icon: "⚡" },
-  { id: "diagnostic", label: "Diagnostic",    icon: "🔬" },
-  { id: "kpis",       label: "Saisie",        icon: "📊" },
-  { id: "plan",       label: "Plan d'Action", icon: "🎯" },
-  { id: "visite",     label: "Visite (CR)",   icon: "📋" },
-  { id: "simulateur", label: "Simulateur",    icon: "📈" },
-  { id: "assistant",  label: "Assistant IA",  icon: "🤖" },
+  { id: "cockpit",      label: "Dashboard",     icon: "⚡" },
+  { id: "diagnostic",   label: "Diagnostic",    icon: "🔬" },
+  { id: "kpis",         label: "Saisie",        icon: "📊" },
+  { id: "plan",         label: "Plan d'Action", icon: "🎯" },
+  { id: "visite",       label: "Visite (CR)",   icon: "📋" },
+  { id: "simulateur",   label: "Simulateur",    icon: "📈" },
+  { id: "assistant",    label: "Assistant IA",  icon: "🤖" },
+  { id: "competences",  label: "Compétences",   icon: "🏆" },
 ];
 
 interface NavigationProps {

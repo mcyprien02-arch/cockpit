@@ -9,15 +9,18 @@ import type { ValeurAvecIndicateur } from "@/types";
 
 // ─── Constants ────────────────────────────────────────────────
 const STOCK_FAMILIES = [
-  { key: "tlce",        label: "TLCE (LS)",      ref: 30000,  margePct: 76, delay: "15j → 30j → 60j" },
-  { key: "jv",          label: "Jeux Vidéo",     ref: 22000,  margePct: 47, delay: "15j → 30j → 60j" },
-  { key: "bijouterie",  label: "Bijouterie",      ref: 40500,  margePct: 65, delay: "90j → 120j → 150j" },
-  { key: "informatique",label: "Informatique",    ref: 8000,   margePct: 28, delay: "15j → 30j → 60j" },
-  { key: "livres",      label: "Livres",          ref: 5000,   margePct: 35, delay: "30j → 60j → 90j" },
-  { key: "telephonie",  label: "Téléphonie",      ref: 15000,  margePct: 34, delay: "15j → 30j → 60j" },
-  { key: "autres",      label: "Autres",          ref: 15000,  margePct: 35, delay: "30j → 60j → 90j" },
+  { key: "bijouterie",   label: "Bijouterie",    mini: 25500, ideal: 38000, maxi: 62500, margePct: 65, delay: "90j → 120j → 150j" },
+  { key: "jv",           label: "Jeux Vidéo",   mini: 18000, ideal: 24000, maxi: 33000, margePct: 47, delay: "15j → 30j → 60j" },
+  { key: "telephonie",   label: "Téléphonie",   mini: 37000, ideal: 42500, maxi: 58000, margePct: 34, delay: "15j → 30j → 60j" },
+  { key: "informatique", label: "Informatique", mini: 14000, ideal: 21000, maxi: 26500, margePct: 28, delay: "15j → 30j → 60j" },
+  { key: "ls",           label: "LS (TLCE)",    mini:  3300, ideal:  4250, maxi:  5000, margePct: 76, delay: "15j → 30j → 60j" },
+  { key: "livres",       label: "Livres",       mini:  2200, ideal:  3000, maxi:  5200, margePct: 35, delay: "30j → 60j → 90j" },
+  { key: "photo",        label: "Photo",        mini:  2000, ideal:  2500, maxi:  4500, margePct: 35, delay: "30j → 60j → 90j" },
+  { key: "hifi",         label: "HIFI",         mini:  2500, ideal:  3500, maxi:  4500, margePct: 35, delay: "30j → 60j → 90j" },
+  { key: "tv",           label: "TV",           mini:  2000, ideal:  2500, maxi:  4000, margePct: 35, delay: "30j → 60j → 90j" },
+  { key: "epet",         label: "ePet/Autres",  mini:  1500, ideal:  2500, maxi:  4000, margePct: 35, delay: "30j → 60j → 90j" },
 ];
-const STOCK_REF_TOTAL = 135500;
+const STOCK_REF_TOTAL = 143750; // ideal réseau
 
 const MIX_FAMILIES = [
   { key: "telephonie", label: "Téléphonie",   margePct: 34, color: "#4da6ff" },
@@ -112,9 +115,12 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
     tauxMarge: 38,
   });
 
+  // Section visibility checkboxes
+  const [sections, setSections] = useState({ stock: true, equipe: true, venteAdd: true, mixRayon: true });
+
   // Section 1 — Stock
   const [stocks, setStocks] = useState<Record<string, number>>(
-    Object.fromEntries(STOCK_FAMILIES.map((f) => [f.key, f.ref]))
+    Object.fromEntries(STOCK_FAMILIES.map((f) => [f.key, f.ideal]))
   );
 
   // Section 2 — Équipe
@@ -165,7 +171,7 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
     // Scale stock families proportionally to actual total
     if (stock && stock !== STOCK_REF_TOTAL) {
       const ratio = stock / STOCK_REF_TOTAL;
-      setStocks(Object.fromEntries(STOCK_FAMILIES.map((f) => [f.key, Math.round(f.ref * ratio)])));
+      setStocks(Object.fromEntries(STOCK_FAMILIES.map((f) => [f.key, Math.round(f.ideal * ratio)])));
     }
 
     setLoadingCtx(false);
@@ -228,13 +234,13 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
 
   // ─── Summary ──────────────────────────────────────────────
   const summaryRows = [
-    { label: "GMROI", actuel: gmroiActuel.toFixed(2), simule: gmroiSimule.toFixed(2), ecart: `${gmroiSimule >= gmroiActuel ? "+" : ""}${(gmroiSimule - gmroiActuel).toFixed(2)}`, impact: Math.round((gmroiSimule - gmroiActuel) * ctx.stockTotal * 0.1), unit: "" },
-    { label: "Stock total", actuel: formatEuro(ctx.stockTotal), simule: formatEuro(stockSimule), ecart: formatEuro(tresLibere), impact: tresLibere, unit: "€ libérés" },
-    { label: "Masse sal. %", actuel: `${masseSalActuelle.toFixed(1)}%`, simule: `${masseSalSimulee.toFixed(1)}%`, ecart: `${(masseSalSimulee - masseSalActuelle).toFixed(1)}pp`, impact: Math.round((masseSalActuelle - masseSalSimulee) / 100 * ctx.caAnnuel), unit: "" },
-    { label: "EBE", actuel: formatEuro(ebeActuel), simule: formatEuro(ebeSimule), ecart: formatEuro(ebeSimule - ebeActuel), impact: Math.round(ebeSimule - ebeActuel), unit: "" },
-    { label: "Ventes additionnelles", actuel: "—", simule: formatEuro(gainVenteAdd), ecart: `+${impactMargeNette.toFixed(1)} pts marge`, impact: Math.round(gainVenteAdd), unit: "" },
-    { label: "Marge nette (mix)", actuel: `${margeActuelleMix.toFixed(1)}%`, simule: `${margeSimuleeMix.toFixed(1)}%`, ecart: `${impactMixAnnuel >= 0 ? "+" : ""}${(margeSimuleeMix - margeActuelleMix).toFixed(1)} pts`, impact: Math.round(impactMixAnnuel), unit: "" },
-  ];
+    { label: "GMROI", actuel: gmroiActuel.toFixed(2), simule: gmroiSimule.toFixed(2), ecart: `${gmroiSimule >= gmroiActuel ? "+" : ""}${(gmroiSimule - gmroiActuel).toFixed(2)}`, impact: Math.round((gmroiSimule - gmroiActuel) * ctx.stockTotal * 0.1), unit: "", formule: "(CA × marge%) / Stock", visible: sections.stock },
+    { label: "Stock total", actuel: formatEuro(ctx.stockTotal), simule: formatEuro(stockSimule), ecart: formatEuro(tresLibere), impact: tresLibere, unit: "€ libérés", formule: "Σ stocks par famille", visible: sections.stock },
+    { label: "Masse sal. %", actuel: `${masseSalActuelle.toFixed(1)}%`, simule: `${masseSalSimulee.toFixed(1)}%`, ecart: `${(masseSalSimulee - masseSalActuelle).toFixed(1)}pp`, impact: Math.round((masseSalActuelle - masseSalSimulee) / 100 * ctx.caAnnuel), unit: "", formule: "(ETP × 28k€) / CA", visible: sections.equipe },
+    { label: "EBE", actuel: formatEuro(ebeActuel), simule: formatEuro(ebeSimule), ecart: formatEuro(ebeSimule - ebeActuel), impact: Math.round(ebeSimule - ebeActuel), unit: "", formule: "CA×marge% − CA×13% − ETP×28k€", visible: sections.equipe },
+    { label: "Ventes additionnelles", actuel: "—", simule: formatEuro(gainVenteAdd), ecart: `+${impactMargeNette.toFixed(1)} pts marge`, impact: Math.round(gainVenteAdd), unit: "", formule: "Estaly + accessoires", visible: sections.venteAdd },
+    { label: "Marge nette (mix)", actuel: `${margeActuelleMix.toFixed(1)}%`, simule: `${margeSimuleeMix.toFixed(1)}%`, ecart: `${impactMixAnnuel >= 0 ? "+" : ""}${(margeSimuleeMix - margeActuelleMix).toFixed(1)} pts`, impact: Math.round(impactMixAnnuel), unit: "", formule: "Σ(part% × marge famille%)", visible: sections.mixRayon },
+  ].filter(r => r.visible);
 
   if (loadingCtx) {
     return (
@@ -248,7 +254,7 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
     <div className="space-y-5 max-w-[1400px] mx-auto">
       {/* Header */}
       <div className="rounded-2xl p-5 border" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-[15px] font-bold" style={{ color: "var(--text)" }}>Simulateur "Et si…"</div>
             <div className="text-[12px]" style={{ color: "var(--textMuted)" }}>
@@ -260,12 +266,36 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
             <div>Marge actuelle : <strong style={{ color: "var(--text)" }}>{ctx.tauxMarge}%</strong></div>
           </div>
         </div>
+        {/* Section visibility toggles */}
+        <div className="flex flex-wrap gap-3 pt-3 border-t" style={{ borderColor: "var(--border)" }}>
+          <span className="text-[10px] font-bold uppercase tracking-widest self-center" style={{ color: "var(--textMuted)" }}>Sections :</span>
+          {([
+            { key: "stock",    label: "📦 Stock" },
+            { key: "equipe",   label: "👥 Équipe" },
+            { key: "venteAdd", label: "💳 Vente add." },
+            { key: "mixRayon", label: "🏪 Mix rayon" },
+          ] as const).map(({ key, label }) => (
+            <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={sections[key]}
+                onChange={(e) => setSections(s => ({ ...s, [key]: e.target.checked }))}
+                style={{ accentColor: "var(--accent)", width: 14, height: 14 }}
+              />
+              <span className="text-[12px] font-medium" style={{ color: sections[key] ? "var(--text)" : "var(--textMuted)" }}>{label}</span>
+            </label>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-5" style={{ gridTemplateColumns: "1fr 1fr" }}>
         {/* ── SECTION 1 : STOCK ─────────────────────────── */}
-        <div className="rounded-2xl p-5 border space-y-5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+        {sections.stock && (
+        <div className="rounded-2xl p-5 border space-y-4" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
           <SectionTitle icon="📦" label="Stock par famille" />
+          <div className="text-[10px] p-2 rounded-lg font-mono" style={{ background: "var(--surfaceAlt)", color: "var(--accent)" }}>
+            GMROI = (CA × taux marge) / Stock total simulé
+          </div>
           <div className="grid grid-cols-2 gap-3 p-3 rounded-xl text-center" style={{ background: "var(--surfaceAlt)" }}>
             <div>
               <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--textMuted)" }}>GMROI actuel</div>
@@ -283,34 +313,39 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
             </div>
           </div>
 
-          {STOCK_FAMILIES.map((f) => (
-            <div key={f.key}>
-              <div className="flex justify-between items-center mb-1">
-                <div>
-                  <span className="text-[12px] font-medium" style={{ color: "var(--text)" }}>{f.label}</span>
-                  <span className="ml-2 text-[10px] rounded px-1.5 py-0.5" style={{ background: "var(--surfaceAlt)", color: "var(--textMuted)" }}>
-                    {f.delay}
+          {STOCK_FAMILIES.map((f) => {
+            const val = stocks[f.key] ?? f.ideal;
+            const pos = val < f.mini ? "danger" : val > f.maxi ? "warning" : "ok";
+            const posColor = pos === "danger" ? "#ff4d6a" : pos === "warning" ? "#ffb347" : "#00d4aa";
+            return (
+              <div key={f.key}>
+                <div className="flex justify-between items-center mb-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[12px] font-medium" style={{ color: "var(--text)" }}>{f.label}</span>
+                    <span className="text-[9px] rounded px-1.5 py-0.5" style={{ background: "var(--surfaceAlt)", color: "var(--textMuted)" }}>
+                      {f.delay}
+                    </span>
+                  </div>
+                  <span className="text-[12px] font-bold" style={{ color: posColor }}>
+                    {formatEuro(val)}
                   </span>
                 </div>
-                <span className="text-[12px] font-bold" style={{ color: "var(--accent)" }}>
-                  {formatEuro(stocks[f.key])}
-                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={f.maxi}
+                  step={100}
+                  value={val}
+                  onChange={(e) => setStocks((s) => ({ ...s, [f.key]: Number(e.target.value) }))}
+                  style={{ width: "100%", accentColor: posColor }}
+                />
+                <div className="flex justify-between text-[10px]" style={{ color: "var(--textDim)" }}>
+                  <span>Mini : {formatEuro(f.mini)} · Idéal : {formatEuro(f.ideal)}</span>
+                  <span>Marge : {f.margePct}%</span>
+                </div>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={Math.round(f.ref * 2)}
-                step={500}
-                value={stocks[f.key]}
-                onChange={(e) => setStocks((s) => ({ ...s, [f.key]: Number(e.target.value) }))}
-                style={{ width: "100%", accentColor: "var(--accent)" }}
-              />
-              <div className="flex justify-between text-[10px]" style={{ color: "var(--textDim)" }}>
-                <span>0€ (réf: {formatEuro(f.ref)})</span>
-                <span>Marge famille : {f.margePct}%</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           <div className="flex justify-between items-center pt-2 border-t" style={{ borderColor: "var(--border)" }}>
             <span className="text-[12px] font-bold" style={{ color: "var(--text)" }}>Stock total simulé</span>
@@ -322,13 +357,18 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
             </div>
           </div>
           <div className="text-[10px] p-2 rounded-lg" style={{ background: "var(--surfaceAlt)", color: "var(--textMuted)" }}>
-            Stock idéal réseau : {formatEuro(STOCK_REF_TOTAL)} — Bijouterie 40.5k€ · TLCE 30k€ · JV 22k€ · Informatique 8k€
+            Seuils réseau — Mini : {formatEuro(108000)} · Idéal : {formatEuro(143750)} · Maxi : {formatEuro(207200)}
           </div>
         </div>
+        )}
 
         {/* ── SECTION 2 : ÉQUIPE ────────────────────────── */}
+        {sections.equipe && (
         <div className="rounded-2xl p-5 border space-y-5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
           <SectionTitle icon="👥" label="Équipe" />
+          <div className="text-[10px] p-2 rounded-lg font-mono" style={{ background: "var(--surfaceAlt)", color: "var(--accent)" }}>
+            MasseSal% = (NbETP × 28 000€) / CA · EBE = CA×marge% − CA×13% − NbETP×28 000€
+          </div>
 
           <Slider
             label="Nombre d'ETP"
@@ -377,10 +417,15 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
             </div>
           </div>
         </div>
+        )}
 
         {/* ── SECTION 3 : VENTE ADDITIONNELLE ──────────── */}
+        {sections.venteAdd && (
         <div className="rounded-2xl p-5 border space-y-5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
           <SectionTitle icon="💳" label="Vente additionnelle" />
+          <div className="text-[10px] p-2 rounded-lg font-mono" style={{ background: "var(--surfaceAlt)", color: "var(--accent)" }}>
+            Estaly : NbVentes × taux% × 80€/contrat · Accessoires : NbVentes × panier × 40% marge
+          </div>
 
           <Slider
             label="Taux Estaly (% des ventes)"
@@ -423,10 +468,15 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
             +{impactMargeNette.toFixed(2)} pts de marge nette avec cette configuration
           </div>
         </div>
+        )}
 
         {/* ── SECTION 4 : MIX RAYON ─────────────────────── */}
+        {sections.mixRayon && (
         <div className="rounded-2xl p-5 border space-y-4" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
           <SectionTitle icon="🏪" label="Mix rayon" />
+          <div className="text-[10px] p-2 rounded-lg font-mono" style={{ background: "var(--surfaceAlt)", color: "var(--accent)" }}>
+            Marge nette simulée = Σ(part rayon% × marge famille%)
+          </div>
           <div className="text-[11px] mb-2" style={{ color: mixTotal === 100 ? "#00d4aa" : "#ff4d6a" }}>
             Total : {mixTotal}% {mixTotal !== 100 && "⚠ doit être 100%"}
           </div>
@@ -464,6 +514,7 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
             <ImpactBadge value={Math.round(impactMixAnnuel)} />
           </div>
         </div>
+        )}
       </div>
 
       {/* ── SUMMARY TABLE ─────────────────────────────── */}
@@ -475,7 +526,7 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--surfaceAlt)" }}>
-                {["Indicateur", "Actuel", "Simulé", "Écart", "Impact €/an"].map((h) => (
+                {["Indicateur", "Formule utilisée", "Actuel", "Simulé", "Écart", "Impact €/an"].map((h) => (
                   <th key={h} className="px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--textMuted)" }}>
                     {h}
                   </th>
@@ -489,6 +540,7 @@ export function SimulateurScreen({ magasinId }: { magasinId: string }) {
                   style={{ background: i % 2 === 0 ? "var(--surface)" : "var(--surfaceAlt)", borderTop: "1px solid var(--border)" }}
                 >
                   <td className="px-4 py-2.5 text-[12px] font-medium" style={{ color: "var(--text)" }}>{row.label}</td>
+                  <td className="px-4 py-2.5 text-[10px] font-mono" style={{ color: "var(--textDim)" }}>{row.formule}</td>
                   <td className="px-4 py-2.5 text-[12px]" style={{ color: "var(--textMuted)" }}>{row.actuel}</td>
                   <td className="px-4 py-2.5 text-[12px] font-medium" style={{ color: "var(--text)" }}>{row.simule}</td>
                   <td className="px-4 py-2.5 text-[12px]" style={{ color: "var(--textMuted)" }}>{row.ecart}</td>

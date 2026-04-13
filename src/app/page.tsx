@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { Navigation, ModeSwitcher, TabId, AppMode } from "@/components/layout/Navigation";
+import { Navigation, TabId } from "@/components/layout/Navigation";
 import { HomeScreen } from "@/components/screens/HomeScreen";
 import { DiagnosticScreen } from "@/components/screens/DiagnosticScreen";
 import { SaisieScreen } from "@/components/screens/SaisieScreen";
@@ -11,6 +11,7 @@ import { PlanActionScreen } from "@/components/screens/PlanActionScreen";
 import { VisiteScreen } from "@/components/screens/VisiteScreen";
 import { SimulateurScreen } from "@/components/screens/SimulateurScreen";
 import { AssistantScreen } from "@/components/screens/AssistantScreen";
+import { CompetencesScreen } from "@/components/screens/CompetencesScreen";
 import { ParametrageScreen } from "@/components/screens/ParametrageScreen";
 import type { Magasin } from "@/types";
 
@@ -51,13 +52,11 @@ function StoreSelector({
 }
 
 function AppHeader({
-  magasins, selectedId, onSelect, mode, onModeChange,
+  magasins, selectedId, onSelect,
 }: {
   magasins: Magasin[];
   selectedId: string;
   onSelect: (id: string) => void;
-  mode: AppMode;
-  onModeChange: (m: AppMode) => void;
 }) {
   return (
     <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
@@ -78,7 +77,6 @@ function AppHeader({
           {magasins.length > 0 && (
             <StoreSelector magasins={magasins} selectedId={selectedId} onChange={onSelect} />
           )}
-          <ModeSwitcher mode={mode} onChange={onModeChange} />
         </div>
       </div>
     </header>
@@ -91,7 +89,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("cockpit");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<AppMode>("consultant");
 
   useEffect(() => {
     async function loadMagasins() {
@@ -111,18 +108,6 @@ export default function App() {
     }
     loadMagasins();
   }, []);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("app_mode");
-      if (saved === "consultant" || saved === "franchisé") setMode(saved);
-    } catch { /* ignore */ }
-  }, []);
-
-  const handleModeChange = (m: AppMode) => {
-    setMode(m);
-    try { localStorage.setItem("app_mode", m); } catch { /* ignore */ }
-  };
 
   const selectedMagasin = magasins.find((m) => m.id === selectedId) ?? null;
 
@@ -151,10 +136,8 @@ export default function App() {
         magasins={magasins}
         selectedId={selectedId}
         onSelect={setSelectedId}
-        mode={mode}
-        onModeChange={handleModeChange}
       />
-      <Navigation activeTab={activeTab} onTabChange={setActiveTab} mode={mode} />
+      <Navigation activeTab={activeTab} onTabChange={setActiveTab} mode="consultant" />
 
       <main className="px-6 py-5 max-w-[1600px] mx-auto">
         {error && (
@@ -200,6 +183,9 @@ export default function App() {
               )}
               {activeTab === "assistant" && selectedId && (
                 <AssistantScreen magasinId={selectedId} />
+              )}
+              {activeTab === "competences" && selectedId && (
+                <CompetencesScreen magasinId={selectedId} />
               )}
               {activeTab === "config" && <ParametrageScreen />}
             </motion.div>
