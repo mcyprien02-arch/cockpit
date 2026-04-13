@@ -10,6 +10,8 @@ import { supabase } from "@/lib/supabase";
 import { getStatus, computeScore, computeCategoryScores } from "@/lib/scoring";
 import { generateNarrative } from "@/lib/narrative";
 import { computeHiddenCosts, formatEuro } from "@/lib/hiddenCosts";
+import { callDiagnostiqueur } from "@/lib/agents/diagnostiqueur";
+import type { DiagResult } from "@/lib/agents/diagnostiqueur";
 import type { ValeurAvecIndicateur, CategorieScore } from "@/types";
 
 // ─── Cash Circle SVG ───────────────────────────────────────────
@@ -586,6 +588,8 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
   const [seeding, setSeeding] = useState(false);
   const [seedMsg, setSeedMsg] = useState<string | null>(null);
   const [papActions, setPapActions] = useState<Array<{id:string;kpiImpacte:string;statut:string;action:string;impactFinancier?:number}>>([]);
+  const [diagIA, setDiagIA] = useState<DiagResult | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!magasinId) return;
@@ -696,6 +700,15 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
     magasinNom: "",
   });
 
+  const handleDiagIA = async () => {
+    setDiagLoading(true);
+    try {
+      const result = await callDiagnostiqueur(valeurs, "croissance");
+      setDiagIA(result);
+    } catch { /* silent */ }
+    setDiagLoading(false);
+  };
+
   const handleSeed = async () => {
     setSeeding(true);
     const { seedLyonEst } = await import("@/lib/seed");
@@ -760,6 +773,94 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
 
   return (
     <div className="space-y-5">
+      {/* ── 5 Non-négociables + Missions du mois ───────────────── */}
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        {/* 5 Non-négociables */}
+        <div className="rounded-2xl p-4 border" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--textMuted)" }}>5 Non-négociables</span>
+            <button
+              onClick={handleDiagIA}
+              disabled={diagLoading || valeurs.length === 0}
+              className="rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all"
+              style={{ background: diagLoading ? "var(--surfaceAlt)" : "var(--accent)", color: diagLoading ? "var(--textMuted)" : "#000", border: "none", cursor: diagLoading ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            >
+              {diagLoading ? "Analyse…" : "Lancer diagnostic IA"}
+            </button>
+          </div>
+          {(() => {
+            const get = (partial: string) => valeurs.find(v => v.indicateur_nom?.toLowerCase().includes(partial.toLowerCase()));
+            const masseSal = get("masse sal");
+            const estaly = get("estaly");
+            const merch = get("merch");
+            const top20 = get("top 20") ?? get("meilleures ventes");
+            const nonneg = diagIA?.non_negociables;
+            const items = [
+              { label: "Top 20 VS Traité", ok: nonneg ? nonneg.top20_vs_traite : (top20 ? top20.status === "ok" : null) },
+              { label: "Masse Sal. ≤15%", ok: nonneg ? nonneg.masse_sal_ok : (masseSal ? masseSal.status === "ok" : null) },
+              { label: "Mix Rayon", ok: nonneg ? nonneg.mix_rayon_ok : null },
+              { label: "Estaly actif", ok: nonneg ? nonneg.estaly_actif : (estaly ? estaly.valeur > 0 : null) },
+              { label: "Merchandising", ok: nonneg ? nonneg.merch_ok : (merch ? merch.status === "ok" : null) },
+            ];
+            return (
+              <div className="flex flex-wrap gap-2">
+                {items.map((item) => (
+                  <span key={item.label} className="rounded-full px-3 py-1 text-[11px] font-bold"
+                    style={{
+                      background: item.ok === null ? "var(--surfaceAlt)" : item.ok ? "#00d4aa18" : "#ff4d6a18",
+                      color: item.ok === null ? "var(--textDim)" : item.ok ? "#00d4aa" : "#ff4d6a",
+                      border: `1px solid ${item.ok === null ? "var(--border)" : item.ok ? "#00d4aa30" : "#ff4d6a30"}`,
+                    }}>
+                    {item.ok === null ? "?" : item.ok ? "✓" : "✗"} {item.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
+          {diagIA?.narratif && (
+            <div className="mt-3 text-[12px] leading-relaxed p-3 rounded-xl border-l-4" style={{ background: "var(--surfaceAlt)", borderLeftColor: "var(--accent)", color: "var(--text)" }}>
+              {diagIA.narratif}
+            </div>
+          )}
+        </div>
+
+        {/* Missions du mois */}
+        <div className="rounded-2xl p-4 border" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--textMuted)" }}>Missions du mois</span>
+            <button onClick={() => onNavigate("plan")} className="text-[11px]" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", fontFamily: "inherit" }}>
+              Voir tout →
+            </button>
+          </div>
+          {(() => {
+            const now = new Date();
+            const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            const missions = openActions
+              .filter(a => a.statut !== "Fait" && a.statut !== "Abandonné" && a.echeance && a.echeance.startsWith(monthStr))
+              .slice(0, 5);
+            const late = openActions.filter(a => a.statut !== "Fait" && a.statut !== "Abandonné" && a.echeance && new Date(a.echeance) < now);
+            if (missions.length === 0 && late.length === 0) {
+              return <div className="text-[12px] text-center py-4" style={{ color: "var(--textDim)" }}>Aucune mission ce mois-ci</div>;
+            }
+            const all = [...late.filter(a => !missions.find(m => m.id === a.id)), ...missions].slice(0, 5);
+            return (
+              <div className="space-y-2">
+                {all.map((a) => {
+                  const isLate = a.echeance && new Date(a.echeance) < now;
+                  return (
+                    <div key={a.id} className="flex items-start gap-2 p-2 rounded-lg" style={{ background: isLate ? "#ff4d6a08" : "var(--surfaceAlt)" }}>
+                      <span className="rounded px-1.5 py-0.5 text-[9px] font-bold shrink-0" style={{ background: a.priorite === "P1" ? "#ff4d6a20" : a.priorite === "P2" ? "#ffb34720" : "#4da6ff20", color: a.priorite === "P1" ? "#ff4d6a" : a.priorite === "P2" ? "#ffb347" : "#4da6ff" }}>{a.priorite}</span>
+                      <span className="text-[11px] flex-1 line-clamp-2" style={{ color: isLate ? "#ff4d6a" : "var(--text)" }}>{a.action}</span>
+                      {isLate && <span className="text-[9px] shrink-0 font-bold" style={{ color: "#ff4d6a" }}>RETARD</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
       {/* ── Row 1: Gauge + Narrative + Actions ─────────────────── */}
       <div className="grid gap-5" style={{ gridTemplateColumns: "auto 1fr auto" }}>
 

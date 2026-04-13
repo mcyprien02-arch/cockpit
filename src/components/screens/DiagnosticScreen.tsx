@@ -9,6 +9,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import { getStatus, computeScore, computeCategoryScores } from "@/lib/scoring";
 import type { ValeurAvecIndicateur, CategorieScore } from "@/types";
+import { callDiagnostiqueur } from "@/lib/agents/diagnostiqueur";
+import type { DiagResult } from "@/lib/agents/diagnostiqueur";
 
 const STATUS_COLORS = {
   ok: { color: "#00d4aa", bg: "#00d4aa18", label: "OK" },
@@ -37,6 +39,9 @@ export function DiagnosticScreen({ magasinId }: { magasinId: string }) {
   const [history, setHistory] = useState<{ indicateur_id: string; valeur: number; date_saisie: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [openCats, setOpenCats] = useState<Record<string, boolean>>({});
+  const [diagIA, setDiagIA] = useState<DiagResult | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagError, setDiagError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!magasinId) return;
@@ -96,6 +101,18 @@ export function DiagnosticScreen({ magasinId }: { magasinId: string }) {
   const toggleCat = (name: string) =>
     setOpenCats((p) => ({ ...p, [name]: !p[name] }));
 
+  const handleDiagIA = async () => {
+    setDiagLoading(true);
+    setDiagError(null);
+    try {
+      const result = await callDiagnostiqueur(valeurs, "croissance");
+      setDiagIA(result);
+    } catch (err) {
+      setDiagError(err instanceof Error ? err.message : "Erreur IA");
+    }
+    setDiagLoading(false);
+  };
+
   // Get sparkline data for an indicator
   const getSparkline = (indicateur_id: string) => {
     return history
@@ -124,6 +141,121 @@ export function DiagnosticScreen({ magasinId }: { magasinId: string }) {
 
   return (
     <div className="space-y-5">
+      {/* ─── Diagnostic IA ─────────────────────────────── */}
+      <div className="rounded-2xl border p-5 mb-5" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-[14px] font-bold" style={{ color: "var(--text)" }}>🔬 Analyse IA</div>
+            <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>Diagnostic automatique basé sur le Manifeste Opérationnel EasyCash</div>
+          </div>
+          <button
+            onClick={handleDiagIA}
+            disabled={diagLoading || valeurs.length === 0}
+            className="rounded-xl px-4 py-2 text-[12px] font-bold transition-all"
+            style={{
+              background: diagLoading ? "var(--surfaceAlt)" : "var(--accent)",
+              color: diagLoading ? "var(--textMuted)" : "#000",
+              border: "none",
+              cursor: diagLoading ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {diagLoading ? "Analyse en cours…" : diagIA ? "Relancer l'analyse" : "Lancer le diagnostic IA"}
+          </button>
+        </div>
+
+        {diagError && (
+          <div className="rounded-xl px-4 py-2 text-[12px]" style={{ background: "#ff4d6a18", color: "#ff4d6a" }}>
+            ⚠ {diagError}
+          </div>
+        )}
+
+        {diagIA && (
+          <div className="space-y-4">
+            {/* Narratif */}
+            <div className="rounded-xl p-4 border-l-4" style={{ background: "var(--surfaceAlt)", borderLeftColor: "var(--accent)" }}>
+              <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--accent)" }}>Synthèse</div>
+              <div className="text-[13px] leading-relaxed" style={{ color: "var(--text)" }}>{diagIA.narratif}</div>
+            </div>
+
+            {/* Non-négociables */}
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--textMuted)" }}>5 Non-négociables</div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "top20_vs_traite" as const, label: "Top 20 VS" },
+                  { key: "masse_sal_ok" as const, label: "Masse Sal." },
+                  { key: "mix_rayon_ok" as const, label: "Mix Rayon" },
+                  { key: "estaly_actif" as const, label: "Estaly" },
+                  { key: "merch_ok" as const, label: "Merchandising" },
+                ].map((item) => (
+                  <span
+                    key={item.key}
+                    className="rounded-full px-3 py-1 text-[11px] font-bold"
+                    style={{
+                      background: diagIA.non_negociables[item.key] ? "#00d4aa18" : "#ff4d6a18",
+                      color: diagIA.non_negociables[item.key] ? "#00d4aa" : "#ff4d6a",
+                      border: `1px solid ${diagIA.non_negociables[item.key] ? "#00d4aa30" : "#ff4d6a30"}`,
+                    }}
+                  >
+                    {diagIA.non_negociables[item.key] ? "✓" : "✗"} {item.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Alertes triées par coût caché */}
+            {diagIA.alertes.length > 0 && (
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--textMuted)" }}>Alertes (triées par coût caché)</div>
+                <div className="space-y-2">
+                  {[...diagIA.alertes]
+                    .sort((a, b) => b.cout_cache_annuel - a.cout_cache_annuel)
+                    .map((alerte, i) => (
+                      <div key={i} className="rounded-xl p-3 flex items-start justify-between gap-3"
+                        style={{ background: alerte.statut === "danger" ? "#ff4d6a12" : "#ffb34712", border: `1px solid ${alerte.statut === "danger" ? "#ff4d6a30" : "#ffb34730"}` }}>
+                        <div>
+                          <div className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>{alerte.kpi}</div>
+                          <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>{alerte.formule}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-[13px] font-bold" style={{ color: alerte.statut === "danger" ? "#ff4d6a" : "#ffb347" }}>
+                            {alerte.valeur} vs {alerte.seuil}
+                          </div>
+                          <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>
+                            {alerte.cout_cache_annuel.toLocaleString("fr-FR")} €/an
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recommandations */}
+            {diagIA.recommandations.length > 0 && (
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--textMuted)" }}>Recommandations</div>
+                <div className="space-y-2">
+                  {diagIA.recommandations.map((reco, i) => (
+                    <div key={i} className="rounded-xl p-3 flex items-start gap-3" style={{ background: "var(--surfaceAlt)" }}>
+                      <span className="rounded-full w-6 h-6 flex items-center justify-center text-[11px] font-bold shrink-0"
+                        style={{ background: "var(--accent)", color: "#000" }}>{reco.priorite}</span>
+                      <div className="flex-1">
+                        <div className="text-[12px] font-medium" style={{ color: "var(--text)" }}>{reco.action}</div>
+                        <div className="text-[11px] mt-0.5" style={{ color: "var(--textMuted)" }}>
+                          Gain estimé : {reco.gain_estime.toLocaleString("fr-FR")} € · {reco.delai} · {reco.adapte_phase}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Charts row */}
       <div className="grid gap-5" style={{ gridTemplateColumns: "1fr 1fr" }}>
         {/* Radar */}

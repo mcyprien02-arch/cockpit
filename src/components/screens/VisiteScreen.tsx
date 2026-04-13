@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { getStatus, computeScore, computeCategoryScores } from "@/lib/scoring";
 import { generateNarrative } from "@/lib/narrative";
 import type { Magasin, ValeurAvecIndicateur } from "@/types";
+import { callRedacteurCR } from "@/lib/agents/redacteur";
 
 interface Visite {
   id: string;
@@ -88,31 +89,26 @@ export function VisiteScreen({ magasin, magasinId }: VisiteScreenProps) {
   const handleGenerateAiNarrative = async () => {
     setGeneratingNarrative(true);
     try {
-      const kpisEnAlerte = valeurs
+      const kpisAlertes = valeurs
         .filter((v) => v.status === "dg" || v.status === "wn")
-        .map((v) => v.indicateur_nom);
-      const actionsPrioritaires = actions
-        .filter((a) => a.priorite === "P1")
-        .map((a) => a.action);
-      const previousScore = visites[0]?.score_global ?? null;
+        .map((v) => ({ nom: v.indicateur_nom, valeur: v.valeur, statut: v.status, seuil: v.seuil_ok }));
 
-      const res = await fetch("/api/narrative", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          magasinNom: magasin?.nom ?? "",
-          date: form.date_visite,
-          score: score ?? 0,
-          previousScore,
-          kpisEnAlerte,
-          kpisAmelibres: [],
-          actionsPrioritaires,
-        }),
+      const actionsPap = actions
+        .filter((a) => a.priorite === "P1")
+        .map((a) => ({ action: a.action, responsable: a.responsable, echeance: a.echeance }));
+
+      const cr = await callRedacteurCR({
+        magasin: magasin?.nom ?? "",
+        date: form.date_visite,
+        consultant: form.consultant,
+        constats: form.constats,
+        kpis_alertes: kpisAlertes,
+        actions_pap: actionsPap,
       });
-      const { narrative } = await res.json();
-      setAiNarrative(narrative);
+      setAiNarrative(cr);
     } catch (err) {
-      console.error("Erreur génération narrative IA:", err);
+      console.error("Erreur génération CR IA:", err);
+      setAiNarrative("Erreur lors de la génération — réessayez.");
     }
     setGeneratingNarrative(false);
   };

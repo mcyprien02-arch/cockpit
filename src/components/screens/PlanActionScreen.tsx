@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { computeHiddenCosts, formatEuro } from "@/lib/hiddenCosts";
+import { callDecideur } from "@/lib/agents/decideur";
 import type { ValeurAvecIndicateur } from "@/types";
 import { getStatus } from "@/lib/scoring";
 
@@ -44,6 +45,8 @@ export function PlanActionScreen({ magasinId }: { magasinId: string }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "P1" | "P2" | "P3">("all");
+  const [generatingIA, setGeneratingIA] = useState(false);
+  const [iaError, setIaError] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<Action>>({
     priorite: "P1", statut: "À faire",
     constat: "", action: "", responsable: "", kpi_cible: "", echeance: "", commentaire: ""
@@ -129,6 +132,38 @@ export function PlanActionScreen({ magasinId }: { magasinId: string }) {
     setShowForm(true);
   };
 
+  const handleGenerateIA = async () => {
+    setGeneratingIA(true);
+    setIaError(null);
+    try {
+      const alertes = valeurs
+        .filter((v) => v.status !== "ok")
+        .map((v) => ({ nom: v.indicateur_nom, valeur: v.valeur, statut: v.status, seuil: v.seuil_ok }));
+      const actions_existantes = actions
+        .filter((a) => a.statut !== "Fait" && a.statut !== "Abandonné")
+        .map((a) => ({ action: a.action, priorite: a.priorite, echeance: a.echeance, statut: a.statut }));
+      const result = await callDecideur({ alertes, actions_existantes });
+      if (result.nouvelles_actions?.length > 0) {
+        const toInsert = result.nouvelles_actions.map((na) => ({
+          magasin_id: magasinId,
+          priorite: "P1" as const,
+          constat: `IA — ${na.famille || na.kpi_cible || "Alerte détectée"}`,
+          action: `[${na.qui}] ${na.quoi}`,
+          responsable: na.qui,
+          echeance: na.quand ? na.quand.split("T")[0] : null,
+          kpi_cible: na.kpi_cible,
+          statut: "À faire" as const,
+          commentaire: `Gain estimé : ${na.combien}`,
+        }));
+        await (supabase as any).from("plans_action").insert(toInsert);
+        load();
+      }
+    } catch (err) {
+      setIaError(err instanceof Error ? err.message : "Erreur IA");
+    }
+    setGeneratingIA(false);
+  };
+
   const filtered = actions.filter((a) => filter === "all" || a.priorite === filter);
   const open = actions.filter((a) => a.statut === "À faire" || a.statut === "En cours");
   const done = actions.filter((a) => a.statut === "Fait");
@@ -145,6 +180,60 @@ export function PlanActionScreen({ magasinId }: { magasinId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Missions du mois */}
+      {(() => {
+        const now = new Date();
+        const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const missions = actions.filter(a =>
+          a.statut !== "Fait" && a.statut !== "Abandonné" &&
+          a.echeance && a.echeance.startsWith(monthStr)
+        );
+        if (late.length === 0 && missions.length === 0) return null;
+        return (
+          <div className="rounded-2xl p-4 border" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+            {late.length > 0 && (
+              <div className="mb-3">
+                <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: "#ff4d6a" }}>
+                  ⚠ {late.length} action{late.length > 1 ? "s" : ""} en retard
+                </div>
+                <div className="space-y-1.5">
+                  {late.map((a) => (
+                    <div key={a.id} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "#ff4d6a10", border: "1px solid #ff4d6a25" }}>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "#ff4d6a25", color: "#ff4d6a" }}>{a.priorite}</span>
+                      <span className="text-[12px] flex-1 font-medium" style={{ color: "#ff4d6a" }}>{a.action}</span>
+                      <span className="text-[10px] font-bold shrink-0" style={{ color: "#ff4d6a" }}>
+                        {Math.abs(daysUntil(a.echeance)!)}j retard
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {missions.length > 0 && (
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--accent)" }}>
+                  🎯 Missions de ce mois
+                </div>
+                <div className="space-y-1.5">
+                  {missions.map((a) => (
+                    <div key={a.id} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "var(--surfaceAlt)" }}>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: PRIORITE_COLORS[a.priorite]?.bg, color: PRIORITE_COLORS[a.priorite]?.color }}>{a.priorite}</span>
+                      <span className="text-[12px] flex-1" style={{ color: "var(--text)" }}>{a.action}</span>
+                      <span className="text-[10px]" style={{ color: "var(--textDim)" }}>{a.echeance ? new Date(a.echeance).toLocaleDateString("fr-FR") : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* IA error */}
+      {iaError && (
+        <div className="rounded-xl px-4 py-2 text-[12px]" style={{ background: "#ff4d6a18", color: "#ff4d6a" }}>⚠ {iaError}</div>
+      )}
+
       {/* Header summary */}
       <div className="grid grid-cols-4 gap-3">
         {[
@@ -201,6 +290,14 @@ export function PlanActionScreen({ magasinId }: { magasinId: string }) {
           ))}
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleGenerateIA}
+            disabled={generatingIA || valeurs.length === 0}
+            className="px-4 py-2 rounded-xl text-[12px] font-semibold transition-all hover:opacity-90"
+            style={{ background: generatingIA ? "var(--surfaceAlt)" : "#7c3aed18", color: generatingIA ? "var(--textMuted)" : "#a78bfa", border: "1px solid #a78bfa40", cursor: generatingIA ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+          >
+            {generatingIA ? "Génération IA…" : "🤖 Générer actions IA"}
+          </button>
           {valeurs.some((v) => v.status === "dg") && (
             <button
               onClick={handleAutoFill}
