@@ -9,7 +9,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────
 type NiveauOp = "gestion" | "securite" | "developpement";
-type NiveauCell = 0 | 1 | 2 | 3;
+type NiveauCell = 0 | 1 | 2 | 3 | 4;
 
 interface Competence {
   id: string;
@@ -82,11 +82,13 @@ const DEFAULT_COLLABS: Collab[] = [
 ];
 
 const COLLAB_COLORS = ["#00d4aa", "#4da6ff", "#a78bfa", "#ffb347", "#f472b6", "#ff6b6b"];
+// ISEOR 5 niveaux (Manuel Mariposa O7)
 const NIVEAU_LABELS = [
-  "Pas de connaissance, pas de pratique",
-  "Connaissance mais pas de pratique",
-  "Pratique occasionnelle",
-  "Maîtrise parfaite",
+  "○ À réaliser (objectif formation)",
+  "— Ni connaissance ni pratique",
+  "□ Connaissance sans pratique",
+  "▧ Pratique occasionnelle / non entièrement maîtrisée",
+  "■ Pratique courante maîtrisée",
 ];
 
 // ─── SVG Skill Cell ───────────────────────────────────────────
@@ -105,41 +107,50 @@ function SkillCell({
   const [hovered, setHovered] = useState(false);
 
   const renderSVG = () => {
+    // 0 = ○ À réaliser
     if (niveau === 0) {
       return (
         <svg width="22" height="22" viewBox="0 0 22 22">
-          <rect x="1" y="1" width="20" height="20" rx="2"
-            fill="none" stroke="#4a5568" strokeWidth="1.5"
-            strokeDasharray="4 2" />
-          <line x1="4" y1="11" x2="18" y2="11" stroke="#4a5568" strokeWidth="1.5" />
+          <circle cx="11" cy="11" r="9" fill="none" stroke="#4a5568" strokeWidth="1.5" strokeDasharray="3 2" />
         </svg>
       );
     }
+    // 1 = — Tiret (ni connaissance ni pratique)
     if (niveau === 1) {
       return (
         <svg width="22" height="22" viewBox="0 0 22 22">
-          <rect x="1" y="1" width="20" height="20" rx="2"
-            fill="none" stroke={color} strokeWidth="1.5" />
+          <rect x="1" y="1" width="20" height="20" rx="2" fill="none" stroke="#4a5568" strokeWidth="1.5" />
+          <line x1="5" y1="11" x2="17" y2="11" stroke="#4a5568" strokeWidth="2" strokeLinecap="round" />
         </svg>
       );
     }
+    // 2 = □ Connaissance sans pratique (empty border)
     if (niveau === 2) {
       return (
         <svg width="22" height="22" viewBox="0 0 22 22">
-          <rect x="1" y="1" width="20" height="20" rx="2"
-            fill="none" stroke={color} strokeWidth="1.5" />
-          <rect x="2" y="11" width="18" height="9" rx="0"
-            fill={color} opacity="0.85" />
+          <rect x="1" y="1" width="20" height="20" rx="2" fill="none" stroke={color} strokeWidth="1.5" />
         </svg>
       );
     }
+    // 3 = ▧ Pratique occasionnelle (hatched)
+    if (niveau === 3) {
+      return (
+        <svg width="22" height="22" viewBox="0 0 22 22">
+          <rect x="1" y="1" width="20" height="20" rx="2" fill="none" stroke={color} strokeWidth="1.5" />
+          <clipPath id={`clip-${niveau}`}><rect x="1" y="1" width="20" height="20" rx="2" /></clipPath>
+          <g clipPath={`url(#clip-${niveau})`}>
+            {[0,4,8,12,16,20,24].map(i => (
+              <line key={i} x1={i-2} y1="1" x2={i+18} y2="21" stroke={color} strokeWidth="1.2" opacity="0.7" />
+            ))}
+          </g>
+        </svg>
+      );
+    }
+    // 4 = ■ Pratique courante maîtrisée (full filled)
     return (
       <svg width="22" height="22" viewBox="0 0 22 22">
-        <rect x="1" y="1" width="20" height="20" rx="2"
-          fill={color} stroke={color} strokeWidth="1.5" />
-        <polyline points="6,11 9.5,14.5 16,8"
-          fill="none" stroke="white" strokeWidth="2"
-          strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="1" y="1" width="20" height="20" rx="2" fill={color} stroke={color} strokeWidth="1.5" />
+        <polyline points="5.5,11 9,14.5 16.5,8" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   };
@@ -366,38 +377,53 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
     localStorage.setItem(`iseor_matrix_${magasinId}`, JSON.stringify(matrix));
   }, [matrix, magasinId]);
 
-  // ── Cycle niveau (callback form avoids stale closure) ───────
+  // ── Cycle niveau 0→1→2→3→4→0 ──────────────────────────────
   const cycleNiveau = useCallback((collabId: string, compId: string) => {
     setMatrix(prev => {
       const current = (prev[collabId]?.[compId] ?? 0) as NiveauCell;
-      const next = ((current + 1) % 4) as NiveauCell;
-      return {
-        ...prev,
-        [collabId]: { ...(prev[collabId] ?? {}), [compId]: next },
-      };
+      const next = ((current + 1) % 5) as NiveauCell;
+      return { ...prev, [collabId]: { ...(prev[collabId] ?? {}), [compId]: next } };
     });
   }, []);
+
+  // ── CHVACV depuis localStorage ──────────────────────────────
+  const [chvacv, setChvacv] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`chvacv_${magasinId}`);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.chvacv_calculee) setChvacv(d.chvacv_calculee);
+        else if (d.ca_annuel && d.cv_annuelles && d.nb_heures_travaillees) {
+          setChvacv(Math.round((d.ca_annuel - d.cv_annuelles) / d.nb_heures_travaillees * 100) / 100);
+        }
+      }
+    } catch { /* ignore */ }
+  }, [magasinId]);
 
   // ── Stats ────────────────────────────────────────────────────
   const totalCells  = collabs.length * COMPETENCES.length;
   const filledCells = collabs.reduce((acc, c) =>
-    acc + COMPETENCES.filter(comp => (matrix[c.id]?.[comp.id] ?? 0) > 0).length, 0);
+    acc + COMPETENCES.filter(comp => (matrix[c.id]?.[comp.id] ?? 0) > 1).length, 0);
   const pctRenseigne = totalCells > 0 ? Math.round((filledCells / totalCells) * 100) : 0;
 
-  const securiteComps   = COMPETENCES.filter(c => c.niveauOp === "securite");
+  const securiteComps    = COMPETENCES.filter(c => c.niveauOp === "securite");
+  // Alerte: compétence critique maîtrisée (niveau 4) par ≤1 personne → risque dépendance
   const alertesCritiques = securiteComps.filter(comp =>
-    collabs.filter(c => (matrix[c.id]?.[comp.id] ?? 0) === 3).length <= 1
+    collabs.filter(c => (matrix[c.id]?.[comp.id] ?? 0) === 4).length <= 1
   );
+  // Formation: compétence sécurité pratiquée (≥3) par <2 personnes
   const besoinFormation  = securiteComps.filter(comp =>
-    collabs.filter(c => (matrix[c.id]?.[comp.id] ?? 0) >= 2).length < 2
+    collabs.filter(c => (matrix[c.id]?.[comp.id] ?? 0) >= 3).length < 2
   );
-  const collabsEnAlerte  = collabs.filter(c => {
-    const nb0 = COMPETENCES.filter(comp => (matrix[c.id]?.[comp.id] ?? 0) === 0).length;
-    return nb0 / COMPETENCES.length > 0.5;
-  });
+  // Collab sans compétence développement
+  const devComps = COMPETENCES.filter(c => c.niveauOp === "developpement");
+  const collabsEnAlerte = collabs.filter(c =>
+    devComps.filter(comp => (matrix[c.id]?.[comp.id] ?? 0) >= 3).length === 0
+  );
 
   const getScore = (collabId: string) => {
-    const total = COMPETENCES.length * 3;
+    const total = COMPETENCES.length * 4;
     const sum   = COMPETENCES.reduce((acc, comp) => acc + (matrix[collabId]?.[comp.id] ?? 0), 0);
     return total > 0 ? Math.round((sum / total) * 100) : 0;
   };
@@ -407,14 +433,17 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
   if (simulerAbsenceId) {
     COMPETENCES.forEach(comp => {
       const myLevel = matrix[simulerAbsenceId]?.[comp.id] ?? 0;
-      if (myLevel === 3) {
+      if (myLevel >= 4) {
         const othersOk = collabs
           .filter(c => c.id !== simulerAbsenceId)
-          .some(c => (matrix[c.id]?.[comp.id] ?? 0) >= 2);
+          .some(c => (matrix[c.id]?.[comp.id] ?? 0) >= 3);
         if (!othersOk) absenceCritical.add(comp.id);
       }
     });
   }
+
+  const absenceCost = simulerAbsenceId && chvacv
+    ? Math.round(absenceCritical.size * chvacv * 35) : null;
 
   // ── Add/Remove collab ────────────────────────────────────────
   const addCollab = () => {
@@ -436,7 +465,7 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
     const entry: Record<string, string | number> = { famille };
     collabs.forEach(c => {
       const sum = comps.reduce((acc, comp) => acc + (matrix[c.id]?.[comp.id] ?? 0), 0);
-      entry[c.nom] = comps.length > 0 ? Math.round((sum / (comps.length * 3)) * 100) : 0;
+      entry[c.nom] = comps.length > 0 ? Math.round((sum / (comps.length * 4)) * 100) : 0;
     });
     return entry;
   });
@@ -446,7 +475,7 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
     const entry: Record<string, string | number> = { name: famille };
     collabs.forEach(c => {
       const sum = comps.reduce((acc, comp) => acc + (matrix[c.id]?.[comp.id] ?? 0), 0);
-      entry[c.nom] = comps.length > 0 ? Math.round((sum / (comps.length * 3)) * 100) : 0;
+      entry[c.nom] = comps.length > 0 ? Math.round((sum / (comps.length * 4)) * 100) : 0;
     });
     return entry;
   });
@@ -502,7 +531,19 @@ export function CompetencesISEORScreen({ magasinId }: CompetencesISEORScreenProp
             className="rounded-xl p-4 text-[13px] font-medium"
             style={{ background: "#ffb34715", border: "1px solid #ffb34740", color: "#ffb347" }}
           >
-            ⚠ <strong>{collabsEnAlerte.map(c => c.nom).join(", ")}</strong> — plus de 50% des compétences non renseignées
+            📚 <strong>{collabsEnAlerte.map(c => c.nom).join(", ")}</strong> — 0 compétence développement maîtrisée → besoin formation
+          </motion.div>
+        )}
+        {simulerAbsenceId && absenceCritical.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="rounded-xl p-4 text-[13px] font-medium"
+            style={{ background: "#ff4d6a08", border: "1px solid #ff4d6a40", color: "#ff4d6a" }}
+          >
+            🔴 Absence de {collabs.find(c => c.id === simulerAbsenceId)?.nom} → <strong>{absenceCritical.size} compétence(s) critiques sans couverture</strong>
+            {absenceCost !== null && <span> — coût estimé 1 semaine : <strong>~{absenceCost.toLocaleString("fr-FR")}€</strong> ({absenceCritical.size} ops × CHVACV {chvacv?.toFixed(0)}€/h × 35h)</span>}
           </motion.div>
         )}
       </AnimatePresence>

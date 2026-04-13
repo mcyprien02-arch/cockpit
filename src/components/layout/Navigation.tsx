@@ -8,7 +8,7 @@ export type TabId =
   | "pap" | "plan" | "competences" | "carnet"
   | "journal_visite" | "config" | "export";
 
-export type AppMode = "consultant" | "franchisé";
+export type AppMode = "consultant";
 
 // ─── Tab groups ───────────────────────────────────────────────
 const MAIN_TABS: { id: string; label: string; icon: string }[] = [
@@ -65,22 +65,17 @@ export function getTabGroup(tab: TabId): string {
 interface NavigationProps {
   activeTab: TabId;
   onTabChange: (t: TabId) => void;
-  mode: AppMode;
+  mode?: AppMode;
 }
 
-export function Navigation({ activeTab, onTabChange, mode }: NavigationProps) {
+export function Navigation({ activeTab, onTabChange }: NavigationProps) {
   const currentGroup = getTabGroup(activeTab);
   const subTabs = SUB_TABS[currentGroup] ?? [];
-
-  const franchiseMainTabs = ["journee_grp", "actions"];
-  const visibleMain = mode === "franchisé"
-    ? MAIN_TABS.filter(t => franchiseMainTabs.includes(t.id))
-    : MAIN_TABS;
 
   return (
     <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
       <div className="flex items-center max-w-[1600px] mx-auto px-4 overflow-x-auto">
-        {visibleMain.map(tab => {
+        {MAIN_TABS.map(tab => {
           const isActive = currentGroup === tab.id;
           return (
             <button
@@ -137,37 +132,7 @@ export function Navigation({ activeTab, onTabChange, mode }: NavigationProps) {
   );
 }
 
-// ─── Mode Switcher ────────────────────────────────────────────
-export function ModeSwitcher({
-  mode,
-  onChange,
-}: {
-  mode: AppMode;
-  onChange: (m: AppMode) => void;
-}) {
-  const modes: { id: AppMode; label: string }[] = [
-    { id: "consultant", label: "Consultant" },
-    { id: "franchisé",  label: "Franchisé" },
-  ];
-
-  return (
-    <div className="flex rounded-xl overflow-hidden border" style={{ borderColor: "var(--border)" }}>
-      {modes.map(m => (
-        <button
-          key={m.id}
-          onClick={() => onChange(m.id)}
-          className="px-3 py-1.5 text-[11px] font-semibold transition-colors"
-          style={{
-            background: mode === m.id ? "var(--accent)" : "var(--surface)",
-            color: mode === m.id ? "#000" : "var(--textMuted)",
-            border: "none",
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          {m.label}
-        </button>
-      ))}
-    </div>
-  );
+// ─── ModeSwitcher — stub (mode supprimé, gardé pour compatibilité) ─
+export function ModeSwitcher(_props: { mode?: AppMode; onChange?: (m: AppMode) => void }) {
+  return null;
 }
