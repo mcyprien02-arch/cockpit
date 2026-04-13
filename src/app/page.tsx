@@ -21,6 +21,7 @@ import { AnalyseTempsScreen } from "@/components/screens/AnalyseTempsScreen";
 import { SimulateurScreen } from "@/components/screens/SimulateurScreen";
 import { DiagnosticExpressScreen } from "@/components/screens/DiagnosticExpressScreen";
 import { CarnetDeBordScreen } from "@/components/screens/CarnetDeBordScreen";
+import { StratWidget } from "@/components/StratWidget";
 import type { Magasin } from "@/types";
 
 // ─── Store selector ───────────────────────────────────────────
@@ -310,6 +311,7 @@ export default function App() {
           </motion.div>
         </AnimatePresence>
       </main>
+      <StratWidget magasinId={selectedId || undefined} />
     </div>
   );
 }
