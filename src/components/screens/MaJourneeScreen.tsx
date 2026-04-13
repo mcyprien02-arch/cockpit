@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import { buildMagasinContext } from "@/lib/buildContext";
+import { runDecideur, type ActionDecideur } from "@/lib/agents";
 
 // ─── Types ────────────────────────────────────────────────────
 interface Mission {
@@ -236,6 +238,7 @@ export function MaJourneeScreen({ magasinId }: MaJourneeScreenProps) {
   const [loading, setLoading]             = useState(true);
   const [showConfetti, setShowConfetti]   = useState(false);
   const [gmroi, setGmroi]                 = useState<number | null>(null);
+  const [iaActions, setIaActions]         = useState<ActionDecideur[] | null>(null);
 
   const month = new Date().getMonth() + 1;
   const cal   = CALENDRIER[month];
@@ -301,6 +304,13 @@ export function MaJourneeScreen({ magasinId }: MaJourneeScreenProps) {
     const s = updateStreak();
     setStreak(s);
     setLoading(false);
+
+    // Auto-run IA Décideur (non-blocking)
+    try {
+      const ctx = await buildMagasinContext(magasinId);
+      const acts = await runDecideur(ctx);
+      if (acts.length > 0) setIaActions(acts);
+    } catch { /* IA is optional */ }
   }, [magasinId, month]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -559,6 +569,34 @@ export function MaJourneeScreen({ magasinId }: MaJourneeScreenProps) {
           </div>
           <div className="text-[11px] mt-1" style={{ color: "var(--textMuted)" }}>
             Allez dans Diagnostic pour identifier vos priorités, puis créez un PAP.
+          </div>
+        </div>
+      )}
+
+      {/* IA Décideur suggestions */}
+      {iaActions && iaActions.length > 0 && (
+        <div className="rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid #7c3aed30" }}>
+          <div className="text-[11px] font-bold mb-3 tracking-wider" style={{ color: "#a855f7" }}>
+            🧠 PRIORITÉS IA
+          </div>
+          <div className="space-y-2">
+            {iaActions.slice(0, 3).map((a, i) => {
+              const col = a.priorite === "P1" ? "#ff4d6a" : a.priorite === "P2" ? "#ffb347" : "#00d4aa";
+              return (
+                <div key={i} className="flex items-start gap-3 rounded-xl px-3 py-2.5"
+                  style={{ background: `${col}0d`, border: `1px solid ${col}20` }}>
+                  <span className="text-[10px] font-bold rounded px-1.5 py-0.5 mt-0.5"
+                    style={{ background: `${col}30`, color: col }}>{a.priorite}</span>
+                  <div className="flex-1">
+                    <div className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>{a.action}</div>
+                    <div className="text-[10px] mt-0.5" style={{ color: "var(--textMuted)" }}>{a.pourquoi}</div>
+                  </div>
+                  <span className="text-[10px] shrink-0" style={{ color: "var(--textDim)" }}>
+                    {a.echeance_jours}j
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

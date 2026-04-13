@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { getStatus, computeScore } from "@/lib/scoring";
 import { computeHiddenCosts, formatEuro } from "@/lib/hiddenCosts";
+import { buildMagasinContext } from "@/lib/buildContext";
+import { runRedacteurSynthese } from "@/lib/agents";
 import type { ValeurAvecIndicateur } from "@/types";
 
 interface ExportCRScreenProps {
@@ -16,6 +18,8 @@ export function ExportCRScreen({ magasinId, magasinNom }: ExportCRScreenProps) {
   const [papActions, setPapActions] = useState<{ action: string; echeance?: string; priorite?: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [iaSynthese, setIaSynthese] = useState<string | null>(null);
+  const [iaLoading, setIaLoading] = useState(false);
   const crRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
@@ -63,6 +67,19 @@ export function ExportCRScreen({ magasinId, magasinNom }: ExportCRScreenProps) {
   }, [magasinId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const runSynthese = async () => {
+    setIaLoading(true);
+    try {
+      const ctx = await buildMagasinContext(magasinId);
+      const text = await runRedacteurSynthese(ctx);
+      setIaSynthese(text);
+    } catch (e: any) {
+      setIaSynthese("Erreur : " + (e.message ?? "IA indisponible"));
+    } finally {
+      setIaLoading(false);
+    }
+  };
 
   const score = computeScore(valeurs);
   const hiddenCosts = computeHiddenCosts(valeurs)
@@ -148,7 +165,21 @@ export function ExportCRScreen({ magasinId, magasinNom }: ExportCRScreenProps) {
             Généré automatiquement depuis vos données — {today}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={runSynthese}
+            disabled={iaLoading}
+            className="rounded-xl px-4 py-2.5 text-[12px] font-bold transition-all"
+            style={{
+              background: iaLoading ? "var(--surfaceAlt)" : "linear-gradient(135deg,#7c3aed,#a855f7)",
+              color: "#fff",
+              border: "none",
+              cursor: iaLoading ? "default" : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {iaLoading ? "Génération…" : "🧠 Synthèse IA"}
+          </button>
           <button
             onClick={copyToClipboard}
             className="rounded-xl px-4 py-2.5 text-[12px] font-bold transition-all"
@@ -177,6 +208,18 @@ export function ExportCRScreen({ magasinId, magasinNom }: ExportCRScreenProps) {
           </button>
         </div>
       </div>
+
+      {/* IA Synthèse */}
+      {iaSynthese && (
+        <div className="rounded-2xl p-5 border" style={{ background: "var(--surface)", borderColor: "#7c3aed40" }}>
+          <div className="text-[11px] font-bold mb-3 tracking-wider" style={{ color: "#a855f7" }}>
+            🧠 SYNTHÈSE IA
+          </div>
+          <div className="text-[12px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text)" }}>
+            {iaSynthese}
+          </div>
+        </div>
+      )}
 
       {/* CR preview */}
       <div

@@ -12,6 +12,8 @@ import {
   applyPhaseThresholds, getContextualReco,
   PHASE_LABELS, PHASE_CONFIG, type Phase,
 } from "@/lib/phaseThresholds";
+import { buildMagasinContext } from "@/lib/buildContext";
+import { runDiagnostic, type DiagnosticResult } from "@/lib/agents";
 import type { ValeurAvecIndicateur, CategorieScore, Magasin } from "@/types";
 
 const STATUS_COLORS = {
@@ -184,6 +186,9 @@ export function DiagnosticScreen({
   const [ca, setCa]             = useState<number | undefined>(undefined);
   const [loading, setLoading]   = useState(true);
   const [openCats, setOpenCats] = useState<Record<string, boolean>>({});
+  const [iaResults, setIaResults] = useState<DiagnosticResult[] | null>(null);
+  const [iaLoading, setIaLoading] = useState(false);
+  const [iaError, setIaError]   = useState<string | null>(null);
 
   const phase = (magasin?.phase_vie as Phase) ?? null;
 
@@ -261,6 +266,20 @@ export function DiagnosticScreen({
 
   const alertCount = valeurs.filter(v => v.status === "dg").length;
 
+  const runIA = async () => {
+    setIaLoading(true);
+    setIaError(null);
+    try {
+      const ctx = await buildMagasinContext(magasinId);
+      const results = await runDiagnostic(ctx);
+      setIaResults(results);
+    } catch (e: any) {
+      setIaError(e.message ?? "Erreur IA");
+    } finally {
+      setIaLoading(false);
+    }
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-[40vh]">
       <div className="text-[13px]" style={{ color: "var(--textMuted)" }}>Chargement…</div>
@@ -313,6 +332,59 @@ export function DiagnosticScreen({
           </div>
         </motion.div>
       )}
+
+      {/* IA Diagnostic button + results */}
+      <div className="rounded-2xl p-4 border" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <div className="text-[13px] font-bold" style={{ color: "var(--text)" }}>🧠 Diagnostic IA</div>
+            <div className="text-[11px]" style={{ color: "var(--textMuted)" }}>Analyse contextuelle par IA de vos KPIs</div>
+          </div>
+          <button
+            onClick={runIA}
+            disabled={iaLoading}
+            className="rounded-xl px-4 py-2 text-[12px] font-bold transition-all"
+            style={{
+              background: iaLoading ? "var(--surfaceAlt)" : "linear-gradient(135deg,#7c3aed,#a855f7)",
+              color: "#fff",
+              border: "none",
+              cursor: iaLoading ? "default" : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {iaLoading ? "Analyse en cours…" : iaResults ? "🔄 Relancer" : "🧠 Lancer le diagnostic IA"}
+          </button>
+        </div>
+        {iaError && (
+          <div className="mt-3 text-[11px] rounded-lg px-3 py-2" style={{ background: "#ff4d6a18", color: "#ff4d6a", border: "1px solid #ff4d6a30" }}>
+            ⚠ {iaError}
+          </div>
+        )}
+        {iaResults && iaResults.length > 0 && (
+          <div className="mt-4 space-y-3">
+            {iaResults.map((r, i) => {
+              const col = r.gravite === "critique" ? "#ff4d6a" : r.gravite === "vigilance" ? "#ffb347" : "#00d4aa";
+              return (
+                <div key={i} className="rounded-xl p-3 border-l-2" style={{ background: `${col}0d`, borderColor: col }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: col }}>{r.gravite}</span>
+                    <span className="text-[12px] font-semibold" style={{ color: "var(--text)" }}>{r.titre}</span>
+                    {r.impact_euros && (
+                      <span className="ml-auto text-[11px] font-bold" style={{ color: "#ffb347" }}>
+                        ~{r.impact_euros.toLocaleString("fr-FR")} €/an
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] mb-1" style={{ color: "var(--textMuted)" }}>{r.cause_racine}</div>
+                  {r.recommendation && (
+                    <div className="text-[11px] font-medium" style={{ color: col }}>→ {r.recommendation}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Charts row */}
       <div className="grid gap-5" style={{ gridTemplateColumns: "1fr 1fr" }}>

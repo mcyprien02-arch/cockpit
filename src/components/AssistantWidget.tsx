@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { buildMagasinContext } from "@/lib/buildContext";
+import { runRedacteurAssistant } from "@/lib/agents";
 
 interface Message {
   role: "user" | "assistant";
@@ -9,6 +11,7 @@ interface Message {
 }
 
 interface AssistantWidgetProps {
+  magasinId?: string;
   context?: {
     score?: number;
     gmroi?: number;
@@ -21,7 +24,7 @@ interface AssistantWidgetProps {
   };
 }
 
-export function AssistantWidget({ context }: AssistantWidgetProps) {
+export function AssistantWidget({ magasinId, context }: AssistantWidgetProps) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -60,13 +63,20 @@ export function AssistantWidget({ context }: AssistantWidgetProps) {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/assistant", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question, mode, context }),
-      });
-      const data = await res.json();
-      setMessages(prev => [...prev, { role: "assistant", text: data.response ?? "Désolé, je n'ai pas pu répondre." }]);
+      if (magasinId) {
+        // Use agents.ts when magasinId is available
+        const ctx = await buildMagasinContext(magasinId);
+        const reply = await runRedacteurAssistant(ctx, question);
+        setMessages(prev => [...prev, { role: "assistant", text: reply }]);
+      } else {
+        const res = await fetch("/api/assistant", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ question, mode, context }),
+        });
+        const data = await res.json();
+        setMessages(prev => [...prev, { role: "assistant", text: data.response ?? "Désolé, je n'ai pas pu répondre." }]);
+      }
     } catch {
       setMessages(prev => [...prev, { role: "assistant", text: "Erreur de connexion. Réessayez." }]);
     }

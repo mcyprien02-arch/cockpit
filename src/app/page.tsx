@@ -366,7 +366,7 @@ export default function App() {
 
       {/* Floating assistant — visible on most tabs */}
       {selectedId && !["config"].includes(activeTab) && (
-        <AssistantWidget />
+        <AssistantWidget magasinId={selectedId} />
       )}
     </div>
   );
