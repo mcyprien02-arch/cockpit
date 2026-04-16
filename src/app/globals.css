@@ -11,11 +11,7 @@ body {
   font-family: system-ui, -apple-system, sans-serif;
 }
 
-input:focus, textarea:focus, select:focus {
-  outline: none;
-  ring: 2px solid #22c55e;
-}
-
-::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: #1f2937; }
 ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4b5563; }

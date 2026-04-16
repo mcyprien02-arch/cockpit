@@ -1,121 +1,272 @@
 'use client';
 
 import { useState } from 'react';
-import type { MagasinData } from '@/types';
-import { callAI } from '@/lib/ai';
+import type { MagasinData, PAPAction } from '@/types';
+import { getAlerts, getCategoryScores } from '@/lib/kpis';
 
 interface Props {
   data: MagasinData;
+  actions: PAPAction[];
 }
 
-export default function AssistantIA({ data }: Props) {
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+const PROMPT_TEMPLATES = [
+  {
+    id: 'diagnostic',
+    label: 'Diagnostic complet',
+    icon: '🔍',
+    build: (data: MagasinData, actions: PAPAction[]) => {
+      const alerts = getAlerts(data);
+      const scores = getCategoryScores(data);
+      const cats = ['rentabilite', 'stock', 'commerce', 'rh'] as const;
+      const scoreStr = cats.map(c => `${c}: ${Math.round(scores[c])}/100`).join(', ');
+      const alertStr = alerts.map(a => `- ${a.label}: ${a.value}${a.unit} (cible: ${a.seuilOk}, statut: ${a.status})`).join('\n');
+      const actionStr = actions.filter(a => a.statut !== 'Fait').slice(0, 5).map(a => `- [P${a.priorite}] ${a.titre} (${a.statut})`).join('\n');
 
-  const kpisJSON = JSON.stringify({
-    magasin: data.magasin,
-    phase: data.phase,
-    stockTotal: data.stockTotal,
-    stockAge: data.stockAge,
-    top20Traite: data.top20Traite,
-    rattachementWeb: data.rattachementWeb,
-    gmroi: data.gmroi,
-    nbEtp: data.nbEtp,
-    panierMoyen: data.panierMoyen,
-    estalyParSemaine: data.estalyParSemaine,
-    noteGoogle: data.noteGoogle,
-    tauxAnnulationWeb: data.tauxAnnulationWeb,
-    briefingQuotidien: data.briefingQuotidien,
-    masseSalarialePct: data.masseSalarialePct,
-    nbInventairesTournants: data.nbInventairesTournants,
-  });
+      return `Tu es expert en franchise retail et gestion de magasin EasyCash.
 
-  const SYSTEM = `Tu es expert franchise EasyCash seconde main. Tu connais les benchmarks réseau (marge nette 38-39%, masse sal ≤15%, EBE ≥8%, GMROI réseau 3.84, stock âgé <30%, productivité 1 ETP/250k€ CA), les Règles d'Or (Vente : priorité client, bon produit bon prix, bonne affaire, outils Aquila/EasyPrice/F3 | Achat : VPD, ne louper aucun produit, polyvalence | Stock : stock sain, démarque, SAV, accélérations, niveau piloté | Web : 2e magasin, rattachement 60%, annulation <20% | Management : exemplarité, bonne personne bon endroit, coaching, pilotage DBP), les côtes d'accélération (JV/Tel/Info 15j→30j→60j, Bij 90j→120j→150j, LS/Livres 30j→60j→90j, Musique 90j→120j→150j), la méthode GPA (Gamme Prix Animation), Estaly (marge pure, primes vendeurs), la VPD (5 questions pour positionner le PV). Voici les données du magasin : ${kpisJSON}. Réponds en 5 phrases max. Direct, chiffré, actionnable. Pas de jargon comptable. Pas de reformulation de la question.`;
+MAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}
 
-  async function send() {
-    if (!question.trim()) return;
-    setLoading(true);
-    setError('');
-    setAnswer('');
-    try {
-      const result = await callAI(SYSTEM, question);
-      setAnswer(result);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Erreur inconnue';
-      setError(msg.includes('503') || msg.includes('configurée') ? '🔑 Clé API non configurée. Ajoutez ANTHROPIC_API_KEY dans Vercel.' : msg);
-    } finally {
-      setLoading(false);
-    }
+SCORES: ${scoreStr}
+
+ALERTES KPI:
+${alertStr || 'Aucune alerte'}
+
+ACTIONS EN COURS:
+${actionStr || 'Aucune action'}
+
+Fais un diagnostic structuré avec:
+1. Analyse des points forts
+2. Problèmes prioritaires et leurs causes
+3. Plan d'action concret (5 actions max, priorisées)
+4. Indicateurs à surveiller chaque semaine`;
+    },
+  },
+  {
+    id: 'stock',
+    label: 'Optimiser le stock',
+    icon: '📦',
+    build: (data: MagasinData) => {
+      const stockKpis = [
+        `Stock total: ${data.stockTotal ? data.stockTotal.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
+        `Stock âgé: ${data.stockAge ? data.stockAge + '%' : 'N/R'}`,
+        `GMROI: ${data.gmroi || 'N/R'}`,
+        `Délai vente téléphonie: ${data.delaiTel ? data.delaiTel + 'j' : 'N/R'}`,
+        `Délai vente consoles: ${data.delaiConsole ? data.delaiConsole + 'j' : 'N/R'}`,
+        `Délai vente PC: ${data.delaiPC ? data.delaiPC + 'j' : 'N/R'}`,
+        `Gamme téléphonie: ${data.gammeTel ? data.gammeTel + '%' : 'N/R'}`,
+        `Taux achat externe: ${data.tauxAchatExterne ? data.tauxAchatExterne + '%' : 'N/R'}`,
+      ].join('\n');
+
+      return `Expert EasyCash, aide-moi à optimiser mon stock.
+
+MAGASIN: ${data.nom || 'Non renseigné'} (CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'})
+
+DONNÉES STOCK:
+${stockKpis}
+
+Donne-moi:
+1. Les familles à déstocker en priorité
+2. Les actions concrètes pour améliorer le GMROI
+3. Une stratégie de pricing pour accélérer les ventes
+4. Comment ajuster mes achats la semaine prochaine`;
+    },
+  },
+  {
+    id: 'commerce',
+    label: 'Booster les ventes',
+    icon: '💰',
+    build: (data: MagasinData) => {
+      const commerceKpis = [
+        `Taux transformation: ${data.tauxTransformation ? data.tauxTransformation + '%' : 'N/R'}`,
+        `Panier moyen: ${data.panierMoyen ? data.panierMoyen + ' €' : 'N/R'}`,
+        `Ventes additionnelles: ${data.ventesAdditionnelles || 'N/R'}`,
+        `Estaly/semaine: ${data.estalyParSemaine || 'N/R'}`,
+        `Note Google: ${data.noteGoogle ? data.noteGoogle + '/5' : 'N/R'}`,
+        `Poids digital: ${data.poidsDigital ? data.poidsDigital + '%' : 'N/R'}`,
+        `Taux annulation web: ${data.tauxAnnulationWeb ? data.tauxAnnulationWeb + '%' : 'N/R'}`,
+        `Taux SAV: ${data.tauxSAV ? data.tauxSAV + '%' : 'N/R'}`,
+      ].join('\n');
+
+      return `Expert vente retail EasyCash, aide-moi à booster mon commerce.
+
+MAGASIN: ${data.nom || 'Non renseigné'} — CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}
+
+DONNÉES COMMERCE:
+${commerceKpis}
+
+Donne-moi:
+1. Les leviers prioritaires pour augmenter le CA
+2. Script de vente additionnelle adapté à EasyCash
+3. Plan d'animation semaine type
+4. Actions spécifiques pour améliorer la note Google`;
+    },
+  },
+  {
+    id: 'rh',
+    label: 'Management équipe',
+    icon: '👥',
+    build: (data: MagasinData) => {
+      const rhKpis = [
+        `Nb ETP: ${data.nbEtp || 'N/R'}`,
+        `Masse salariale: ${data.masseSalarialePct ? data.masseSalarialePct + '%' : 'N/R'}`,
+        `Taux turnover: ${data.tauxTurnover ? data.tauxTurnover + '%' : 'N/R'}`,
+        `Formation: ${data.tauxFormation ? data.tauxFormation + '%' : 'N/R'}`,
+        `CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
+      ].join('\n');
+
+      return `Expert management franchise, aide-moi sur la gestion de mon équipe EasyCash.
+
+MAGASIN: ${data.nom || 'Non renseigné'}
+
+DONNÉES RH:
+${rhKpis}
+
+Donne-moi:
+1. Analyse de mon ratio ETP/CA vs benchmark EasyCash
+2. Actions pour réduire le turnover
+3. Plan de montée en compétences
+4. Outils de motivation et suivi au quotidien`;
+    },
+  },
+  {
+    id: 'custom',
+    label: 'Question libre',
+    icon: '✏️',
+    build: (data: MagasinData) => {
+      return `Contexte magasin EasyCash:\n- Nom: ${data.nom || 'Non renseigné'}\n- Phase: ${data.phase}\n- CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}\n\n`;
+    },
+  },
+];
+
+export default function AssistantIA({ data, actions }: Props) {
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  function selectTemplate(id: string) {
+    const tpl = PROMPT_TEMPLATES.find(t => t.id === id);
+    if (!tpl) return;
+    setSelectedTemplate(id);
+    setPrompt(tpl.build(data, actions));
+    setCopied(false);
   }
 
-  const EXAMPLES = [
-    'Mon GMROI est à 2.1, que faire en priorité ?',
-    'Comment améliorer ma note Google rapidement ?',
-    "J'ai 5 000€ de stock bijouterie âgé, comment le déstocker ?",
-    'Mon Estaly est faible, comment motiver mon équipe ?',
-  ];
+  async function copyAndOpen() {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+    } catch (e) {
+      // Clipboard might fail in some contexts — still open Claude
+    }
+    window.open('https://claude.ai/new', '_blank');
+    setTimeout(() => setCopied(false), 3000);
+  }
+
+  const alerts = getAlerts(data);
+  const scores = getCategoryScores(data);
+  const cats = ['rentabilite', 'stock', 'commerce', 'rh'] as const;
+  const catLabels: Record<string, string> = { rentabilite: 'Rentabilité', stock: 'Stock', commerce: 'Commerce', rh: 'RH' };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold">Assistant IA</h1>
-        <p className="text-gray-400 text-sm mt-1">
-          Posez votre question sur votre magasin. L'IA connaît vos KPIs.
-          {!data.magasin && <span className="text-yellow-400"> Configurez votre magasin dans Dashboard pour des réponses personnalisées.</span>}
+        <h2 className="text-lg font-bold">Assistant IA</h2>
+        <p className="text-sm text-gray-400 mt-0.5">
+          Génère un prompt enrichi de vos données, copiez-le et posez la question à Claude.
         </p>
       </div>
 
-      {/* Examples */}
-      <div className="flex flex-wrap gap-2">
-        {EXAMPLES.map((ex) => (
-          <button
-            key={ex}
-            onClick={() => setQuestion(ex)}
-            className="text-xs px-3 py-1.5 rounded-full bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 hover:border-gray-500 transition-colors"
-          >
-            {ex}
-          </button>
-        ))}
-      </div>
-
-      {/* Input */}
-      <div className="space-y-3">
-        <textarea
-          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-green-500 resize-none"
-          rows={3}
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send();
-          }}
-          placeholder="Posez votre question... (Ctrl+Entrée pour envoyer)"
-        />
-        <button
-          onClick={send}
-          disabled={loading || !question.trim()}
-          className="w-full py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          style={{ background: '#22c55e', color: '#000' }}
-        >
-          {loading ? '⏳ Réflexion...' : '📨 Envoyer'}
-        </button>
-      </div>
-
-      {error && (
-        <div className="bg-red-950 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
+      {/* Context snapshot */}
+      {data.nom && (
+        <div className="bg-gray-800 rounded-xl p-4">
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contexte chargé — {data.nom}</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {cats.map(c => (
+              <div key={c} className="text-center">
+                <div className={`text-xl font-black ${scores[c] >= 65 ? 'text-green-400' : scores[c] >= 35 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {Math.round(scores[c])}
+                </div>
+                <div className="text-xs text-gray-400">{catLabels[c]}</div>
+              </div>
+            ))}
+          </div>
+          {alerts.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {alerts.slice(0, 6).map(a => (
+                <span key={String(a.key)} className={`text-xs px-2 py-0.5 rounded-full ${a.status === 'danger' ? 'bg-red-900/50 text-red-300' : 'bg-yellow-900/50 text-yellow-300'}`}>
+                  {a.label}
+                </span>
+              ))}
+              {alerts.length > 6 && <span className="text-xs text-gray-500">+{alerts.length - 6} autres</span>}
+            </div>
+          )}
+        </div>
       )}
 
-      {answer && (
-        <div className="bg-gray-800 border border-gray-700 rounded-2xl p-5 space-y-2">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-lg">🤖</span>
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Réponse</span>
+      {/* Template selection */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-300 mb-3">Choisissez un type d&apos;analyse</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {PROMPT_TEMPLATES.map(tpl => (
+            <button
+              key={tpl.id}
+              onClick={() => selectTemplate(tpl.id)}
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left ${
+                selectedTemplate === tpl.id
+                  ? 'bg-green-700 text-white border-2 border-green-500'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-2 border-transparent'
+              }`}
+            >
+              <span className="text-lg flex-shrink-0">{tpl.icon}</span>
+              <span>{tpl.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Prompt editor */}
+      {prompt && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-300">Prompt généré</h3>
+            <span className="text-xs text-gray-500">{prompt.length} caractères</span>
           </div>
-          <p className="text-gray-100 text-sm leading-relaxed whitespace-pre-wrap">{answer}</p>
-          <p className="text-xs text-gray-500 pt-2 border-t border-gray-700">
-            Basé sur vos KPIs : GMROI {data.gmroi} · Stock âgé {data.stockAge}% · Estaly {data.estalyParSemaine}/sem
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            rows={12}
+            className="w-full bg-gray-800 border border-gray-600 rounded-xl px-4 py-3 text-sm text-gray-200 font-mono resize-none focus:outline-none focus:border-green-500"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={copyAndOpen}
+              className="flex-1 bg-green-600 hover:bg-green-500 text-white font-semibold py-3 rounded-xl text-sm transition-colors"
+            >
+              {copied ? '✓ Copié ! Claude s\'ouvre...' : 'Copier & ouvrir Claude'}
+            </button>
+            <button
+              onClick={() => { navigator.clipboard.writeText(prompt).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+              className="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-4 rounded-xl text-sm"
+            >
+              Copier
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 text-center">
+            Le prompt sera copié dans votre presse-papier. Collez-le dans Claude sur claude.ai.
           </p>
+        </div>
+      )}
+
+      {/* How it works */}
+      {!prompt && (
+        <div className="bg-gray-800 rounded-xl p-5 space-y-3">
+          <h3 className="font-semibold text-sm text-gray-300">Comment ça marche ?</h3>
+          <ol className="space-y-2 text-sm text-gray-400">
+            <li className="flex gap-2"><span className="text-green-400 font-bold">1.</span><span>Saisissez vos données dans le <strong className="text-gray-200">Dashboard</strong></span></li>
+            <li className="flex gap-2"><span className="text-green-400 font-bold">2.</span><span>Choisissez le type d&apos;analyse ci-dessus</span></li>
+            <li className="flex gap-2"><span className="text-green-400 font-bold">3.</span><span>Cliquez <strong className="text-gray-200">Copier &amp; ouvrir Claude</strong> — le prompt enrichi est copié</span></li>
+            <li className="flex gap-2"><span className="text-green-400 font-bold">4.</span><span>Sur claude.ai, collez le prompt (Ctrl+V / Cmd+V) et envoyez</span></li>
+          </ol>
         </div>
       )}
     </div>

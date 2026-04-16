@@ -1,432 +1,314 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
-interface SimRow {
+interface Props { magasinNom: string; }
+
+interface FamilleRow {
   id: string;
-  nom: string;
-  stock: string;
-  marge: string;
-  stockIdeal: string;
+  famille: string;
+  stockValeur: number;
+  margePct: number;
+  ventesMensuelles: number;
 }
 
-interface EquipeData {
-  nbEtp: string;
-  caEstime: string;
-  msTotal: string;
+interface EquipeRow {
+  id: string;
+  prenom: string;
+  contrat: string;
+  heures: number;
+  salaireHoraire: number;
 }
 
-const EMPTY_ROW = (): SimRow => ({
-  id: Date.now().toString() + Math.random().toString(36).slice(2),
-  nom: '',
-  stock: '',
-  marge: '',
-  stockIdeal: '',
-});
+function uid() { return Math.random().toString(36).slice(2); }
 
-function calcGmroi(stock: string, marge: string): number | null {
-  const s = parseFloat(stock);
-  const m = parseFloat(marge);
-  if (!s || !m || s <= 0) return null;
-  return m / s;
-}
+const FAMILLES_DEFAUT: FamilleRow[] = [
+  { id: uid(), famille: 'Téléphonie', stockValeur: 25000, margePct: 38, ventesMensuelles: 8500 },
+  { id: uid(), famille: 'Consoles', stockValeur: 12000, margePct: 32, ventesMensuelles: 4000 },
+  { id: uid(), famille: 'Jeux Vidéo', stockValeur: 5000, margePct: 42, ventesMensuelles: 3000 },
+  { id: uid(), famille: 'PC portables', stockValeur: 15000, margePct: 28, ventesMensuelles: 5000 },
+  { id: uid(), famille: 'Tablettes', stockValeur: 8000, margePct: 34, ventesMensuelles: 3500 },
+];
 
-function getVerdict(gmroi: number | null, stock: string, stockIdeal: string): string {
-  const s = parseFloat(stock);
-  const si = parseFloat(stockIdeal);
-  if (!gmroi || !s) return 'Saisissez vos données';
-  const hasIdeal = !isNaN(si) && si > 0;
+const CONTRATS = ['CDI 35H', 'CDI 39H', 'CDD', 'Apprenti', 'Stage'];
 
-  if (gmroi >= 2) {
-    if (hasIdeal && s > si) return '🟡 Bon rendement, stock élevé';
-    return '🟢 Investir ici';
-  }
-  if (gmroi < 1.5) {
-    if (hasIdeal && s > si) return '🔴 Déstocker en priorité';
-    return '🟠 Revoir les prix';
-  }
-  return '🟡 Correct, à surveiller';
-}
+export default function Simulateur({ magasinNom }: Props) {
+  const storageKey = `sim_${magasinNom}`;
+  const equipeKey = `equipe_${magasinNom}`;
 
-export default function Simulateur() {
-  const [rows, setRows] = useState<SimRow[]>([]);
-  const [equipe, setEquipe] = useState<EquipeData>({ nbEtp: '', caEstime: '', msTotal: '' });
-  const [etpDelta, setEtpDelta] = useState(0);
-  const [investir, setInvestir] = useState('');
-  const [liberer, setLiberer] = useState('');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
+  const [familles, setFamilles] = useState<FamilleRow[]>(() => {
     try {
-      const r = localStorage.getItem('ec_sim_rows');
-      if (r) setRows(JSON.parse(r));
-      const e = localStorage.getItem('ec_equipe');
-      if (e) setEquipe(JSON.parse(e));
-    } catch {}
-    setMounted(true);
-  }, []);
+      const s = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
+      return s ? JSON.parse(s) as FamilleRow[] : FAMILLES_DEFAUT;
+    } catch { return FAMILLES_DEFAUT; }
+  });
 
-  function saveRows(r: SimRow[]) {
-    setRows(r);
-    localStorage.setItem('ec_sim_rows', JSON.stringify(r));
+  const [equipe, setEquipe] = useState<EquipeRow[]>(() => {
+    try {
+      const s = typeof window !== 'undefined' ? localStorage.getItem(equipeKey) : null;
+      return s ? JSON.parse(s) as EquipeRow[] : [];
+    } catch { return []; }
+  });
+
+  const [tab, setTab] = useState<'gmroi' | 'equipe'>('gmroi');
+
+  function saveFamilles(rows: FamilleRow[]) {
+    setFamilles(rows);
+    localStorage.setItem(storageKey, JSON.stringify(rows));
   }
 
-  function saveEquipe(e: EquipeData) {
-    setEquipe(e);
-    localStorage.setItem('ec_equipe', JSON.stringify(e));
+  function saveEquipe(rows: EquipeRow[]) {
+    setEquipe(rows);
+    localStorage.setItem(equipeKey, JSON.stringify(rows));
   }
 
-  function addRow() {
-    saveRows([...rows, EMPTY_ROW()]);
+  function updateFamille(id: string, field: keyof FamilleRow, value: string | number) {
+    saveFamilles(familles.map(f => f.id === id ? { ...f, [field]: value } : f));
   }
 
-  function updateRow(id: string, field: keyof SimRow, value: string) {
-    saveRows(rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  function addFamille() {
+    saveFamilles([...familles, { id: uid(), famille: 'Nouvelle famille', stockValeur: 0, margePct: 30, ventesMensuelles: 0 }]);
   }
 
-  function deleteRow(id: string) {
-    saveRows(rows.filter((r) => r.id !== id));
+  function delFamille(id: string) { saveFamilles(familles.filter(f => f.id !== id)); }
+
+  function addEquipe() {
+    saveEquipe([...equipe, { id: uid(), prenom: '', contrat: 'CDI 35H', heures: 151.67, salaireHoraire: 12 }]);
   }
 
-  // Investissement recommendation
-  function getInvestRecos(): string {
-    const budget = parseFloat(investir);
-    if (!budget || budget <= 0) return '';
-    const eligible = rows
-      .filter((r) => {
-        const s = parseFloat(r.stock);
-        const si = parseFloat(r.stockIdeal);
-        return !isNaN(s) && !isNaN(si) && si > 0 && s < si;
-      })
-      .map((r) => ({
-        nom: r.nom || '(sans nom)',
-        gmroi: calcGmroi(r.stock, r.marge),
-        stock: parseFloat(r.stock),
-        stockIdeal: parseFloat(r.stockIdeal),
-      }))
-      .filter((r) => r.gmroi !== null)
-      .sort((a, b) => (b.gmroi ?? 0) - (a.gmroi ?? 0));
-
-    if (eligible.length === 0) {
-      return "Toutes vos familles sont au-dessus du stock idéal. Pas d'injection recommandée.";
-    }
-    return eligible
-      .map((r, i) => {
-        const cap = r.stockIdeal - r.stock;
-        return `Priorité ${i + 1} : ${r.nom} (GMROI ${r.gmroi!.toFixed(2)}) — stock à ${Math.round(r.stock).toLocaleString('fr-FR')}€, idéal ${Math.round(r.stockIdeal).toLocaleString('fr-FR')}€, capacité d'injection +${Math.round(cap).toLocaleString('fr-FR')}€`;
-      })
-      .join('\n');
+  function updateEquipe(id: string, field: keyof EquipeRow, value: string | number) {
+    saveEquipe(equipe.map(e => e.id === id ? { ...e, [field]: value } : e));
   }
 
-  function getDestockRecos(): string {
-    const target = parseFloat(liberer);
-    if (!target || target <= 0) return '';
-    const eligible = rows
-      .filter((r) => {
-        const s = parseFloat(r.stock);
-        const si = parseFloat(r.stockIdeal);
-        return !isNaN(s) && !isNaN(si) && si >= 0 && s > si;
-      })
-      .map((r) => ({
-        nom: r.nom || '(sans nom)',
-        gmroi: calcGmroi(r.stock, r.marge),
-        stock: parseFloat(r.stock),
-        stockIdeal: parseFloat(r.stockIdeal),
-        excedent: parseFloat(r.stock) - parseFloat(r.stockIdeal),
-      }))
-      .filter((r) => r.gmroi !== null)
-      .sort((a, b) => (a.gmroi ?? 0) - (b.gmroi ?? 0));
+  function delEquipe(id: string) { saveEquipe(equipe.filter(e => e.id !== id)); }
 
-    if (eligible.length === 0) {
-      return "Aucune famille n'est au-dessus du stock idéal. Pas de déstockage recommandé.";
-    }
+  // GMROI calculations
+  const totalStock = familles.reduce((s, f) => s + f.stockValeur, 0);
+  const totalMargeBrute = familles.reduce((s, f) => s + (f.ventesMensuelles * 12 * f.margePct / 100), 0);
+  const gmroi = totalStock > 0 ? totalMargeBrute / totalStock : 0;
 
-    let cumul = 0;
-    const recos: string[] = [];
-    for (let i = 0; i < eligible.length; i++) {
-      const r = eligible[i];
-      const needed = Math.min(r.excedent, target - cumul);
-      cumul += needed;
-      recos.push(`${i + 1}. Réduire ${r.nom} de ${Math.round(needed).toLocaleString('fr-FR')}€ (excédent vs idéal)`);
-      if (cumul >= target) break;
-    }
-    recos.push(`Total libérable : ${Math.round(Math.min(cumul, target)).toLocaleString('fr-FR')}€`);
-    return recos.join('\n');
-  }
+  const famillesWithMetrics = familles.map(f => {
+    const margeAnnuelle = f.ventesMensuelles * 12 * f.margePct / 100;
+    const gmroiF = f.stockValeur > 0 ? margeAnnuelle / f.stockValeur : 0;
+    const delaiVente = f.ventesMensuelles > 0 ? (f.stockValeur / f.ventesMensuelles) * 30 : 0;
+    const poidsPct = totalStock > 0 ? (f.stockValeur / totalStock) * 100 : 0;
+    return { ...f, margeAnnuelle, gmroiF, delaiVente, poidsPct };
+  });
 
   // Equipe calculations
-  const nbEtp = parseFloat(equipe.nbEtp);
-  const caEstime = parseFloat(equipe.caEstime);
-  const msTotal = parseFloat(equipe.msTotal);
-  const hasEquipe = !isNaN(nbEtp) && nbEtp > 0 && !isNaN(caEstime) && caEstime > 0;
-
-  const caPerEtp = hasEquipe ? caEstime / nbEtp : null;
-  const msPct = hasEquipe && !isNaN(msTotal) ? (msTotal / caEstime) * 100 : null;
-  const etpSim = hasEquipe ? nbEtp + etpDelta : null;
-  const msSimTotal = !isNaN(msTotal) ? msTotal + etpDelta * 28000 : null;
-  const msSimPct = hasEquipe && msSimTotal !== null ? (msSimTotal / caEstime) * 100 : null;
-  const caPerEtpSim = etpSim ? caEstime / etpSim : null;
-
-  if (!mounted) return null;
-
-  const inputCls = 'bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500';
+  const totalMasseSal = equipe.reduce((s, e) => s + (e.heures * e.salaireHoraire * 12 * 1.42), 0);
+  const totalHeures = equipe.reduce((s, e) => s + e.heures, 0);
+  const caAnnuelSimule = familles.reduce((s, f) => s + f.ventesMensuelles * 12, 0);
+  const masseSalPct = caAnnuelSimule > 0 ? (totalMasseSal / caAnnuelSimule) * 100 : 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Simulateur "Et si..."</h1>
-        <button
-          onClick={addRow}
-          className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 text-black hover:bg-green-400 transition-colors"
-        >
-          + Ajouter une ligne
-        </button>
+        <h2 className="text-lg font-bold">Simulateur — {magasinNom || 'Magasin'}</h2>
       </div>
 
-      {/* Table */}
-      <div className="bg-gray-800 rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-700">
-                <th className="text-left p-3 text-gray-400 font-semibold">Nom</th>
-                <th className="text-left p-3 text-gray-400 font-semibold">Stock (€)</th>
-                <th className="text-left p-3 text-gray-400 font-semibold">Marge annuelle (€)</th>
-                <th className="text-left p-3 text-gray-400 font-semibold">
-                  GMROI
-                  <span className="block text-xs font-normal text-gray-500">= Marge / Stock</span>
-                </th>
-                <th className="text-left p-3 text-gray-400 font-semibold">Stock idéal (€)</th>
-                <th className="text-left p-3 text-gray-400 font-semibold">Verdict</th>
-                <th className="p-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="p-8 text-center text-gray-500">
-                    Ajoutez une ligne pour commencer à simuler.
-                  </td>
-                </tr>
-              )}
-              {rows.map((row) => {
-                const g = calcGmroi(row.stock, row.marge);
-                const verdict = getVerdict(g, row.stock, row.stockIdeal);
-                return (
-                  <tr key={row.id} className="border-b border-gray-700/50">
-                    <td className="p-2">
-                      <input
-                        className={`${inputCls} w-32`}
-                        value={row.nom}
-                        onChange={(e) => updateRow(row.id, 'nom', e.target.value)}
-                        placeholder="ex: Bijouterie Or"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        className={`${inputCls} w-28`}
-                        value={row.stock}
-                        onChange={(e) => updateRow(row.id, 'stock', e.target.value)}
-                        placeholder="0"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        className={`${inputCls} w-28`}
-                        value={row.marge}
-                        onChange={(e) => updateRow(row.id, 'marge', e.target.value)}
-                        placeholder="0"
-                      />
-                    </td>
-                    <td className="p-2 font-mono font-bold text-center">
-                      {g !== null ? (
-                        <span style={{ color: g >= 2 ? '#22c55e' : g >= 1.5 ? '#f59e0b' : '#ef4444' }}>
-                          {g.toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-500">—</span>
-                      )}
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        className={`${inputCls} w-28`}
-                        value={row.stockIdeal}
-                        onChange={(e) => updateRow(row.id, 'stockIdeal', e.target.value)}
-                        placeholder="0"
-                      />
-                    </td>
-                    <td className="p-2 text-sm">{verdict}</td>
-                    <td className="p-2">
-                      <button
-                        onClick={() => deleteRow(row.id)}
-                        className="text-gray-500 hover:text-red-400 transition-colors"
-                      >
-                        🗑
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {/* Tab switcher */}
+      <div className="flex gap-1 bg-gray-800 rounded-xl p-1 w-fit">
+        {([['gmroi', 'GMROI & Stock'], ['equipe', 'Équipe & MS']] as const).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${tab === id ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Business questions */}
-      {rows.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-gray-800 rounded-2xl p-5 space-y-3">
-            <h3 className="font-semibold text-sm">💰 J'ai … à investir → où ?</h3>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                className={`${inputCls} flex-1`}
-                value={investir}
-                onChange={(e) => setInvestir(e.target.value)}
-                placeholder="Montant à investir (€)"
-              />
+      {tab === 'gmroi' && (
+        <div className="space-y-4">
+          {/* Global KPIs */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-gray-800 rounded-xl p-3 text-center">
+              <div className={`text-2xl font-black ${gmroi >= 3.5 ? 'text-green-400' : gmroi >= 2.5 ? 'text-yellow-400' : 'text-red-400'}`}>{gmroi.toFixed(2)}</div>
+              <div className="text-xs text-gray-400">GMROI global</div>
+              <div className="text-xs text-gray-500">cible &gt;3.5</div>
             </div>
-            {investir && (
-              <pre className="text-xs text-gray-200 whitespace-pre-wrap bg-gray-900 rounded-lg p-3 leading-relaxed">
-                {getInvestRecos()}
-              </pre>
-            )}
+            <div className="bg-gray-800 rounded-xl p-3 text-center">
+              <div className="text-2xl font-black text-white">{(totalStock / 1000).toFixed(0)}k€</div>
+              <div className="text-xs text-gray-400">Stock total</div>
+            </div>
+            <div className="bg-gray-800 rounded-xl p-3 text-center">
+              <div className="text-2xl font-black text-white">{(totalMargeBrute / 1000).toFixed(0)}k€</div>
+              <div className="text-xs text-gray-400">Marge annuelle</div>
+            </div>
           </div>
 
-          <div className="bg-gray-800 rounded-2xl p-5 space-y-3">
-            <h3 className="font-semibold text-sm">🔻 Je dois libérer … → où déstocker ?</h3>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                className={`${inputCls} flex-1`}
-                value={liberer}
-                onChange={(e) => setLiberer(e.target.value)}
-                placeholder="Montant à libérer (€)"
-              />
+          {/* Table */}
+          <div className="bg-gray-800 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-700 text-gray-400">
+                    <th className="text-left px-3 py-2 font-semibold">Famille</th>
+                    <th className="text-right px-3 py-2 font-semibold">Stock (€)</th>
+                    <th className="text-right px-3 py-2 font-semibold">Marge %</th>
+                    <th className="text-right px-3 py-2 font-semibold">Ventes/mois</th>
+                    <th className="text-right px-3 py-2 font-semibold">GMROI</th>
+                    <th className="text-right px-3 py-2 font-semibold">Délai (j)</th>
+                    <th className="text-right px-3 py-2 font-semibold">Poids</th>
+                    <th className="px-2 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {famillesWithMetrics.map(f => (
+                    <tr key={f.id} className="hover:bg-gray-750">
+                      <td className="px-3 py-2">
+                        <input
+                          value={f.famille}
+                          onChange={e => updateFamille(f.id, 'famille', e.target.value)}
+                          className="bg-transparent text-white w-28 border-b border-gray-600 focus:outline-none focus:border-green-500"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          value={f.stockValeur || ''}
+                          onChange={e => updateFamille(f.id, 'stockValeur', parseFloat(e.target.value) || 0)}
+                          className="bg-transparent text-white w-20 text-right border-b border-gray-600 focus:outline-none focus:border-green-500"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          value={f.margePct || ''}
+                          onChange={e => updateFamille(f.id, 'margePct', parseFloat(e.target.value) || 0)}
+                          className="bg-transparent text-white w-12 text-right border-b border-gray-600 focus:outline-none focus:border-green-500"
+                        />
+                        <span className="text-gray-500 ml-0.5">%</span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          value={f.ventesMensuelles || ''}
+                          onChange={e => updateFamille(f.id, 'ventesMensuelles', parseFloat(e.target.value) || 0)}
+                          className="bg-transparent text-white w-20 text-right border-b border-gray-600 focus:outline-none focus:border-green-500"
+                        />
+                      </td>
+                      <td className={`px-3 py-2 text-right font-semibold ${f.gmroiF >= 3.5 ? 'text-green-400' : f.gmroiF >= 2.5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        {f.stockValeur > 0 ? f.gmroiF.toFixed(2) : '—'}
+                      </td>
+                      <td className={`px-3 py-2 text-right ${f.delaiVente > 60 ? 'text-red-400' : f.delaiVente > 30 ? 'text-yellow-400' : 'text-green-400'}`}>
+                        {f.ventesMensuelles > 0 ? Math.round(f.delaiVente) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right text-gray-400">{f.poidsPct.toFixed(1)}%</td>
+                      <td className="px-2 py-2">
+                        <button onClick={() => delFamille(f.id)} className="text-gray-600 hover:text-red-400 text-xs">✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {liberer && (
-              <pre className="text-xs text-gray-200 whitespace-pre-wrap bg-gray-900 rounded-lg p-3 leading-relaxed">
-                {getDestockRecos()}
-              </pre>
-            )}
+            <div className="px-3 py-2 border-t border-gray-700">
+              <button onClick={addFamille} className="text-xs text-green-400 hover:text-green-300">+ Ajouter une famille</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Équipe */}
-      <div className="bg-gray-800 rounded-2xl p-5 space-y-5">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">👥 Équipe</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Nb ETP</label>
-            <input
-              type="number"
-              className={`${inputCls} w-full`}
-              value={equipe.nbEtp}
-              onChange={(e) => saveEquipe({ ...equipe, nbEtp: e.target.value })}
-              placeholder="ex: 4"
-            />
+      {tab === 'equipe' && (
+        <div className="space-y-4">
+          {/* KPIs équipe */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-gray-800 rounded-xl p-3 text-center">
+              <div className={`text-2xl font-black ${masseSalPct <= 15 ? 'text-green-400' : masseSalPct <= 18 ? 'text-yellow-400' : 'text-red-400'}`}>
+                {masseSalPct.toFixed(1)}%
+              </div>
+              <div className="text-xs text-gray-400">Masse salariale</div>
+              <div className="text-xs text-gray-500">cible ≤15%</div>
+            </div>
+            <div className="bg-gray-800 rounded-xl p-3 text-center">
+              <div className="text-2xl font-black text-white">{(totalMasseSal / 1000).toFixed(0)}k€</div>
+              <div className="text-xs text-gray-400">Coût annuel total</div>
+            </div>
+            <div className="bg-gray-800 rounded-xl p-3 text-center">
+              <div className="text-2xl font-black text-white">{(totalHeures / 151.67).toFixed(1)}</div>
+              <div className="text-xs text-gray-400">ETP total</div>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">CA estimé annuel (€)</label>
-            <input
-              type="number"
-              className={`${inputCls} w-full`}
-              value={equipe.caEstime}
-              onChange={(e) => saveEquipe({ ...equipe, caEstime: e.target.value })}
-              placeholder="ex: 1000000"
-            />
+
+          {caAnnuelSimule > 0 && (
+            <div className="bg-gray-800 rounded-xl p-3 text-xs text-gray-400">
+              CA annuel simulé (onglet GMROI) : <strong className="text-white">{caAnnuelSimule.toLocaleString('fr-FR')} €</strong> ·
+              Ratio cible : 1 ETP / 250k€ CA = <strong className="text-white">{(caAnnuelSimule / 250000).toFixed(1)} ETP</strong>
+            </div>
+          )}
+
+          {/* Table équipe */}
+          <div className="bg-gray-800 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-700 text-gray-400">
+                    <th className="text-left px-3 py-2 font-semibold">Prénom</th>
+                    <th className="text-left px-3 py-2 font-semibold">Contrat</th>
+                    <th className="text-right px-3 py-2 font-semibold">H/mois</th>
+                    <th className="text-right px-3 py-2 font-semibold">€/h brut</th>
+                    <th className="text-right px-3 py-2 font-semibold">Coût annuel</th>
+                    <th className="px-2 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {equipe.map(e => {
+                    const cout = e.heures * e.salaireHoraire * 12 * 1.42;
+                    return (
+                      <tr key={e.id}>
+                        <td className="px-3 py-2">
+                          <input
+                            value={e.prenom}
+                            onChange={ev => updateEquipe(e.id, 'prenom', ev.target.value)}
+                            className="bg-transparent text-white w-24 border-b border-gray-600 focus:outline-none focus:border-green-500"
+                            placeholder="Prénom"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={e.contrat}
+                            onChange={ev => updateEquipe(e.id, 'contrat', ev.target.value)}
+                            className="bg-gray-700 text-white text-xs rounded px-1 py-0.5"
+                          >
+                            {CONTRATS.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input
+                            type="number"
+                            value={e.heures || ''}
+                            onChange={ev => updateEquipe(e.id, 'heures', parseFloat(ev.target.value) || 0)}
+                            className="bg-transparent text-white w-16 text-right border-b border-gray-600 focus:outline-none focus:border-green-500"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input
+                            type="number"
+                            value={e.salaireHoraire || ''}
+                            onChange={ev => updateEquipe(e.id, 'salaireHoraire', parseFloat(ev.target.value) || 0)}
+                            className="bg-transparent text-white w-12 text-right border-b border-gray-600 focus:outline-none focus:border-green-500"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right text-white font-medium">{cout.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</td>
+                        <td className="px-2 py-2">
+                          <button onClick={() => delEquipe(e.id)} className="text-gray-600 hover:text-red-400 text-xs">✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-3 py-2 border-t border-gray-700">
+              <button onClick={addEquipe} className="text-xs text-green-400 hover:text-green-300">+ Ajouter un collaborateur</button>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Masse salariale totale (€)</label>
-            <input
-              type="number"
-              className={`${inputCls} w-full`}
-              value={equipe.msTotal}
-              onChange={(e) => saveEquipe({ ...equipe, msTotal: e.target.value })}
-              placeholder="ex: 120000"
-            />
-          </div>
+          <p className="text-xs text-gray-500">Coût chargé = salaire brut × heures × 12 × 1.42 (charges patronales estimées)</p>
         </div>
-
-        {hasEquipe ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div className="bg-gray-900 rounded-xl p-4">
-                <p className="text-gray-400 mb-1">Ratio CA/ETP</p>
-                <p className="text-2xl font-bold" style={{ color: caPerEtp! >= 250000 ? '#22c55e' : '#ef4444' }}>
-                  {Math.round(caPerEtp!).toLocaleString('fr-FR')} €
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Formule : {equipe.caEstime} / {equipe.nbEtp} = {Math.round(caPerEtp!).toLocaleString('fr-FR')} €/ETP
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">Benchmark : 250 000 €/ETP</p>
-              </div>
-              {msPct !== null && (
-                <div className="bg-gray-900 rounded-xl p-4">
-                  <p className="text-gray-400 mb-1">Masse salariale</p>
-                  <p className="text-2xl font-bold" style={{ color: msPct <= 15 ? '#22c55e' : msPct <= 18 ? '#f59e0b' : '#ef4444' }}>
-                    {msPct.toFixed(1)}%
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Formule : {equipe.msTotal} / {equipe.caEstime} × 100 = {msPct.toFixed(1)}%
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">Seuil : ≤ 15%</p>
-                </div>
-              )}
-            </div>
-
-            {/* ETP slider */}
-            <div className="bg-gray-900 rounded-xl p-4 space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Simulation ±1 ETP</span>
-                <span className="font-bold">
-                  {etpDelta > 0 ? '+' : ''}{etpDelta} ETP → {etpSim} ETP au total
-                </span>
-              </div>
-              <input
-                type="range"
-                min={-3} max={3} step={1}
-                value={etpDelta}
-                onChange={(e) => setEtpDelta(Number(e.target.value))}
-                className="w-full accent-green-400"
-              />
-              <div className="flex justify-center gap-1 text-xs text-gray-500">
-                {[-3, -2, -1, 0, 1, 2, 3].map((v) => (
-                  <span key={v} className={`w-6 text-center ${v === etpDelta ? 'text-green-400 font-bold' : ''}`}>
-                    {v > 0 ? `+${v}` : v}
-                  </span>
-                ))}
-              </div>
-              {etpDelta !== 0 && msSimTotal !== null && msSimPct !== null && caPerEtpSim !== null && (
-                <div className="text-sm text-gray-200 space-y-1 pt-2 border-t border-gray-700">
-                  <p>
-                    Avec {etpSim} ETP : nouvelle masse sal = {Math.round(msSimTotal).toLocaleString('fr-FR')} € →{' '}
-                    <span style={{ color: msSimPct <= 15 ? '#22c55e' : msSimPct <= 18 ? '#f59e0b' : '#ef4444' }}>
-                      {msSimPct.toFixed(1)}%
-                    </span>{' '}
-                    du CA
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Formule : ({equipe.msTotal} + {etpDelta} × 28 000) / {equipe.caEstime} × 100
-                  </p>
-                  <p>
-                    Nouveau ratio = {Math.round(caPerEtpSim).toLocaleString('fr-FR')} €/ETP
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Formule : {equipe.caEstime} / {etpSim}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <p className="text-gray-500 text-sm">Saisissez vos données pour voir les calculs.</p>
-        )}
-      </div>
+      )}
     </div>
   );
 }

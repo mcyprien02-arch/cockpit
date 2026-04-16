@@ -1,332 +1,211 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
-type Level = '○' | '□' | '▧' | '■' | '—';
-const LEVELS: Level[] = ['○', '□', '▧', '■', '—'];
+interface Props { magasinNom: string; }
 
-const LEVEL_STYLES: Record<Level, { bg: string; text: string; label: string }> = {
-  '○': { bg: 'bg-red-900/60',    text: 'text-red-300',    label: 'À former' },
-  '□': { bg: 'bg-blue-900/60',   text: 'text-blue-300',   label: 'Théorique' },
-  '▧': { bg: 'bg-yellow-900/60', text: 'text-yellow-300', label: 'Partiel' },
-  '■': { bg: 'bg-green-900/60',  text: 'text-green-300',  label: 'Maîtrisé' },
-  '—': { bg: 'bg-gray-800',      text: 'text-gray-500',   label: 'Aucun' },
-};
-
-interface Operation {
+interface Collaborateur {
   id: string;
-  name: string;
-  section: 'GESTION' | 'SÉCURITÉ' | 'DÉVELOPPEMENT';
-  custom?: boolean;
+  prenom: string;
+  poste: string;
+  competences: Record<string, number>; // 0-4
 }
 
-const DEFAULT_OPS: Operation[] = [
-  { id: 'g1', section: 'GESTION',       name: 'Caisse / encaissement' },
-  { id: 'g2', section: 'GESTION',       name: 'Mise en rayon / facing' },
-  { id: 'g3', section: 'GESTION',       name: 'Réception et test produits' },
-  { id: 'g4', section: 'GESTION',       name: 'Étiquetage / rattachement' },
-  { id: 'g5', section: 'GESTION',       name: 'Accueil client / découverte besoins' },
-  { id: 's1', section: 'SÉCURITÉ',      name: 'Inventaire tournant' },
-  { id: 's2', section: 'SÉCURITÉ',      name: 'Gestion SAV' },
-  { id: 's3', section: 'SÉCURITÉ',      name: 'Gestion coffre' },
-  { id: 's4', section: 'SÉCURITÉ',      name: 'Ouverture / fermeture magasin' },
-  { id: 's5', section: 'SÉCURITÉ',      name: 'Contrôle démarque' },
-  { id: 'd1', section: 'DÉVELOPPEMENT', name: 'Vente Estaly' },
-  { id: 'd2', section: 'DÉVELOPPEMENT', name: 'Achats VPD' },
-  { id: 'd3', section: 'DÉVELOPPEMENT', name: 'Accélération stock (côtes)' },
-  { id: 'd4', section: 'DÉVELOPPEMENT', name: 'Merchandising / théâtralisation' },
-  { id: 'd5', section: 'DÉVELOPPEMENT', name: 'Web EC.fr / marketplace' },
-  { id: 'd6', section: 'DÉVELOPPEMENT', name: 'Coaching vente équipe' },
+const DOMAINES = [
+  {
+    titre: 'Achat / Estimation',
+    competences: ['Téléphonie', 'Consoles & JV', 'PC & Tablettes', 'Piceasoft', 'Négociation achat'],
+  },
+  {
+    titre: 'Vente & Commerce',
+    competences: ['Accueil client', 'Méthode VPD', 'Ventes additionnelles', 'Estaly', 'Tenue caisse'],
+  },
+  {
+    titre: 'Digital & Web',
+    competences: ['Annonces EC.fr', 'Photos produit', 'Gestion commandes web', 'Avis Google', 'Réseaux sociaux'],
+  },
+  {
+    titre: 'Gestion & Process',
+    competences: ['Intranet EC', 'EasyTraining', 'Inventaire', 'Démarque', 'Ouverture/Fermeture'],
+  },
 ];
 
-const SECTION_ICONS: Record<string, string> = {
-  GESTION: '📋',
-  'SÉCURITÉ': '🔒',
-  'DÉVELOPPEMENT': '📈',
-};
+const ALL_COMPETENCES = DOMAINES.flatMap(d => d.competences);
 
-export default function Competences() {
-  const [collabs, setCollabs] = useState<string[]>([]);
-  const [grid, setGrid] = useState<Record<string, Record<string, Level>>>({});
-  const [customOps, setCustomOps] = useState<Operation[]>([]);
-  const [newCollab, setNewCollab] = useState('');
-  const [newOpName, setNewOpName] = useState('');
-  const [newOpSection, setNewOpSection] = useState<Operation['section']>('GESTION');
-  const [mounted, setMounted] = useState(false);
+const LEVEL_LABELS = ['—', 'Débutant', 'En cours', 'Maîtrise', 'Expert'];
+const LEVEL_COLORS = ['bg-gray-700', 'bg-red-900', 'bg-yellow-900', 'bg-blue-900', 'bg-green-900'];
+const LEVEL_TEXT = ['text-gray-500', 'text-red-400', 'text-yellow-400', 'text-blue-400', 'text-green-400'];
 
-  useEffect(() => {
+function uid() { return Math.random().toString(36).slice(2); }
+
+export default function Competences({ magasinNom }: Props) {
+  const storageKey = `comp_${magasinNom}`;
+
+  const [collab, setCollab] = useState<Collaborateur[]>(() => {
     try {
-      const c = localStorage.getItem('ec_collabs');
-      if (c) setCollabs(JSON.parse(c));
-      const g = localStorage.getItem('ec_comp_grid');
-      if (g) setGrid(JSON.parse(g));
-      const o = localStorage.getItem('ec_comp_custom');
-      if (o) setCustomOps(JSON.parse(o));
-    } catch {}
-    setMounted(true);
-  }, []);
+      const s = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
+      return s ? JSON.parse(s) as Collaborateur[] : [];
+    } catch { return []; }
+  });
 
-  function saveAll(c: string[], g: Record<string, Record<string, Level>>, o: Operation[]) {
-    setCollabs(c);
-    setGrid(g);
-    setCustomOps(o);
-    localStorage.setItem('ec_collabs', JSON.stringify(c));
-    localStorage.setItem('ec_comp_grid', JSON.stringify(g));
-    localStorage.setItem('ec_comp_custom', JSON.stringify(o));
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newPrenom, setNewPrenom] = useState('');
+  const [newPoste, setNewPoste] = useState('');
+  const [view, setView] = useState<'grid' | 'radar'>('grid');
+
+  function save(rows: Collaborateur[]) {
+    setCollab(rows);
+    localStorage.setItem(storageKey, JSON.stringify(rows));
   }
 
   function addCollab() {
-    const name = newCollab.trim();
-    if (!name || collabs.includes(name)) return;
-    const nc = [...collabs, name];
-    saveAll(nc, grid, customOps);
-    setNewCollab('');
+    if (!newPrenom.trim()) return;
+    const empty: Record<string, number> = {};
+    ALL_COMPETENCES.forEach(c => { empty[c] = 0; });
+    save([...collab, { id: uid(), prenom: newPrenom.trim(), poste: newPoste.trim(), competences: empty }]);
+    setNewPrenom('');
+    setNewPoste('');
+    setShowAddForm(false);
   }
 
-  function removeCollab(name: string) {
-    const nc = collabs.filter((c) => c !== name);
-    const ng = { ...grid };
-    Object.keys(ng).forEach((opId) => {
-      delete ng[opId][name];
-    });
-    saveAll(nc, ng, customOps);
+  function delCollab(id: string) { save(collab.filter(c => c.id !== id)); }
+
+  function setLevel(collabId: string, competence: string, level: number) {
+    save(collab.map(c => c.id === collabId ? { ...c, competences: { ...c.competences, [competence]: level } } : c));
   }
 
-  function addOp() {
-    const name = newOpName.trim();
-    if (!name) return;
-    const op: Operation = {
-      id: 'custom_' + Date.now(),
-      name,
-      section: newOpSection,
-      custom: true,
-    };
-    saveAll(collabs, grid, [...customOps, op]);
-    setNewOpName('');
-  }
-
-  function removeOp(id: string) {
-    const no = customOps.filter((o) => o.id !== id);
-    const ng = { ...grid };
-    delete ng[id];
-    saveAll(collabs, ng, no);
-  }
-
-  function toggleLevel(opId: string, collab: string) {
-    const current: Level = (grid[opId]?.[collab]) ?? '—';
-    const idx = LEVELS.indexOf(current);
-    const next = LEVELS[(idx + 1) % LEVELS.length];
-    const ng = {
-      ...grid,
-      [opId]: { ...(grid[opId] ?? {}), [collab]: next },
-    };
-    saveAll(collabs, ng, customOps);
-  }
-
-  function getLevel(opId: string, collab: string): Level {
-    return (grid[opId]?.[collab]) ?? '—';
-  }
-
-  const allOps = [...DEFAULT_OPS, ...customOps];
-  const sections: Array<Operation['section']> = ['GESTION', 'SÉCURITÉ', 'DÉVELOPPEMENT'];
-
-  // Alerts
-  const alerts: string[] = [];
-  allOps.forEach((op) => {
-    const mastered = collabs.filter((c) => getLevel(op.id, c) === '■');
-    if (mastered.length === 1) {
-      alerts.push(`⚠ "${op.name}" repose sur ${mastered[0]} seul — risque dépendance`);
-    }
-  });
-  const devOps = allOps.filter((o) => o.section === 'DÉVELOPPEMENT');
-  collabs.forEach((collab) => {
-    const hasDev = devOps.some((op) => {
-      const lv = getLevel(op.id, collab);
-      return lv === '■' || lv === '▧';
-    });
-    if (!hasDev) {
-      alerts.push(`⚠ ${collab} : aucune compétence développement — besoin formation`);
-    }
+  // Summary: average level per competence across all collabs
+  const avgByComp: Record<string, number> = {};
+  ALL_COMPETENCES.forEach(comp => {
+    const vals = collab.map(c => c.competences[comp] ?? 0).filter(v => v > 0);
+    avgByComp[comp] = vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
   });
 
-  if (!mounted) return null;
+  // Gaps: competences below 2 for majority of collabs
+  const gaps = ALL_COMPETENCES.filter(c => collab.length > 0 && avgByComp[c] < 2);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-bold">Grille de Compétences</h1>
-
-      {/* Légende */}
-      <div className="flex flex-wrap gap-2 text-xs">
-        {LEVELS.map((l) => {
-          const s = LEVEL_STYLES[l];
-          return (
-            <span key={l} className={`px-2 py-1 rounded ${s.bg} ${s.text}`}>
-              {l} = {s.label}
-            </span>
-          );
-        })}
-        <span className="text-gray-500 self-center ml-2">Cliquez sur une cellule pour changer le niveau</span>
-      </div>
-
-      {/* Add collab */}
-      <div className="flex gap-2">
-        <input
-          className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 flex-1 max-w-xs"
-          value={newCollab}
-          onChange={(e) => setNewCollab(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addCollab()}
-          placeholder="Prénom du collaborateur"
-        />
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold">Compétences — {magasinNom || 'Magasin'}</h2>
+          <p className="text-sm text-gray-400">{collab.length} collaborateur{collab.length > 1 ? 's' : ''}</p>
+        </div>
         <button
-          onClick={addCollab}
-          disabled={!newCollab.trim()}
-          className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 text-black disabled:opacity-40 hover:bg-green-400 transition-colors"
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
         >
-          + Ajouter collaborateur
+          + Collaborateur
         </button>
       </div>
 
-      {/* Grid */}
-      {collabs.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          Ajoutez des collaborateurs pour commencer.
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-gray-700">
-                <th className="text-left p-3 text-gray-400 font-semibold min-w-[220px]">Opération</th>
-                {collabs.map((c) => (
-                  <th key={c} className="p-3 text-center min-w-[100px]">
-                    <div className="flex flex-col items-center gap-1">
-                      <span className="font-semibold text-white">{c}</span>
-                      <button
-                        onClick={() => removeCollab(c)}
-                        className="text-gray-500 hover:text-red-400 text-xs"
-                        title="Supprimer"
-                      >
-                        🗑
-                      </button>
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sections.map((section) => {
-                const sectionOps = allOps.filter((o) => o.section === section);
-                return (
-                  <>
-                    <tr key={`section-${section}`} className="bg-gray-800/80">
-                      <td
-                        colSpan={collabs.length + 1}
-                        className="px-3 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider"
-                      >
-                        {SECTION_ICONS[section]} {section}
-                      </td>
-                    </tr>
-                    {sectionOps.map((op) => (
-                      <tr key={op.id} className="border-b border-gray-700/30 hover:bg-gray-800/50">
-                        <td className="p-3 text-gray-200">
-                          <div className="flex items-center gap-2">
-                            <span>{op.name}</span>
-                            {op.custom && (
-                              <button
-                                onClick={() => removeOp(op.id)}
-                                className="text-gray-500 hover:text-red-400 text-xs ml-auto"
-                              >
-                                ✕
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        {collabs.map((collab) => {
-                          const lv = getLevel(op.id, collab);
-                          const s = LEVEL_STYLES[lv];
-                          return (
-                            <td key={collab} className="p-2 text-center">
-                              <button
-                                onClick={() => toggleLevel(op.id, collab)}
-                                className={`w-10 h-10 rounded-lg text-base font-bold ${s.bg} ${s.text} hover:opacity-80 transition-opacity`}
-                                title={s.label}
-                              >
-                                {lv}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Add form */}
+      {showAddForm && (
+        <div className="bg-gray-800 rounded-xl p-4 flex flex-wrap gap-3 items-end border border-gray-600">
+          <div>
+            <label className="text-xs text-gray-400">Prénom *</label>
+            <input
+              value={newPrenom}
+              onChange={e => setNewPrenom(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addCollab()}
+              className="block bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1 w-40"
+              placeholder="Prénom"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400">Poste</label>
+            <input
+              value={newPoste}
+              onChange={e => setNewPoste(e.target.value)}
+              className="block bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1 w-40"
+              placeholder="Vendeur, Resp..."
+            />
+          </div>
+          <button onClick={addCollab} className="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-2 rounded-lg">Ajouter</button>
+          <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-white text-xs px-2 py-2">Annuler</button>
         </div>
       )}
 
-      {/* Add operation */}
-      <div className="bg-gray-800 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-gray-400">+ Ajouter une opération</h3>
-        <div className="flex gap-2 flex-wrap">
-          <input
-            className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 flex-1 min-w-[200px]"
-            value={newOpName}
-            onChange={(e) => setNewOpName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addOp()}
-            placeholder="Nom de l'opération"
-          />
-          <select
-            className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none"
-            value={newOpSection}
-            onChange={(e) => setNewOpSection(e.target.value as Operation['section'])}
-          >
-            <option value="GESTION">GESTION</option>
-            <option value="SÉCURITÉ">SÉCURITÉ</option>
-            <option value="DÉVELOPPEMENT">DÉVELOPPEMENT</option>
-          </select>
-          <button
-            onClick={addOp}
-            disabled={!newOpName.trim()}
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-gray-600 text-white disabled:opacity-40 hover:bg-gray-500 transition-colors"
-          >
-            Ajouter
-          </button>
-        </div>
-      </div>
-
-      {/* Summary & Alerts */}
-      {collabs.length > 0 && (
-        <div className="space-y-4">
-          {/* Per-collab summary */}
-          <div className="bg-gray-800 rounded-xl p-4">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Résumé</h3>
-            <div className="flex flex-wrap gap-4">
-              {collabs.map((collab) => {
-                const total = allOps.length;
-                const mastered = allOps.filter((op) => getLevel(op.id, collab) === '■').length;
-                return (
-                  <div key={collab} className="text-sm">
-                    <span className="font-semibold text-white">{collab}</span>
-                    <span className="text-gray-400"> — </span>
-                    <span className="text-green-400 font-semibold">{mastered}/{total}</span>
-                    <span className="text-gray-400"> maîtrisées</span>
-                  </div>
-                );
-              })}
-            </div>
+      {/* Gaps */}
+      {gaps.length > 0 && (
+        <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3">
+          <p className="text-xs font-semibold text-red-300 mb-1">Points de fragilité équipe</p>
+          <div className="flex flex-wrap gap-1.5">
+            {gaps.map(g => (
+              <span key={g} className="bg-red-900/50 text-red-300 text-xs px-2 py-0.5 rounded-full">{g}</span>
+            ))}
           </div>
+        </div>
+      )}
 
-          {/* Alerts */}
-          {alerts.length > 0 && (
-            <div className="bg-red-950 border border-red-800 rounded-xl p-4 space-y-2">
-              <h3 className="text-xs font-semibold text-red-400 uppercase tracking-wider">Alertes</h3>
-              {alerts.map((a, i) => (
-                <p key={i} className="text-sm text-red-300">{a}</p>
-              ))}
+      {collab.length === 0 ? (
+        <div className="text-center text-gray-500 text-sm py-10">Ajoutez vos collaborateurs pour cartographier les compétences.</div>
+      ) : (
+        <div className="space-y-6">
+          {DOMAINES.map(domaine => (
+            <div key={domaine.titre} className="bg-gray-800 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-700 bg-gray-750">
+                <h3 className="font-semibold text-sm">{domaine.titre}</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-700">
+                      <th className="text-left px-3 py-2 text-gray-400 font-medium w-32">Compétence</th>
+                      {collab.map(c => (
+                        <th key={c.id} className="px-2 py-2 text-center font-medium text-gray-300 min-w-[80px]">
+                          <div>{c.prenom}</div>
+                          {c.poste && <div className="text-gray-500 font-normal">{c.poste}</div>}
+                        </th>
+                      ))}
+                      <th className="px-2 py-2 text-center text-gray-400 font-medium">Moy.</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {domaine.competences.map(comp => (
+                      <tr key={comp} className="hover:bg-gray-750">
+                        <td className="px-3 py-2 text-gray-300">{comp}</td>
+                        {collab.map(c => {
+                          const lvl = c.competences[comp] ?? 0;
+                          return (
+                            <td key={c.id} className="px-2 py-2 text-center">
+                              <select
+                                value={lvl}
+                                onChange={e => setLevel(c.id, comp, parseInt(e.target.value))}
+                                className={`text-xs rounded px-1 py-0.5 border-0 ${LEVEL_COLORS[lvl]} ${LEVEL_TEXT[lvl]} cursor-pointer`}
+                              >
+                                {LEVEL_LABELS.map((l, i) => <option key={i} value={i}>{i === 0 ? '—' : `${i} - ${l}`}</option>)}
+                              </select>
+                            </td>
+                          );
+                        })}
+                        <td className="px-2 py-2 text-center">
+                          {collab.length > 0 && (
+                            <span className={`text-xs font-semibold ${LEVEL_TEXT[Math.round(avgByComp[comp])]}`}>
+                              {avgByComp[comp] > 0 ? avgByComp[comp].toFixed(1) : '—'}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          )}
+          ))}
+
+          {/* Delete collaborateurs */}
+          <div className="flex flex-wrap gap-2">
+            {collab.map(c => (
+              <div key={c.id} className="flex items-center gap-1.5 bg-gray-800 rounded-lg px-2 py-1">
+                <span className="text-xs text-gray-300">{c.prenom}</span>
+                <button onClick={() => delCollab(c.id)} className="text-gray-500 hover:text-red-400 text-xs">✕</button>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500">
+            Niveaux : 0 = non évalué · 1 = Débutant · 2 = En cours · 3 = Maîtrise · 4 = Expert
+          </p>
         </div>
       )}
     </div>

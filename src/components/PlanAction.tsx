@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { PAPAction, MagasinData, ActionAxe, StoredStatut } from '@/types';
-import { callAI, parseJSON } from '@/lib/ai';
+import type { MagasinData, PAPAction, ActionAxe, StoredStatut } from '@/types';
 
 interface Props {
   data: MagasinData;
@@ -10,439 +9,276 @@ interface Props {
   onSave: (a: PAPAction[]) => void;
 }
 
-const AXE_OPTIONS: ActionAxe[] = ['Stock', 'Commerce', 'Management', 'Web', 'Transverse'];
-const STATUT_OPTIONS: StoredStatut[] = ['À faire', 'En cours', 'Fait'];
+const AXES: ActionAxe[] = ['Stock', 'Commerce', 'Management', 'Web', 'Transverse'];
+const STATUTS: StoredStatut[] = ['À faire', 'En cours', 'Fait'];
+const AXE_COLOR: Record<ActionAxe, string> = {
+  Stock: 'bg-blue-900 text-blue-300',
+  Commerce: 'bg-yellow-900 text-yellow-300',
+  Management: 'bg-purple-900 text-purple-300',
+  Web: 'bg-cyan-900 text-cyan-300',
+  Transverse: 'bg-gray-700 text-gray-300',
+};
+const STATUT_COLOR: Record<StoredStatut, string> = {
+  'À faire': 'bg-gray-700 text-gray-300',
+  'En cours': 'bg-blue-900 text-blue-300',
+  'Fait': 'bg-green-900 text-green-300',
+};
+const PRIORITY_COLOR: Record<number, string> = { 1: 'text-red-400', 2: 'text-yellow-400', 3: 'text-green-400' };
 
-const EMPTY_FORM: Omit<PAPAction, 'id'> = {
-  titre: '',
-  axe: 'Stock',
-  pilote: '',
-  copilote: '',
-  description: '',
-  echeance: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString().slice(0, 10),
-  priorite: 2,
-  gain: 0,
-  statut: 'À faire',
+function uid() { return Math.random().toString(36).slice(2); }
+
+const EMPTY_ACTION: Omit<PAPAction, 'id'> = {
+  titre: '', axe: 'Stock', pilote: '', copilote: '',
+  description: '', echeance: '', priorite: 1, gain: 0, statut: 'À faire',
 };
 
-type DisplayStatut = StoredStatut | 'Retard';
-
-function getDisplayStatut(a: PAPAction): DisplayStatut {
-  const today = new Date().toISOString().slice(0, 10);
-  if (a.statut !== 'Fait' && a.echeance < today) return 'Retard';
-  return a.statut;
-}
-
-const STATUT_COLORS: Record<DisplayStatut, { bg: string; text: string; border: string }> = {
-  'Fait':    { bg: 'bg-green-900/60',  text: 'text-green-300',  border: 'border-green-700' },
-  'En cours':{ bg: 'bg-blue-900/60',   text: 'text-blue-300',   border: 'border-blue-700' },
-  'À faire': { bg: 'bg-orange-900/60', text: 'text-orange-300', border: 'border-orange-700' },
-  'Retard':  { bg: 'bg-red-900/60',    text: 'text-red-300',    border: 'border-red-700' },
-};
-
-function getMonths(): string[] {
-  const months: string[] = [];
-  const now = new Date();
-  for (let i = 0; i < 6; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    months.push(d.toISOString().slice(0, 7));
-  }
-  return months;
-}
-
-interface AIGeneratedAction {
-  titre: string;
-  axe?: string;
-  pilote?: string;
-  description?: string;
-  echeance?: string;
-  priorite?: number;
-  gain?: number;
+function isRetard(a: PAPAction): boolean {
+  if (!a.echeance || a.statut === 'Fait') return false;
+  return new Date(a.echeance) < new Date();
 }
 
 export default function PlanAction({ data, actions, onSave }: Props) {
-  const [form, setForm] = useState<Omit<PAPAction, 'id'>>(EMPTY_FORM);
-  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<Omit<PAPAction, 'id'>>(EMPTY_ACTION);
   const [editId, setEditId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [filterAxe, setFilterAxe] = useState<ActionAxe | 'Tous'>('Tous');
-  const [filterStatut, setFilterStatut] = useState<DisplayStatut | 'Tous'>('Tous');
-  const [selectedAction, setSelectedAction] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState('');
+  const [filterStatut, setFilterStatut] = useState<StoredStatut | 'Tous'>('Tous');
 
-  function setF<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
-    setForm((f) => ({ ...f, [k]: v }));
-  }
-
-  function save(list: PAPAction[]) {
-    onSave(list);
-  }
-
-  function handleAdd() {
+  function save() {
     if (!form.titre.trim()) return;
     if (editId) {
-      save(actions.map((a) => (a.id === editId ? { ...form, id: editId } : a)));
-      setEditId(null);
+      onSave(actions.map(a => a.id === editId ? { ...form, id: editId } : a));
     } else {
-      save([...actions, { ...form, id: Date.now().toString() }]);
+      onSave([...actions, { ...form, id: uid() }]);
     }
-    setForm(EMPTY_FORM);
+    setForm(EMPTY_ACTION);
+    setEditId(null);
     setShowForm(false);
   }
 
-  function handleEdit(a: PAPAction) {
-    setForm({
-      titre: a.titre, axe: a.axe, pilote: a.pilote, copilote: a.copilote,
-      description: a.description, echeance: a.echeance, priorite: a.priorite,
-      gain: a.gain, statut: a.statut,
-    });
+  function del(id: string) { onSave(actions.filter(a => a.id !== id)); }
+
+  function edit(a: PAPAction) {
+    setForm({ titre: a.titre, axe: a.axe, pilote: a.pilote, copilote: a.copilote,
+      description: a.description, echeance: a.echeance, priorite: a.priorite, gain: a.gain, statut: a.statut });
     setEditId(a.id);
     setShowForm(true);
   }
 
-  function handleDelete(id: string) {
-    save(actions.filter((a) => a.id !== id));
-    if (editId === id) { setEditId(null); setShowForm(false); }
-  }
-
   function updateStatut(id: string, statut: StoredStatut) {
-    save(actions.map((a) => (a.id === id ? { ...a, statut } : a)));
+    onSave(actions.map(a => a.id === id ? { ...a, statut } : a));
   }
 
-  async function generateAI() {
-    setAiLoading(true);
-    setAiError('');
-    try {
-      const system = `Tu es consultant terrain EasyCash. Génère 3 à 5 actions prioritaires basées sur les KPIs. Retourne UNIQUEMENT ce JSON (sans markdown) :
-{"actions":[{"titre":"","axe":"Stock","pilote":"Responsable","description":"","echeance":"2026-06-01","priorite":1,"gain":0}]}`;
-      const message = `Magasin: ${data.magasin} (${data.phase})
-KPIs: GMROI ${data.gmroi} | Stock âgé ${data.stockAge}% | Masse sal ${data.masseSalarialePct}% | Estaly ${data.estalyParSemaine}/sem | Note Google ${data.noteGoogle} | Top20 traité: ${data.top20Traite ? 'oui' : 'non'}
-Actions existantes: ${actions.length}`;
-      const raw = await callAI(system, message);
-      const parsed = parseJSON<{ actions: AIGeneratedAction[] }>(raw);
-      if (parsed?.actions) {
-        const newActions: PAPAction[] = parsed.actions.map((a) => ({
-          id: Date.now().toString() + Math.random().toString(36).slice(2),
-          titre: a.titre || 'Action IA',
-          axe: (AXE_OPTIONS.includes(a.axe as ActionAxe) ? a.axe : 'Transverse') as ActionAxe,
-          pilote: a.pilote || '',
-          copilote: '',
-          description: a.description || '',
-          echeance: a.echeance || new Date(new Date().getFullYear(), new Date().getMonth() + 2, 1).toISOString().slice(0, 10),
-          priorite: ([1, 2, 3].includes(Number(a.priorite)) ? Number(a.priorite) : 2) as 1 | 2 | 3,
-          gain: Number(a.gain) || 0,
-          statut: 'À faire',
-        }));
-        save([...actions, ...newActions]);
-      } else {
-        setAiError('Réponse IA invalide. Réessayez.');
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Erreur inconnue';
-      setAiError(msg.includes('503') || msg.includes('configurée') ? '🔑 Clé API non configurée.' : msg);
-    } finally {
-      setAiLoading(false);
-    }
-  }
+  const filtered = actions.filter(a =>
+    (filterAxe === 'Tous' || a.axe === filterAxe) &&
+    (filterStatut === 'Tous' || a.statut === filterStatut)
+  );
 
-  // Filtered list
-  const today = new Date().toISOString().slice(0, 10);
-  const filtered = actions
-    .filter((a) => filterAxe === 'Tous' || a.axe === filterAxe)
-    .filter((a) => {
-      if (filterStatut === 'Tous') return true;
-      return getDisplayStatut(a) === filterStatut;
-    })
-    .sort((a, b) => a.priorite - b.priorite);
+  const counts = { total: actions.length, faire: 0, cours: 0, fait: 0, retard: 0 };
+  actions.forEach(a => {
+    if (a.statut === 'À faire') counts.faire++;
+    else if (a.statut === 'En cours') counts.cours++;
+    else if (a.statut === 'Fait') counts.fait++;
+    if (isRetard(a)) counts.retard++;
+  });
 
-  const months = getMonths();
+  const totalGain = actions.filter(a => a.statut !== 'Fait').reduce((s, a) => s + (a.gain || 0), 0);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h1 className="text-xl font-bold">Plan d'Action</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={generateAI}
-            disabled={aiLoading || !data.magasin}
-            className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            style={{ background: '#f59e0b', color: '#000' }}
-            title={!data.magasin ? 'Configurez votre magasin d\'abord' : ''}
-          >
-            {aiLoading ? '⏳ Génération...' : '✨ Générer actions IA'}
-          </button>
-          <button
-            onClick={() => { setForm(EMPTY_FORM); setEditId(null); setShowForm(!showForm); }}
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 text-black hover:bg-green-400 transition-colors"
-          >
-            + Nouvelle action
-          </button>
-        </div>
+    <div className="space-y-5">
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'À faire', val: counts.faire, color: 'text-gray-300' },
+          { label: 'En cours', val: counts.cours, color: 'text-blue-400' },
+          { label: 'Terminées', val: counts.fait, color: 'text-green-400' },
+          { label: 'En retard', val: counts.retard, color: 'text-red-400' },
+        ].map(s => (
+          <div key={s.label} className="bg-gray-800 rounded-xl p-3 text-center">
+            <div className={`text-2xl font-black ${s.color}`}>{s.val}</div>
+            <div className="text-xs text-gray-400">{s.label}</div>
+          </div>
+        ))}
       </div>
 
-      {aiError && (
-        <div className="bg-red-950 border border-red-800 rounded-xl p-3 text-red-300 text-sm">{aiError}</div>
+      {totalGain > 0 && (
+        <div className="bg-green-900/30 border border-green-700 rounded-xl px-4 py-3 text-sm text-green-300">
+          Gain potentiel total des actions en cours / à faire : <strong>+{totalGain.toLocaleString('fr-FR')} €</strong>
+        </div>
       )}
+
+      {/* Controls */}
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={filterAxe}
+            onChange={e => setFilterAxe(e.target.value as ActionAxe | 'Tous')}
+            className="bg-gray-700 border border-gray-600 rounded-lg px-2 py-1.5 text-xs text-white"
+          >
+            <option value="Tous">Tous les axes</option>
+            {AXES.map(ax => <option key={ax} value={ax}>{ax}</option>)}
+          </select>
+          <select
+            value={filterStatut}
+            onChange={e => setFilterStatut(e.target.value as StoredStatut | 'Tous')}
+            className="bg-gray-700 border border-gray-600 rounded-lg px-2 py-1.5 text-xs text-white"
+          >
+            <option value="Tous">Tous les statuts</option>
+            {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <button
+          onClick={() => { setForm(EMPTY_ACTION); setEditId(null); setShowForm(true); }}
+          className="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+        >
+          + Nouvelle action
+        </button>
+      </div>
 
       {/* Form */}
       {showForm && (
-        <div className="bg-gray-800 border border-gray-700 rounded-2xl p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-400">{editId ? 'Modifier l\'action' : 'Nouvelle action'}</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Titre *</label>
+        <div className="bg-gray-800 rounded-xl p-4 space-y-4 border border-gray-600">
+          <h3 className="font-semibold text-sm">{editId ? 'Modifier' : 'Nouvelle action'}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="md:col-span-2">
+              <label className="text-xs text-gray-400">Titre *</label>
               <input
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
                 value={form.titre}
-                onChange={(e) => setF('titre', e.target.value)}
+                onChange={e => setForm(f => ({ ...f, titre: e.target.value }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
                 placeholder="Titre de l'action"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Axe stratégique</label>
+              <label className="text-xs text-gray-400">Axe</label>
               <select
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
                 value={form.axe}
-                onChange={(e) => setF('axe', e.target.value as ActionAxe)}
+                onChange={e => setForm(f => ({ ...f, axe: e.target.value as ActionAxe }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
               >
-                {AXE_OPTIONS.map((a) => <option key={a}>{a}</option>)}
+                {AXES.map(ax => <option key={ax} value={ax}>{ax}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Pilote</label>
+              <label className="text-xs text-gray-400">Priorité</label>
+              <select
+                value={form.priorite}
+                onChange={e => setForm(f => ({ ...f, priorite: Number(e.target.value) as 1|2|3 }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
+              >
+                <option value={1}>P1 — Urgente</option>
+                <option value={2}>P2 — Importante</option>
+                <option value={3}>P3 — Standard</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400">Pilote</label>
               <input
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
                 value={form.pilote}
-                onChange={(e) => setF('pilote', e.target.value)}
-                placeholder="Qui porte l'action"
+                onChange={e => setForm(f => ({ ...f, pilote: e.target.value }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
+                placeholder="Responsable"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Copilote</label>
+              <label className="text-xs text-gray-400">Co-pilote</label>
               <input
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
                 value={form.copilote}
-                onChange={(e) => setF('copilote', e.target.value)}
-                placeholder="Qui aide"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-xs text-gray-400 mb-1">Description (quoi faire concrètement)</label>
-              <textarea
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500 resize-none"
-                rows={2}
-                value={form.description}
-                onChange={(e) => setF('description', e.target.value)}
-                placeholder="Actions concrètes..."
+                onChange={e => setForm(f => ({ ...f, copilote: e.target.value }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
+                placeholder="Co-responsable"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Échéance</label>
+              <label className="text-xs text-gray-400">Échéance</label>
               <input
                 type="date"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
                 value={form.echeance}
-                onChange={(e) => setF('echeance', e.target.value)}
+                onChange={e => setForm(f => ({ ...f, echeance: e.target.value }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Priorité</label>
-                <select
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
-                  value={form.priorite}
-                  onChange={(e) => setF('priorite', Number(e.target.value) as 1 | 2 | 3)}
-                >
-                  <option value={1}>1 — Urgent</option>
-                  <option value={2}>2 — Important</option>
-                  <option value={3}>3 — À planifier</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Gain estimé (€)</label>
-                <input
-                  type="number"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
-                  value={form.gain || ''}
-                  onChange={(e) => setF('gain', parseFloat(e.target.value) || 0)}
-                  placeholder="0"
-                />
-              </div>
+            <div>
+              <label className="text-xs text-gray-400">Gain estimé (€)</label>
+              <input
+                type="number"
+                value={form.gain || ''}
+                onChange={e => setForm(f => ({ ...f, gain: parseFloat(e.target.value) || 0 }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-400">Statut</label>
+              <select
+                value={form.statut}
+                onChange={e => setForm(f => ({ ...f, statut: e.target.value as StoredStatut }))}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
+              >
+                {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs text-gray-400">Description</label>
+              <textarea
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                rows={2}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1 resize-none"
+                placeholder="Détails de l'action..."
+              />
             </div>
           </div>
-          <div className="flex gap-2 pt-2">
-            <button
-              onClick={handleAdd}
-              disabled={!form.titre.trim()}
-              className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 text-black disabled:opacity-40"
-            >
-              {editId ? 'Mettre à jour' : 'Ajouter'}
-            </button>
-            <button
-              onClick={() => { setShowForm(false); setEditId(null); }}
-              className="px-4 py-2 rounded-lg text-sm font-semibold bg-gray-700 text-gray-200 hover:bg-gray-600"
-            >
-              Annuler
-            </button>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setShowForm(false); setEditId(null); }} className="text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-300">Annuler</button>
+            <button onClick={save} className="text-xs px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold">Enregistrer</button>
           </div>
         </div>
       )}
 
-      {/* Timeline */}
-      {actions.length > 0 && (
-        <div className="bg-gray-800 rounded-2xl p-5">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Timeline 6 mois</h2>
-          <div className="overflow-x-auto">
-            <div className="flex gap-3 min-w-max pb-2">
-              {months.map((m) => {
-                const mActions = actions.filter((a) => a.echeance.startsWith(m));
-                const label = new Date(m + '-02').toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
-                return (
-                  <div key={m} className="w-40 flex-shrink-0">
-                    <div className="text-xs font-semibold text-gray-400 mb-2 text-center">{label}</div>
-                    <div className="space-y-1.5">
-                      {mActions.map((a) => {
-                        const ds = getDisplayStatut(a);
-                        const sc = STATUT_COLORS[ds];
-                        const borderStyle = a.priorite === 1
-                          ? 'border-2'
-                          : a.priorite === 3
-                          ? 'border border-dashed'
-                          : 'border';
-                        return (
-                          <button
-                            key={a.id}
-                            onClick={() => setSelectedAction(selectedAction === a.id ? null : a.id)}
-                            className={`w-full text-left px-2 py-1.5 rounded text-xs font-medium truncate ${sc.bg} ${sc.text} ${borderStyle} ${sc.border} hover:opacity-80 transition-opacity`}
-                            title={a.titre}
-                          >
-                            {a.titre}
-                          </button>
-                        );
-                      })}
-                      {mActions.length === 0 && (
-                        <div className="text-xs text-gray-700 text-center py-2">—</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          {/* Selected action detail */}
-          {selectedAction && (() => {
-            const a = actions.find((x) => x.id === selectedAction);
-            if (!a) return null;
-            const ds = getDisplayStatut(a);
-            return (
-              <div className="mt-4 pt-4 border-t border-gray-700 text-sm space-y-1">
-                <p><strong className="text-gray-400">Titre :</strong> {a.titre}</p>
-                <p><strong className="text-gray-400">Pilote :</strong> {a.pilote || '—'} | <strong className="text-gray-400">Copilote :</strong> {a.copilote || '—'}</p>
-                {a.description && <p><strong className="text-gray-400">Description :</strong> {a.description}</p>}
-                <p>
-                  <strong className="text-gray-400">Statut :</strong>{' '}
-                  <span className={`px-2 py-0.5 rounded text-xs ${STATUT_COLORS[ds].bg} ${STATUT_COLORS[ds].text}`}>{ds}</span>{' '}
-                  | <strong className="text-gray-400">Gain :</strong>{' '}
-                  <span className="text-green-400">+{a.gain.toLocaleString('fr-FR')} €</span>
-                </p>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <select
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
-          value={filterAxe}
-          onChange={(e) => setFilterAxe(e.target.value as ActionAxe | 'Tous')}
-        >
-          <option value="Tous">Tous les axes</option>
-          {AXE_OPTIONS.map((a) => <option key={a}>{a}</option>)}
-        </select>
-        <select
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
-          value={filterStatut}
-          onChange={(e) => setFilterStatut(e.target.value as DisplayStatut | 'Tous')}
-        >
-          <option value="Tous">Tous les statuts</option>
-          {['À faire', 'En cours', 'Fait', 'Retard'].map((s) => <option key={s}>{s}</option>)}
-        </select>
-        <span className="text-gray-500 text-sm self-center">{filtered.length} action(s)</span>
-      </div>
-
-      {/* Action List */}
+      {/* Action list */}
       {filtered.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          {actions.length === 0
-            ? "Aucune action. Ajoutez-en une ou générez via l'IA."
-            : 'Aucune action correspond aux filtres.'}
-        </div>
+        <div className="text-center text-gray-500 text-sm py-10">Aucune action. Créez la première !</div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((a) => {
-            const ds = getDisplayStatut(a);
-            const sc = STATUT_COLORS[ds];
-            const isLate = ds === 'Retard';
-            return (
-              <div
-                key={a.id}
-                className={`bg-gray-800 border ${isLate ? 'border-red-800' : 'border-gray-700'} rounded-xl p-4`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm">{a.titre}</span>
-                      <span className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-400">{a.axe}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded ${sc.bg} ${sc.text}`}>{ds}</span>
-                      <span className="text-xs text-gray-500">P{a.priorite}</span>
+          {filtered
+            .sort((a, b) => a.priorite - b.priorite)
+            .map(action => {
+              const retard = isRetard(action);
+              return (
+                <div key={action.id} className={`bg-gray-800 rounded-xl p-4 border-l-4 ${
+                  retard ? 'border-red-500' : action.priorite === 1 ? 'border-red-400' : action.priorite === 2 ? 'border-yellow-400' : 'border-green-400'
+                }`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className={`font-semibold text-sm ${PRIORITY_COLOR[action.priorite]}`}>P{action.priorite}</span>
+                        <span className="font-medium text-sm text-white truncate">{action.titre}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${AXE_COLOR[action.axe]}`}>{action.axe}</span>
+                        {retard && <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-red-900 text-red-300">Retard</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-xs text-gray-400">
+                        {action.pilote && <span>👤 {action.pilote}{action.copilote ? ` / ${action.copilote}` : ''}</span>}
+                        {action.echeance && <span>📅 {new Date(action.echeance).toLocaleDateString('fr-FR')}</span>}
+                        {action.gain > 0 && <span className="text-green-400">+{action.gain.toLocaleString('fr-FR')} €</span>}
+                      </div>
+                      {action.description && <p className="text-xs text-gray-400 mt-1">{action.description}</p>}
                     </div>
-                    {a.description && (
-                      <p className="text-xs text-gray-400 mt-1 line-clamp-1">{a.description}</p>
-                    )}
-                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                      {a.pilote && <span>👤 {a.pilote}{a.copilote ? ` / ${a.copilote}` : ''}</span>}
-                      <span>📅 {a.echeance}</span>
-                      {a.gain > 0 && <span className="text-green-400 font-semibold">+{a.gain.toLocaleString('fr-FR')} €</span>}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <select
+                        value={action.statut}
+                        onChange={e => updateStatut(action.id, e.target.value as StoredStatut)}
+                        className={`text-xs px-2 py-1 rounded-lg border-0 font-medium ${STATUT_COLOR[action.statut]}`}
+                      >
+                        {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <button onClick={() => edit(action)} className="text-gray-400 hover:text-white text-xs">✏️</button>
+                      <button onClick={() => del(action.id)} className="text-gray-500 hover:text-red-400 text-xs">🗑</button>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <select
-                      value={a.statut}
-                      onChange={(e) => updateStatut(a.id, e.target.value as StoredStatut)}
-                      className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none"
-                    >
-                      {STATUT_OPTIONS.map((s) => <option key={s}>{s}</option>)}
-                    </select>
-                    <button
-                      onClick={() => handleEdit(a)}
-                      className="text-gray-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-700"
-                    >
-                      ✏
-                    </button>
-                    <button
-                      onClick={() => handleDelete(a.id)}
-                      className="text-gray-500 hover:text-red-400 text-xs px-2 py-1 rounded hover:bg-gray-700"
-                    >
-                      ✕
-                    </button>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Total gain */}
-      {actions.filter((a) => a.statut !== 'Fait').length > 0 && (
-        <div className="bg-gray-800 rounded-xl p-4 flex justify-between text-sm">
-          <span className="text-gray-400">Gain total potentiel (actions non terminées)</span>
-          <span className="text-green-400 font-bold">
-            +{actions.filter((a) => a.statut !== 'Fait').reduce((s, a) => s + a.gain, 0).toLocaleString('fr-FR')} €/an
-          </span>
+              );
+            })}
         </div>
       )}
     </div>
