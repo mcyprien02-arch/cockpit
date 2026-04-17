@@ -8,8 +8,9 @@ interface FamilleRow {
   id: string;
   famille: string;
   stockValeur: number;
-  margePct: number;
-  ventesMensuelles: number;
+  margeAnnuelle: number;
+  delaiVente: number;
+  stockIdeal: number;
 }
 
 interface EquipeRow {
@@ -20,17 +21,47 @@ interface EquipeRow {
   salaireHoraire: number;
 }
 
+interface EquipeStore {
+  rows: EquipeRow[];
+  caAnnuel: number;
+}
+
 function uid() { return Math.random().toString(36).slice(2); }
 
 const FAMILLES_DEFAUT: FamilleRow[] = [
-  { id: uid(), famille: 'Téléphonie', stockValeur: 25000, margePct: 38, ventesMensuelles: 8500 },
-  { id: uid(), famille: 'Consoles', stockValeur: 12000, margePct: 32, ventesMensuelles: 4000 },
-  { id: uid(), famille: 'Jeux Vidéo', stockValeur: 5000, margePct: 42, ventesMensuelles: 3000 },
-  { id: uid(), famille: 'PC portables', stockValeur: 15000, margePct: 28, ventesMensuelles: 5000 },
-  { id: uid(), famille: 'Tablettes', stockValeur: 8000, margePct: 34, ventesMensuelles: 3500 },
+  { id: uid(), famille: 'Téléphonie',  stockValeur: 25000, margeAnnuelle: 38760, delaiVente: 28, stockIdeal: 20000 },
+  { id: uid(), famille: 'Consoles',    stockValeur: 12000, margeAnnuelle: 15360, delaiVente: 35, stockIdeal: 10000 },
+  { id: uid(), famille: 'Jeux Vidéo',  stockValeur: 5000,  margeAnnuelle: 15120, delaiVente: 20, stockIdeal: 4000  },
+  { id: uid(), famille: 'PC portables',stockValeur: 15000, margeAnnuelle: 16800, delaiVente: 45, stockIdeal: 12000 },
+  { id: uid(), famille: 'Tablettes',   stockValeur: 8000,  margeAnnuelle: 14280, delaiVente: 38, stockIdeal: 6000  },
 ];
 
 const CONTRATS = ['CDI 35H', 'CDI 39H', 'CDD', 'Apprenti', 'Stage'];
+
+function verdict(gmroi: number, stock: number, ideal: number): string {
+  if (stock <= 0 || gmroi === 0) return '—';
+  if (gmroi >= 2 && stock <= ideal) return '🟢 Investir';
+  if (gmroi >= 2 && stock > ideal) return '🟡 Maintenir';
+  if (gmroi < 1.5 && stock > ideal) return '🔴 Déstocker';
+  if (gmroi < 1.5 && stock <= ideal) return '🟠 Revoir prix';
+  return '🟡 Surveiller';
+}
+
+function migrateFamilles(raw: unknown[]): FamilleRow[] {
+  return raw.map((f: unknown) => {
+    const r = f as Record<string, unknown>;
+    return {
+      id: (r.id as string) || uid(),
+      famille: (r.famille as string) || '',
+      stockValeur: Number(r.stockValeur) || 0,
+      // migrate old margePct+ventesMensuelles → margeAnnuelle
+      margeAnnuelle: Number(r.margeAnnuelle) ||
+        (Number(r.ventesMensuelles) * 12 * Number(r.margePct) / 100) || 0,
+      delaiVente: Number(r.delaiVente) || 0,
+      stockIdeal: Number(r.stockIdeal) || 0,
+    };
+  });
+}
 
 export default function Simulateur({ magasinNom }: Props) {
   const storageKey = `sim_${magasinNom}`;
@@ -39,27 +70,33 @@ export default function Simulateur({ magasinNom }: Props) {
   const [familles, setFamilles] = useState<FamilleRow[]>(() => {
     try {
       const s = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
-      return s ? JSON.parse(s) as FamilleRow[] : FAMILLES_DEFAUT;
+      return s ? migrateFamilles(JSON.parse(s) as unknown[]) : FAMILLES_DEFAUT;
     } catch { return FAMILLES_DEFAUT; }
   });
 
-  const [equipe, setEquipe] = useState<EquipeRow[]>(() => {
+  const [equipeStore, setEquipeStore] = useState<EquipeStore>(() => {
     try {
       const s = typeof window !== 'undefined' ? localStorage.getItem(equipeKey) : null;
-      return s ? JSON.parse(s) as EquipeRow[] : [];
-    } catch { return []; }
+      if (s) {
+        const p = JSON.parse(s) as unknown;
+        if (Array.isArray(p)) return { rows: p as EquipeRow[], caAnnuel: 0 };
+        return p as EquipeStore;
+      }
+      return { rows: [], caAnnuel: 0 };
+    } catch { return { rows: [], caAnnuel: 0 }; }
   });
 
   const [tab, setTab] = useState<'gmroi' | 'equipe'>('gmroi');
+  const [showExplain, setShowExplain] = useState(false);
 
   function saveFamilles(rows: FamilleRow[]) {
     setFamilles(rows);
     localStorage.setItem(storageKey, JSON.stringify(rows));
   }
 
-  function saveEquipe(rows: EquipeRow[]) {
-    setEquipe(rows);
-    localStorage.setItem(equipeKey, JSON.stringify(rows));
+  function saveEquipeStore(store: EquipeStore) {
+    setEquipeStore(store);
+    localStorage.setItem(equipeKey, JSON.stringify(store));
   }
 
   function updateFamille(id: string, field: keyof FamilleRow, value: string | number) {
@@ -67,39 +104,45 @@ export default function Simulateur({ magasinNom }: Props) {
   }
 
   function addFamille() {
-    saveFamilles([...familles, { id: uid(), famille: 'Nouvelle famille', stockValeur: 0, margePct: 30, ventesMensuelles: 0 }]);
+    saveFamilles([...familles, { id: uid(), famille: 'Nouvelle famille', stockValeur: 0, margeAnnuelle: 0, delaiVente: 0, stockIdeal: 0 }]);
   }
 
   function delFamille(id: string) { saveFamilles(familles.filter(f => f.id !== id)); }
 
   function addEquipe() {
-    saveEquipe([...equipe, { id: uid(), prenom: '', contrat: 'CDI 35H', heures: 151.67, salaireHoraire: 12 }]);
+    saveEquipeStore({ ...equipeStore, rows: [...equipeStore.rows, { id: uid(), prenom: '', contrat: 'CDI 35H', heures: 151.67, salaireHoraire: 12 }] });
   }
 
   function updateEquipe(id: string, field: keyof EquipeRow, value: string | number) {
-    saveEquipe(equipe.map(e => e.id === id ? { ...e, [field]: value } : e));
+    saveEquipeStore({ ...equipeStore, rows: equipeStore.rows.map(e => e.id === id ? { ...e, [field]: value } : e) });
   }
 
-  function delEquipe(id: string) { saveEquipe(equipe.filter(e => e.id !== id)); }
+  function delEquipe(id: string) {
+    saveEquipeStore({ ...equipeStore, rows: equipeStore.rows.filter(e => e.id !== id) });
+  }
 
   // GMROI calculations
   const totalStock = familles.reduce((s, f) => s + f.stockValeur, 0);
-  const totalMargeBrute = familles.reduce((s, f) => s + (f.ventesMensuelles * 12 * f.margePct / 100), 0);
-  const gmroi = totalStock > 0 ? totalMargeBrute / totalStock : 0;
+  const totalMarge = familles.reduce((s, f) => s + f.margeAnnuelle, 0);
+  const gmroiGlobal = totalStock > 0 ? totalMarge / totalStock : 0;
 
-  const famillesWithMetrics = familles.map(f => {
-    const margeAnnuelle = f.ventesMensuelles * 12 * f.margePct / 100;
-    const gmroiF = f.stockValeur > 0 ? margeAnnuelle / f.stockValeur : 0;
-    const delaiVente = f.ventesMensuelles > 0 ? (f.stockValeur / f.ventesMensuelles) * 30 : 0;
-    const poidsPct = totalStock > 0 ? (f.stockValeur / totalStock) * 100 : 0;
-    return { ...f, margeAnnuelle, gmroiF, delaiVente, poidsPct };
-  });
+  const famillesWithMetrics = familles.map(f => ({
+    ...f,
+    gmroi: f.stockValeur > 0 && f.margeAnnuelle > 0 ? f.margeAnnuelle / f.stockValeur : null,
+    verdict: f.stockValeur > 0 ? verdict(
+      f.stockValeur > 0 && f.margeAnnuelle > 0 ? f.margeAnnuelle / f.stockValeur : 0,
+      f.stockValeur,
+      f.stockIdeal
+    ) : '—',
+  }));
 
   // Equipe calculations
+  const { rows: equipe, caAnnuel } = equipeStore;
   const totalMasseSal = equipe.reduce((s, e) => s + (e.heures * e.salaireHoraire * 12 * 1.42), 0);
   const totalHeures = equipe.reduce((s, e) => s + e.heures, 0);
-  const caAnnuelSimule = familles.reduce((s, f) => s + f.ventesMensuelles * 12, 0);
-  const masseSalPct = caAnnuelSimule > 0 ? (totalMasseSal / caAnnuelSimule) * 100 : 0;
+  const totalEtp = totalHeures / 151.67;
+  const masseSalPct = caAnnuel > 0 ? (totalMasseSal / caAnnuel) * 100 : 0;
+  const ratioCAEtp = totalEtp > 0 && caAnnuel > 0 ? caAnnuel / totalEtp : 0;
 
   return (
     <div className="space-y-5">
@@ -125,17 +168,19 @@ export default function Simulateur({ magasinNom }: Props) {
           {/* Global KPIs */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-gray-800 rounded-xl p-3 text-center">
-              <div className={`text-2xl font-black ${gmroi >= 3.5 ? 'text-green-400' : gmroi >= 2.5 ? 'text-yellow-400' : 'text-red-400'}`}>{gmroi.toFixed(2)}</div>
+              <div className={`text-2xl font-black ${gmroiGlobal >= 3.84 ? 'text-green-400' : gmroiGlobal >= 2 ? 'text-yellow-400' : 'text-red-400'}`}>
+                {totalStock > 0 ? gmroiGlobal.toFixed(2) : '—'}
+              </div>
               <div className="text-xs text-gray-400">GMROI global</div>
-              <div className="text-xs text-gray-500">cible &gt;3.5</div>
+              <div className="text-xs text-gray-500">cible réseau : 3.84</div>
             </div>
             <div className="bg-gray-800 rounded-xl p-3 text-center">
               <div className="text-2xl font-black text-white">{(totalStock / 1000).toFixed(0)}k€</div>
               <div className="text-xs text-gray-400">Stock total</div>
             </div>
             <div className="bg-gray-800 rounded-xl p-3 text-center">
-              <div className="text-2xl font-black text-white">{(totalMargeBrute / 1000).toFixed(0)}k€</div>
-              <div className="text-xs text-gray-400">Marge annuelle</div>
+              <div className="text-2xl font-black text-white">{(totalMarge / 1000).toFixed(0)}k€</div>
+              <div className="text-xs text-gray-400">Marge totale</div>
             </div>
           </div>
 
@@ -145,13 +190,13 @@ export default function Simulateur({ magasinNom }: Props) {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-gray-700 text-gray-400">
-                    <th className="text-left px-3 py-2 font-semibold">Famille</th>
+                    <th className="text-left px-3 py-2 font-semibold min-w-[120px]">Nom</th>
                     <th className="text-right px-3 py-2 font-semibold">Stock (€)</th>
-                    <th className="text-right px-3 py-2 font-semibold">Marge %</th>
-                    <th className="text-right px-3 py-2 font-semibold">Ventes/mois</th>
-                    <th className="text-right px-3 py-2 font-semibold">GMROI</th>
-                    <th className="text-right px-3 py-2 font-semibold">Délai (j)</th>
-                    <th className="text-right px-3 py-2 font-semibold">Poids</th>
+                    <th className="text-right px-3 py-2 font-semibold">Marge annuelle (€)</th>
+                    <th className="text-right px-3 py-2 font-semibold">GMROI (auto)</th>
+                    <th className="text-right px-3 py-2 font-semibold">Délai vente (j)</th>
+                    <th className="text-right px-3 py-2 font-semibold">Stock idéal (€)</th>
+                    <th className="text-center px-3 py-2 font-semibold">Verdict</th>
                     <th className="px-2 py-2"></th>
                   </tr>
                 </thead>
@@ -176,27 +221,36 @@ export default function Simulateur({ magasinNom }: Props) {
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
-                          value={f.margePct || ''}
-                          onChange={e => updateFamille(f.id, 'margePct', parseFloat(e.target.value) || 0)}
-                          className="bg-transparent text-white w-12 text-right border-b border-gray-600 focus:outline-none focus:border-green-500"
+                          value={f.margeAnnuelle || ''}
+                          onChange={e => updateFamille(f.id, 'margeAnnuelle', parseFloat(e.target.value) || 0)}
+                          className="bg-transparent text-white w-24 text-right border-b border-gray-600 focus:outline-none focus:border-green-500"
                         />
-                        <span className="text-gray-500 ml-0.5">%</span>
+                      </td>
+                      <td className={`px-3 py-2 text-right font-semibold ${
+                        f.gmroi === null ? 'text-gray-500' :
+                        f.gmroi >= 3.84 ? 'text-green-400' : f.gmroi >= 2 ? 'text-yellow-400' : 'text-red-400'
+                      }`}>
+                        {f.gmroi !== null ? f.gmroi.toFixed(2) : '—'}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
-                          value={f.ventesMensuelles || ''}
-                          onChange={e => updateFamille(f.id, 'ventesMensuelles', parseFloat(e.target.value) || 0)}
+                          value={f.delaiVente || ''}
+                          onChange={e => updateFamille(f.id, 'delaiVente', parseFloat(e.target.value) || 0)}
+                          className={`bg-transparent w-14 text-right border-b border-gray-600 focus:outline-none focus:border-green-500 ${
+                            f.delaiVente > 60 ? 'text-red-400' : f.delaiVente > 30 ? 'text-yellow-400' : 'text-green-400'
+                          }`}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          value={f.stockIdeal || ''}
+                          onChange={e => updateFamille(f.id, 'stockIdeal', parseFloat(e.target.value) || 0)}
                           className="bg-transparent text-white w-20 text-right border-b border-gray-600 focus:outline-none focus:border-green-500"
                         />
                       </td>
-                      <td className={`px-3 py-2 text-right font-semibold ${f.gmroiF >= 3.5 ? 'text-green-400' : f.gmroiF >= 2.5 ? 'text-yellow-400' : 'text-red-400'}`}>
-                        {f.stockValeur > 0 ? f.gmroiF.toFixed(2) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 text-right ${f.delaiVente > 60 ? 'text-red-400' : f.delaiVente > 30 ? 'text-yellow-400' : 'text-green-400'}`}>
-                        {f.ventesMensuelles > 0 ? Math.round(f.delaiVente) : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-400">{f.poidsPct.toFixed(1)}%</td>
+                      <td className="px-3 py-2 text-center text-xs font-medium">{f.verdict}</td>
                       <td className="px-2 py-2">
                         <button onClick={() => delFamille(f.id)} className="text-gray-600 hover:text-red-400 text-xs">✕</button>
                       </td>
@@ -209,16 +263,52 @@ export default function Simulateur({ magasinNom }: Props) {
               <button onClick={addFamille} className="text-xs text-green-400 hover:text-green-300">+ Ajouter une famille</button>
             </div>
           </div>
+
+          {/* Summary */}
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="bg-gray-800/60 rounded-lg px-3 py-2 text-center">
+              <div className="text-gray-400">Stock total</div>
+              <div className="font-bold text-white">{totalStock.toLocaleString('fr-FR')} €</div>
+            </div>
+            <div className="bg-gray-800/60 rounded-lg px-3 py-2 text-center">
+              <div className="text-gray-400">Marge totale</div>
+              <div className="font-bold text-white">{totalMarge.toLocaleString('fr-FR')} €</div>
+            </div>
+            <div className="bg-gray-800/60 rounded-lg px-3 py-2 text-center">
+              <div className="text-gray-400">GMROI global</div>
+              <div className={`font-bold ${gmroiGlobal >= 3.84 ? 'text-green-400' : gmroiGlobal >= 2 ? 'text-yellow-400' : 'text-red-400'}`}>
+                {totalStock > 0 ? gmroiGlobal.toFixed(2) : '—'}
+              </div>
+            </div>
+          </div>
+
+          {/* Légende verdicts */}
+          <div className="bg-gray-800/60 rounded-lg px-4 py-3 text-xs text-gray-400">
+            <span className="font-semibold text-gray-300">Verdicts : </span>
+            🟢 Investir (GMROI≥2 + stock≤idéal) · 🟡 Maintenir (GMROI≥2 + stock&gt;idéal) · 🔴 Déstocker (GMROI&lt;1.5 + stock&gt;idéal) · 🟠 Revoir prix (GMROI&lt;1.5 + stock≤idéal) · 🟡 Surveiller (GMROI 1.5-2)
+          </div>
         </div>
       )}
 
       {tab === 'equipe' && (
         <div className="space-y-4">
+          {/* CA input */}
+          <div className="bg-gray-800 rounded-xl p-4">
+            <label className="text-xs text-gray-400 block mb-1">CA annuel du magasin (€)</label>
+            <input
+              type="number"
+              value={caAnnuel || ''}
+              onChange={e => saveEquipeStore({ ...equipeStore, caAnnuel: parseFloat(e.target.value) || 0 })}
+              placeholder="Ex : 2000000"
+              className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white w-full md:w-60 focus:outline-none focus:border-green-500"
+            />
+          </div>
+
           {/* KPIs équipe */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-gray-800 rounded-xl p-3 text-center">
               <div className={`text-2xl font-black ${masseSalPct <= 15 ? 'text-green-400' : masseSalPct <= 18 ? 'text-yellow-400' : 'text-red-400'}`}>
-                {masseSalPct.toFixed(1)}%
+                {caAnnuel > 0 ? `${masseSalPct.toFixed(1)}%` : '—'}
               </div>
               <div className="text-xs text-gray-400">Masse salariale</div>
               <div className="text-xs text-gray-500">cible ≤15%</div>
@@ -228,15 +318,36 @@ export default function Simulateur({ magasinNom }: Props) {
               <div className="text-xs text-gray-400">Coût annuel total</div>
             </div>
             <div className="bg-gray-800 rounded-xl p-3 text-center">
-              <div className="text-2xl font-black text-white">{(totalHeures / 151.67).toFixed(1)}</div>
+              <div className="text-2xl font-black text-white">{totalEtp.toFixed(1)}</div>
               <div className="text-xs text-gray-400">ETP total</div>
             </div>
           </div>
 
-          {caAnnuelSimule > 0 && (
-            <div className="bg-gray-800 rounded-xl p-3 text-xs text-gray-400">
-              CA annuel simulé (onglet GMROI) : <strong className="text-white">{caAnnuelSimule.toLocaleString('fr-FR')} €</strong> ·
-              Ratio cible : 1 ETP / 250k€ CA = <strong className="text-white">{(caAnnuelSimule / 250000).toFixed(1)} ETP</strong>
+          {/* Alerte dimensionnement */}
+          {caAnnuel > 0 && totalEtp > 0 && (
+            <div className={`rounded-xl px-4 py-3 text-sm ${
+              ratioCAEtp > 400000 ? 'bg-orange-900/30 border border-orange-700' :
+              ratioCAEtp < 180000 ? 'bg-orange-900/30 border border-orange-700' :
+              'bg-green-900/30 border border-green-700'
+            }`}>
+              {ratioCAEtp > 400000 ? (
+                <p className="text-orange-300">
+                  <span className="font-semibold">⚠ Équipe probablement sous-dimensionnée</span><br />
+                  Vous avez {totalEtp.toFixed(1)} ETP pour {caAnnuel.toLocaleString('fr-FR')} € de CA, soit 1 ETP pour {Math.round(ratioCAEtp).toLocaleString('fr-FR')} €.<br />
+                  Benchmark réseau : 1 ETP pour 250 000 €.<br />
+                  Pour votre CA, il faudrait environ <strong>{Math.round(caAnnuel / 250000)}</strong> ETP.
+                </p>
+              ) : ratioCAEtp < 180000 ? (
+                <p className="text-orange-300">
+                  <span className="font-semibold">⚠ Équipe probablement sur-dimensionnée</span><br />
+                  Vous avez {totalEtp.toFixed(1)} ETP pour {caAnnuel.toLocaleString('fr-FR')} € de CA, soit 1 ETP pour {Math.round(ratioCAEtp).toLocaleString('fr-FR')} €.<br />
+                  Benchmark réseau : 1 ETP pour 250 000 €.<br />
+                  Pour votre CA, <strong>{Math.round(caAnnuel / 250000)}</strong> ETP suffiraient théoriquement.
+                </p>
+              ) : (
+                <p className="text-green-300">✓ Dimensionnement équipe cohérent avec le CA</p>
+              )}
+              <p className="text-xs text-gray-400 mt-2">Note : ces seuils sont indicatifs. Un magasin centre-ville avec forte saisonnalité peut justifier plus d&apos;ETP qu&apos;un magasin périphérique.</p>
             </div>
           )}
 
@@ -306,9 +417,29 @@ export default function Simulateur({ magasinNom }: Props) {
               <button onClick={addEquipe} className="text-xs text-green-400 hover:text-green-300">+ Ajouter un collaborateur</button>
             </div>
           </div>
-          <p className="text-xs text-gray-500">Coût chargé = salaire brut × heures × 12 × 1.42 (charges patronales estimées)</p>
+          <p className="text-xs text-gray-500">Coût chargé = salaire brut × heures × 12 × 1.42 (charges patronales estimées France)</p>
         </div>
       )}
+
+      {/* Explanations collapsible */}
+      <div className="bg-gray-800 rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowExplain(!showExplain)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-400 hover:text-white transition-colors"
+        >
+          <span className="font-medium">Comment sont calculés les chiffres ?</span>
+          <span className="text-xs">{showExplain ? '▲' : '▼'}</span>
+        </button>
+        {showExplain && (
+          <div className="border-t border-gray-700 px-4 py-4 text-xs text-gray-300 space-y-2 leading-relaxed">
+            <p><strong className="text-white">GMROI</strong> = Marge annuelle / Stock. Un GMROI de 2 signifie que chaque € de stock génère 2 € de marge par an. Cible réseau : 3.84.</p>
+            <p><strong className="text-white">Masse salariale %</strong> = Coût salarial chargé annuel / CA annuel. Cible : ≤15% en maturité.</p>
+            <p><strong className="text-white">Coût chargé</strong> = salaire brut × heures × 12 × 1.42 (charges patronales estimées France).</p>
+            <p><strong className="text-white">Ratio CA/ETP</strong> = CA annuel / Nb ETP. Cible réseau : 250 000 € par ETP.</p>
+            <p><strong className="text-white">Exemple :</strong> pour un CA de 3 M€, il faut environ 12 ETP (fourchette 11-14 selon profil magasin).</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

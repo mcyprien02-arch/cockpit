@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction, Phase } from '@/types';
 import { DEFAULT_DATA } from '@/types';
-import { getCategoryScores, parsePastedText } from '@/lib/kpis';
+import { KPI_DEFS, parsePastedText } from '@/lib/kpis';
 
 interface Props {
   data: MagasinData;
@@ -71,8 +71,9 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
               d={arcPath(st.sa, st.ea)}
               fill={c(st.score)}
               stroke={isMin ? '#ef4444' : 'none'}
-              strokeWidth={isMin ? 3 : 0}
+              strokeWidth={isMin ? 4 : 0}
               opacity={0.85}
+              className={isMin ? 'animate-pulse' : ''}
             />
             <text x={lp.x} y={lp.y} textAnchor="middle" dominantBaseline="middle"
               fill="#e5e7eb" fontSize="10" fontWeight="700" letterSpacing="0.5">
@@ -181,8 +182,70 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     setImportMsg('');
   }
 
-  const scores = getCategoryScores(data);
-  const acheterScore = Math.round((scores.rh + (data.tauxAchatExterne > 0 ? (data.tauxAchatExterne < 10 ? 100 : data.tauxAchatExterne < 20 ? 50 : 0) : 50)) / 2);
+  // Phase-aware KPI scoring for Cercle du Cash
+  const phase = data.phase ?? 'Maturité';
+
+  function phaseScore(key: keyof MagasinData, value: number): number {
+    if (value === 0) return 50;
+    if (key === 'stockAge') {
+      if (phase === 'Lancement') return value < 25 ? 100 : value <= 35 ? 50 : 0;
+      if (phase === 'Croissance') return value < 22 ? 100 : value <= 32 ? 50 : 0;
+      return value < 20 ? 100 : value <= 30 ? 50 : 0;
+    }
+    if (key === 'gmroi') {
+      if (phase === 'Lancement') return value >= 2 ? 100 : value >= 1.5 ? 50 : 0;
+      if (phase === 'Croissance') return value >= 3 ? 100 : value >= 2 ? 50 : 0;
+      return value >= 3.5 ? 100 : value >= 2.5 ? 50 : 0;
+    }
+    if (key === 'tauxMargeNette') {
+      if (phase === 'Lancement') return value >= 35 ? 100 : value >= 30 ? 50 : 0;
+      if (phase === 'Croissance') return value >= 36 ? 100 : value >= 33 ? 50 : 0;
+      return value >= 38 ? 100 : value >= 35 ? 50 : 0;
+    }
+    if (key === 'noteGoogle') {
+      if (phase === 'Lancement') return value > 4.0 ? 100 : value >= 3.5 ? 50 : 0;
+      if (phase === 'Croissance') return value > 4.2 ? 100 : value >= 3.8 ? 50 : 0;
+      return value > 4.4 ? 100 : value >= 4.0 ? 50 : 0;
+    }
+    const def = KPI_DEFS.find(d => d.key === key);
+    return def ? def.score(value) : 50;
+  }
+
+  function avgScores(vals: number[]): number {
+    return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
+  }
+
+  // ACHETER: achat externe (inversé), gamme tel, piceasoft
+  const acheterScore = avgScores([
+    phaseScore('tauxAchatExterne', data.tauxAchatExterne),
+    phaseScore('gammeTel', data.gammeTel),
+    phaseScore('tauxPiceasoft', data.tauxPiceasoft),
+  ]);
+
+  // STOCKER: stock âgé (inversé), GMROI, moyenne délais vente
+  const delaiKeys: Array<keyof MagasinData> = ['delaiTel', 'delaiConsole', 'delaiJV', 'delaiTablette', 'delaiPC'];
+  const delaiScores = delaiKeys
+    .map(k => { const v = data[k] as number; if (v <= 0) return null; const def = KPI_DEFS.find(d => d.key === k); return def ? def.score(v) : null; })
+    .filter((v): v is number => v !== null);
+  const stockerScore = avgScores([
+    phaseScore('stockAge', data.stockAge),
+    phaseScore('gmroi', data.gmroi),
+    delaiScores.length > 0 ? Math.round(delaiScores.reduce((s, v) => s + v, 0) / delaiScores.length) : 50,
+  ]);
+
+  // VENDRE: transformation, panier moyen, estaly, note google
+  const vendreScore = avgScores([
+    phaseScore('tauxTransformation', data.tauxTransformation),
+    phaseScore('panierMoyen', data.panierMoyen),
+    phaseScore('estalyParSemaine', data.estalyParSemaine),
+    phaseScore('noteGoogle', data.noteGoogle),
+  ]);
+
+  // ENCAISSER: marge nette, démarque (inversé)
+  const encaisserScore = avgScores([
+    phaseScore('tauxMargeNette', data.tauxMargeNette),
+    phaseScore('tauxDemarque', data.tauxDemarque),
+  ]);
 
   const today = new Date().toISOString();
   const thisMonth = today.slice(0, 7);
@@ -222,7 +285,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
           {/* Cercle du Cash */}
           <div className="bg-gray-800 rounded-2xl p-5 flex flex-col items-center">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Cercle du Cash</h2>
-            <CercleDuCash acheter={acheterScore} stocker={scores.stock} vendre={scores.commerce} encaisser={scores.rentabilite} />
+            <CercleDuCash acheter={acheterScore} stocker={stockerScore} vendre={vendreScore} encaisser={encaisserScore} />
             <p className="text-xs text-gray-500 mt-2">L'étape la plus faible est encadrée en rouge</p>
           </div>
 
