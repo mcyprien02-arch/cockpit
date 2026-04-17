@@ -38,10 +38,19 @@ const FAMILLES_DEFAUT: FamilleRow[] = [
 
 const CONTRATS = ['CDI 35H', 'CDI 39H', 'CDD', 'Apprenti', 'Stage'];
 
-function verdict(gmroi: number, stock: number, ideal: number): string {
+function verdict(gmroi: number, stock: number, ideal: number, rotation: number | null): string {
   if (stock <= 0 || gmroi === 0) return '—';
+  if (rotation !== null && rotation > 0) {
+    if (gmroi >= 2 && stock <= ideal)  return rotation >= 6 ? '🟢 Investir — rotation forte' : '🟢 Investir avec prudence';
+    if (gmroi >= 2 && stock > ideal)   return rotation >= 6 ? '🟡 Maintenir — rotation justifie le stock' : '🟠 Alléger — stock trop haut';
+    if (gmroi < 1.5 && stock > ideal)  return '🔴 Déstocker en priorité';
+    if (gmroi < 1.5 && stock <= ideal) return rotation < 4 ? '🔴 Déstocker — stock ne tourne pas' : '🟠 Revoir les prix — marge faible';
+    if (rotation >= 8) return '🟢 OK — rotation rapide compense';
+    if (rotation >= 4) return '🟡 Surveiller';
+    return '🔴 Déstocker — double peine';
+  }
   if (gmroi >= 2 && stock <= ideal) return '🟢 Investir';
-  if (gmroi >= 2 && stock > ideal) return '🟡 Maintenir';
+  if (gmroi >= 2 && stock > ideal)  return '🟡 Maintenir';
   if (gmroi < 1.5 && stock > ideal) return '🔴 Déstocker';
   if (gmroi < 1.5 && stock <= ideal) return '🟠 Revoir prix';
   return '🟡 Surveiller';
@@ -126,15 +135,16 @@ export default function Simulateur({ magasinNom }: Props) {
   const totalMarge = familles.reduce((s, f) => s + f.margeAnnuelle, 0);
   const gmroiGlobal = totalStock > 0 ? totalMarge / totalStock : 0;
 
-  const famillesWithMetrics = familles.map(f => ({
-    ...f,
-    gmroi: f.stockValeur > 0 && f.margeAnnuelle > 0 ? f.margeAnnuelle / f.stockValeur : null,
-    verdict: f.stockValeur > 0 ? verdict(
-      f.stockValeur > 0 && f.margeAnnuelle > 0 ? f.margeAnnuelle / f.stockValeur : 0,
-      f.stockValeur,
-      f.stockIdeal
-    ) : '—',
-  }));
+  const famillesWithMetrics = familles.map(f => {
+    const gmroi = f.stockValeur > 0 && f.margeAnnuelle > 0 ? f.margeAnnuelle / f.stockValeur : null;
+    const rotation = f.delaiVente > 0 ? 365 / f.delaiVente : null;
+    return {
+      ...f,
+      gmroi,
+      rotation,
+      verdict: f.stockValeur > 0 ? verdict(gmroi ?? 0, f.stockValeur, f.stockIdeal, rotation) : '—',
+    };
+  });
 
   // Equipe calculations
   const { rows: equipe, caAnnuel } = equipeStore;
@@ -194,7 +204,8 @@ export default function Simulateur({ magasinNom }: Props) {
                     <th className="text-right px-3 py-2 font-semibold">Stock (€)</th>
                     <th className="text-right px-3 py-2 font-semibold">Marge annuelle (€)</th>
                     <th className="text-right px-3 py-2 font-semibold">GMROI (auto)</th>
-                    <th className="text-right px-3 py-2 font-semibold">Délai vente (j)</th>
+                    <th className="text-right px-3 py-2 font-semibold">Délai (j)</th>
+                    <th className="text-right px-3 py-2 font-semibold">Rotation/an</th>
                     <th className="text-right px-3 py-2 font-semibold">Stock idéal (€)</th>
                     <th className="text-center px-3 py-2 font-semibold">Verdict</th>
                     <th className="px-2 py-2"></th>
@@ -242,6 +253,12 @@ export default function Simulateur({ magasinNom }: Props) {
                           }`}
                         />
                       </td>
+                      <td className={`px-3 py-2 text-right font-semibold text-xs ${
+                        f.rotation === null ? 'text-gray-500' :
+                        f.rotation >= 8 ? 'text-green-400' : f.rotation >= 4 ? 'text-yellow-400' : 'text-red-400'
+                      }`}>
+                        {f.rotation !== null ? f.rotation.toFixed(1) : '—'}
+                      </td>
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
@@ -283,9 +300,11 @@ export default function Simulateur({ magasinNom }: Props) {
           </div>
 
           {/* Légende verdicts */}
-          <div className="bg-gray-800/60 rounded-lg px-4 py-3 text-xs text-gray-400">
-            <span className="font-semibold text-gray-300">Verdicts : </span>
-            🟢 Investir (GMROI≥2 + stock≤idéal) · 🟡 Maintenir (GMROI≥2 + stock&gt;idéal) · 🔴 Déstocker (GMROI&lt;1.5 + stock&gt;idéal) · 🟠 Revoir prix (GMROI&lt;1.5 + stock≤idéal) · 🟡 Surveiller (GMROI 1.5-2)
+          <div className="bg-gray-800/60 rounded-lg px-4 py-3 text-xs text-gray-400 space-y-1">
+            <p><span className="font-semibold text-gray-300">Verdicts avec délai : </span>
+            🟢 Investir (GMROI≥2, rotation≥6) · 🟢 Investir avec prudence (GMROI≥2, rotation&lt;6) · 🟡 Maintenir (GMROI≥2, stock&gt;idéal, rotation≥6) · 🟠 Alléger (GMROI≥2, stock&gt;idéal, rotation&lt;6) · 🔴 Déstocker en priorité (GMROI&lt;1.5, stock&gt;idéal) · 🟠 Revoir prix (GMROI&lt;1.5, stock≤idéal, rotation≥4) · 🔴 Stock ne tourne pas (GMROI&lt;1.5, rotation&lt;4) · 🔴 Double peine (GMROI 1.5-2, rotation&lt;4)</p>
+            <p><span className="font-semibold text-gray-300">Sans délai : </span>
+            🟢 Investir (GMROI≥2 + stock≤idéal) · 🟡 Maintenir (GMROI≥2 + stock&gt;idéal) · 🔴 Déstocker (GMROI&lt;1.5 + stock&gt;idéal) · 🟠 Revoir prix · 🟡 Surveiller (GMROI 1.5-2)</p>
           </div>
         </div>
       )}
