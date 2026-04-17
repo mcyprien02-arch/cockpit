@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType } from 'docx';
+import { saveAs } from 'file-saver';
 import type { MagasinData, PAPAction } from '@/types';
 import { KPI_DEFS, getAlerts } from '@/lib/kpis';
 
@@ -102,28 +104,31 @@ export default function VisiteCR({ data, actions }: Props) {
   async function exportWord() {
     setExporting(true);
     try {
-      const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType } = await import('docx');
-      const { saveAs } = await import('file-saver');
-
       const nomMagasin = data.nom || 'magasin';
       const date = dateVisite || today;
       const nomConsultant = consultant || 'Non renseigné';
 
-      // KPI alerts table rows
       const alerts = getAlerts(data);
+      const activeActions = actions.filter(a => a.statut !== 'Fait');
+
+      const tableHeader = (labels: string[]) => new TableRow({
+        children: labels.map(l => new TableCell({
+          children: [new Paragraph({ children: [new TextRun({ text: l, bold: true, size: 18 })] })],
+        })),
+      });
+
       const alertRows = alerts.map(a =>
         new TableRow({
           children: [
             new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: a.label, size: 18 })] })] }),
             new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `${a.value}${a.unit}`, size: 18 })] })] }),
             new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: a.seuilOk, size: 18 })] })] }),
-            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: a.status === 'danger' ? '🔴' : '🟡', size: 18 })] })] }),
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: a.status === 'danger' ? 'DANGER' : 'VIGILANCE', size: 18 })] })] }),
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: a.actionText, size: 16 })] })] }),
           ],
         })
       );
 
-      // PAP actions table rows
-      const activeActions = actions.filter(a => a.statut !== 'Fait');
       const actionRows = activeActions.map(a =>
         new TableRow({
           children: [
@@ -135,12 +140,6 @@ export default function VisiteCR({ data, actions }: Props) {
           ],
         })
       );
-
-      const tableHeader = (labels: string[]) => new TableRow({
-        children: labels.map(l => new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: l, bold: true, size: 18 })] })],
-        })),
-      });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const children: any[] = [
@@ -157,7 +156,6 @@ export default function VisiteCR({ data, actions }: Props) {
         new Paragraph({ text: '' }),
       ];
 
-      // Sections from template
       SECTIONS_TEMPLATE.forEach(section => {
         const content = sections[section.id];
         if (content.trim()) {
@@ -169,20 +167,18 @@ export default function VisiteCR({ data, actions }: Props) {
         }
       });
 
-      // KPI alerts table
       if (alerts.length > 0) {
         children.push(new Paragraph({ text: 'Indicateurs en alerte', heading: HeadingLevel.HEADING_2 }));
         children.push(new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
           rows: [
-            tableHeader(['Indicateur', 'Valeur', 'Cible', 'Statut']),
+            tableHeader(['Indicateur', 'Valeur', 'Cible', 'Statut', 'Recommandation']),
             ...alertRows,
           ],
         }));
         children.push(new Paragraph({ text: '' }));
       }
 
-      // PAP actions table
       if (activeActions.length > 0) {
         children.push(new Paragraph({ text: "Plan d'action", heading: HeadingLevel.HEADING_2 }));
         children.push(new Table({
@@ -210,7 +206,7 @@ export default function VisiteCR({ data, actions }: Props) {
       saveAs(blob, `CR_${nomMagasin.replace(/\s+/g, '_')}_${date}.docx`);
     } catch (e) {
       console.error('Export Word failed:', e);
-      alert("Export Word échoué. Consultez la console pour les détails. Vous pouvez copier le texte manuellement.");
+      alert("Export Word échoué. Consultez la console pour les détails.");
     } finally {
       setExporting(false);
     }

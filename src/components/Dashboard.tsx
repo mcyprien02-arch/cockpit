@@ -100,10 +100,10 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
 }
 
 // ── Number input helper ────────────────────────────────────────────────────
-function NI({ label, field, form, setF, unit, placeholder }: {
+function NI({ label, field, form, setF, unit, placeholder, hint }: {
   label: string; field: keyof MagasinData;
   form: MagasinData; setF: (k: keyof MagasinData, v: number) => void;
-  unit?: string; placeholder?: string;
+  unit?: string; placeholder?: string; hint?: string;
 }) {
   return (
     <div>
@@ -114,6 +114,7 @@ function NI({ label, field, form, setF, unit, placeholder }: {
         onChange={e => setF(field, parseFloat(e.target.value) || 0)}
         placeholder={placeholder ?? '0'}
       />
+      {hint && <p className="text-[10px] text-gray-500 italic mt-0.5 leading-snug">{hint}</p>}
     </div>
   );
 }
@@ -386,59 +387,62 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
 
             {/* Rentabilité */}
             <Section title="💰 Rentabilité">
-              <div className={hl('caAnnuel')}><NI label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€" /></div>
-              <div className={hl('tauxMargeNette')}><NI label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%" /></div>
-              <div className={hl('tauxDemarque')}><NI label="Taux de démarque" field="tauxDemarque" form={form} setF={setF} unit="%" /></div>
-              <div className={hl('chvacv')}><NI label="CHVACV" field="chvacv" form={form} setF={setF} unit="€/h" placeholder="40" /></div>
+              <div className={hl('caAnnuel')}><NI label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€" hint="Aucun seuil — dépend de votre magasin" /></div>
+              <div className={hl('tauxMargeNette')}><NI label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%" hint="Cible : 38-39% (maturité) | 36% (croissance) | 35% (lancement)" /></div>
+              <div className={hl('tauxDemarque')}><NI label="Taux de démarque" field="tauxDemarque" form={form} setF={setF} unit="%" hint="Cible : <3% du CA" /></div>
+              <div className={hl('chvacv')}><NI label="CHVACV" field="chvacv" form={form} setF={setF} unit="€/h" placeholder="40" hint="Indicateur interne — pas de benchmark, sert à chiffrer les coûts cachés" /></div>
             </Section>
 
             {/* Stock */}
             <Section title="📦 Stock">
-              <div className={hl('stockTotal')}><NI label="Stock total" field="stockTotal" form={form} setF={setF} unit="€" /></div>
-              <div className={hl('stockAge')}><NI label="Stock âgé" field="stockAge" form={form} setF={setF} unit="%" /></div>
-              <div className={hl('gmroi')}><NI label="GMROI" field="gmroi" form={form} setF={setF} placeholder="3.84" /></div>
-              <div className="flex items-center justify-between col-span-1">
-                <label className="text-xs text-gray-400">Top 20 vieux stock traité ?</label>
-                <button onClick={() => setForm(f => ({ ...f, top20Traite: !f.top20Traite }))}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${form.top20Traite ? 'bg-green-500' : 'bg-gray-600'}`}>
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form.top20Traite ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
+              <div className={hl('stockTotal')}><NI label="Stock total" field="stockTotal" form={form} setF={setF} unit="€" hint="Cible réseau : 143 750 € (fourchette 108k-207k selon profil)" /></div>
+              <div className={hl('stockAge')}><NI label="Stock âgé" field="stockAge" form={form} setF={setF} unit="%" hint="Cible : <20% (maturité) | <22% (croissance) | <25% (lancement) | >30% = danger" /></div>
+              <div className={hl('gmroi')}><NI label="GMROI" field="gmroi" form={form} setF={setF} placeholder="3.84" hint="Cible : >3.5 (maturité) | >3 (croissance) | >2 (lancement) | Réseau : 3.84" /></div>
+              <div className="col-span-1">
+                <label className="text-xs text-gray-400 block mb-1">Top 20 vieux stock traité ?</label>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setForm(f => ({ ...f, top20Traite: !f.top20Traite }))}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${form.top20Traite ? 'bg-green-500' : 'bg-gray-600'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form.top20Traite ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-500 italic mt-0.5 leading-snug">Priorité absolue — Intranet &gt; Stats &gt; Stocks &gt; Ventilation</p>
               </div>
-              <NI label="Délai Tel. (j)" field="delaiTel" form={form} setF={setF} />
-              <NI label="Délai Console (j)" field="delaiConsole" form={form} setF={setF} />
-              <NI label="Délai JV (j)" field="delaiJV" form={form} setF={setF} />
-              <NI label="Délai Tablette (j)" field="delaiTablette" form={form} setF={setF} />
-              <NI label="Délai PC (j)" field="delaiPC" form={form} setF={setF} />
+              <NI label="Délai Tel. (j)" field="delaiTel" form={form} setF={setF} hint="Côte : anticip. 15j → accélération 30j → alerte 60j" />
+              <NI label="Délai Console (j)" field="delaiConsole" form={form} setF={setF} hint="Côte : anticip. 15j → accélération 30j → alerte 60j" />
+              <NI label="Délai JV (j)" field="delaiJV" form={form} setF={setF} hint="JCDR >20€ : 15j/30j/60j | JCON : 15j/30j/60j" />
+              <NI label="Délai Tablette (j)" field="delaiTablette" form={form} setF={setF} hint="15j → 30j → alerte 60j" />
+              <NI label="Délai PC (j)" field="delaiPC" form={form} setF={setF} hint="15j → 30j → alerte 60j" />
             </Section>
 
             {/* Commerce */}
             <Section title="🛒 Commerce">
-              <div className={hl('tauxTransformation')}><NI label="Taux transformation" field="tauxTransformation" form={form} setF={setF} unit="%" /></div>
-              <div className={hl('panierMoyen')}><NI label="Panier moyen" field="panierMoyen" form={form} setF={setF} unit="€" /></div>
-              <NI label="Ventes additionnelles" field="ventesAdditionnelles" form={form} setF={setF} unit="€" />
-              <div className={hl('estalyParSemaine')}><NI label="Estaly/semaine" field="estalyParSemaine" form={form} setF={setF} /></div>
-              <div className={hl('noteGoogle')}><NI label="Note Google" field="noteGoogle" form={form} setF={setF} placeholder="4.3" /></div>
-              <div className={hl('poidsDigital')}><NI label="Poids digital" field="poidsDigital" form={form} setF={setF} unit="%" /></div>
-              <NI label="Annulation web" field="tauxAnnulationWeb" form={form} setF={setF} unit="%" />
-              <NI label="Taux SAV" field="tauxSAV" form={form} setF={setF} unit="%" />
+              <div className={hl('tauxTransformation')}><NI label="Taux transformation" field="tauxTransformation" form={form} setF={setF} unit="%" hint="Cible : >40% (bon) | 30-40% (moyen) | <30% (à travailler)" /></div>
+              <div className={hl('panierMoyen')}><NI label="Panier moyen" field="panierMoyen" form={form} setF={setF} unit="€" hint="Cible : >50 € | 35-50 € moyen | <35 € à travailler" /></div>
+              <NI label="Ventes additionnelles" field="ventesAdditionnelles" form={form} setF={setF} unit="€" hint="Cible : >10% du CA grâce aux accessoires/périphériques" />
+              <div className={hl('estalyParSemaine')}><NI label="Estaly/semaine" field="estalyParSemaine" form={form} setF={setF} hint="Cible : >5 contrats/sem. | 1 contrat/j = +1 114 €/an net vendeur" /></div>
+              <div className={hl('noteGoogle')}><NI label="Note Google" field="noteGoogle" form={form} setF={setF} placeholder="4.3" hint="Cible : >4.4 | <4.0 = problème image à traiter" /></div>
+              <div className={hl('poidsDigital')}><NI label="Poids digital" field="poidsDigital" form={form} setF={setF} unit="%" hint="Cible : >15% du CA réalisé sur EC.fr" /></div>
+              <NI label="Annulation web" field="tauxAnnulationWeb" form={form} setF={setF} unit="%" hint="Cible : <20% | >30% = problème suivi commandes" />
+              <NI label="Taux SAV" field="tauxSAV" form={form} setF={setF} unit="%" hint="Cible : <5% | >10% = trop de produits techniques ratés au rachat" />
             </Section>
 
             {/* Gamme */}
             <Section title="🎯 Gamme">
-              <div className={hl('gammeTel')}><NI label="% Téléphonie" field="gammeTel" form={form} setF={setF} unit="%" /></div>
-              <NI label="% Jeux Vidéo" field="gammeJV" form={form} setF={setF} unit="%" />
-              <NI label="% Console" field="gammeConsole" form={form} setF={setF} unit="%" />
-              <NI label="% Tablette" field="gammeTablette" form={form} setF={setF} unit="%" />
-              <div className={hl('tauxAchatExterne')}><NI label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%" /></div>
-              <div className={hl('tauxPiceasoft')}><NI label="Piceasoft" field="tauxPiceasoft" form={form} setF={setF} unit="%" /></div>
+              <div className={hl('gammeTel')}><NI label="% Téléphonie" field="gammeTel" form={form} setF={setF} unit="%" hint="Cible : 35-40% (moy. réseau 37%) | <25% ou >50% = déséquilibre" /></div>
+              <NI label="% Jeux Vidéo" field="gammeJV" form={form} setF={setF} unit="%" hint="Cible : 18-25% (moy. 18.9%) | dont JCDR 8%, JCON 10.8%" />
+              <NI label="% Console" field="gammeConsole" form={form} setF={setF} unit="%" hint="Inclus dans la catégorie JV" />
+              <NI label="% Tablette" field="gammeTablette" form={form} setF={setF} unit="%" hint="Inclus dans Informatique (cible 12-15%)" />
+              <div className={hl('tauxAchatExterne')}><NI label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%" hint="Cible : <10% | >20% = dépendance fournisseurs, marge dégradée" /></div>
+              <div className={hl('tauxPiceasoft')}><NI label="Piceasoft" field="tauxPiceasoft" form={form} setF={setF} unit="%" hint="Cible : >80% sur mobiles — test obligatoire pour limiter SAV" /></div>
             </Section>
 
             {/* RH */}
             <Section title="👥 RH">
-              <div className={hl('nbEtp')}><NI label="Nb ETP" field="nbEtp" form={form} setF={setF} /></div>
-              <div className={hl('masseSalarialePct')}><NI label="Masse salariale" field="masseSalarialePct" form={form} setF={setF} unit="% CA" /></div>
-              <div className={hl('tauxTurnover')}><NI label="Turnover" field="tauxTurnover" form={form} setF={setF} unit="%" /></div>
-              <div className={hl('tauxFormation')}><NI label="Formation EasyTraining" field="tauxFormation" form={form} setF={setF} unit="%" /></div>
+              <div className={hl('nbEtp')}><NI label="Nb ETP" field="nbEtp" form={form} setF={setF} hint="Benchmark : 1 ETP / 250 000 € CA" /></div>
+              <div className={hl('masseSalarialePct')}><NI label="Masse salariale" field="masseSalarialePct" form={form} setF={setF} unit="% CA" hint="Cible : ≤15% (maturité) | ≤16% (croissance) | ≤18% (lancement)" /></div>
+              <div className={hl('tauxTurnover')}><NI label="Turnover" field="tauxTurnover" form={form} setF={setF} unit="%" hint="Cible : <15% (maturité) | <20% (croissance) | <25% (lancement)" /></div>
+              <div className={hl('tauxFormation')}><NI label="Formation EasyTraining" field="tauxFormation" form={form} setF={setF} unit="%" hint="Cible : >80% des collaborateurs à jour" /></div>
             </Section>
 
             <button
