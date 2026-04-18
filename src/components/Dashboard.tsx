@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction, Phase } from '@/types';
 import { DEFAULT_DATA } from '@/types';
 import { KPI_DEFS, parsePastedText } from '@/lib/kpis';
+import { SEUIL_DEFAULTS } from '@/lib/seuils';
 
 interface Props {
   data: MagasinData;
@@ -141,9 +142,9 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   const [importMsg, setImportMsg] = useState('');
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
   const [customSeuils, setCustomSeuils] = useState<Record<string, number>>(() => {
-    if (typeof window === 'undefined') return {};
-    try { const s = localStorage.getItem(`seuils_${data.nom}`); return s ? JSON.parse(s) as Record<string, number> : {}; }
-    catch { return {}; }
+    if (typeof window === 'undefined') return { ...SEUIL_DEFAULTS };
+    try { const s = localStorage.getItem(`seuils_${data.nom}`); return s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }; }
+    catch { return { ...SEUIL_DEFAULTS }; }
   });
 
   useEffect(() => {
@@ -151,8 +152,8 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   }, [data]);
 
   useEffect(() => {
-    try { const s = localStorage.getItem(`seuils_${data.nom}`); setCustomSeuils(s ? JSON.parse(s) as Record<string, number> : {}); }
-    catch { setCustomSeuils({}); }
+    try { const s = localStorage.getItem(`seuils_${data.nom}`); setCustomSeuils(s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }); }
+    catch { setCustomSeuils({ ...SEUIL_DEFAULTS }); }
   }, [data.nom]);
 
   function setF(k: keyof MagasinData, v: number) {
@@ -464,20 +465,20 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
 
             {/* Gamme */}
             <Section title="🎯 Gamme">
-              <div className={hl('gammeTel')}><NI label="% Téléphonie" field="gammeTel" form={form} setF={setF} unit="%" hint="Cible : 35-40% (moy. réseau 37%) | <25% ou >50% = déséquilibre" /></div>
-              <NI label="% Jeux Vidéo" field="gammeJV" form={form} setF={setF} unit="%" hint="Cible : 18-25% (moy. 18.9%) | dont JCDR 8%, JCON 10.8%" />
-              <NI label="% Console" field="gammeConsole" form={form} setF={setF} unit="%" hint="Inclus dans la catégorie JV" />
-              <NI label="% Tablette" field="gammeTablette" form={form} setF={setF} unit="%" hint="Inclus dans Informatique (cible 12-15%)" />
-              <div className={hl('tauxAchatExterne')}><NI label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%" hint="Cible : <10% | >20% = dépendance fournisseurs, marge dégradée" /></div>
-              <div className={hl('tauxPiceasoft')}><NI label="Piceasoft" field="tauxPiceasoft" form={form} setF={setF} unit="%" hint="Cible : >80% sur mobiles — test obligatoire pour limiter SAV" /></div>
+              <div className={hl('gammeTel')}><NI label="% Téléphonie" field="gammeTel" form={form} setF={setF} unit="%" hint="Cible : 35-40% (moy. réseau 37%) | <25% ou >50% = déséquilibre" seuil={customSeuils['gammeTel']} onSeuil={v => setCustomSeuil('gammeTel', v)} seuilIndicatif="Moyenne réseau : 37%" /></div>
+              <NI label="% Jeux Vidéo" field="gammeJV" form={form} setF={setF} unit="%" hint="Cible : 18-25% (moy. 18.9%) | dont JCDR 8%, JCON 10.8%" seuil={customSeuils['gammeJV']} onSeuil={v => setCustomSeuil('gammeJV', v)} seuilIndicatif="Moyenne : 19% (JCDR+JCON)" />
+              <NI label="% Console" field="gammeConsole" form={form} setF={setF} unit="%" hint="Inclus dans la catégorie JV" seuil={customSeuils['gammeConsole']} onSeuil={v => setCustomSeuil('gammeConsole', v)} seuilIndicatif="Moyenne : 19% (JCDR+JCON)" />
+              <NI label="% Tablette" field="gammeTablette" form={form} setF={setF} unit="%" hint="Inclus dans Informatique (cible 12-15%)" seuil={customSeuils['gammeTablette']} onSeuil={v => setCustomSeuil('gammeTablette', v)} seuilIndicatif="Moyenne : 19% (JCDR+JCON)" />
+              <div className={hl('tauxAchatExterne')}><NI label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%" hint="Cible : <10% | >20% = dépendance fournisseurs, marge dégradée" seuil={customSeuils['tauxAchatExterne']} onSeuil={v => setCustomSeuil('tauxAchatExterne', v)} seuilIndicatif="Performers : <15%" /></div>
+              <div className={hl('tauxPiceasoft')}><NI label="Piceasoft" field="tauxPiceasoft" form={form} setF={setF} unit="%" hint="Cible : >80% sur mobiles — test obligatoire pour limiter SAV" seuil={customSeuils['tauxPiceasoft']} onSeuil={v => setCustomSeuil('tauxPiceasoft', v)} seuilIndicatif="Bonnes pratiques : >70%" /></div>
             </Section>
 
             {/* RH */}
             <Section title="👥 RH">
-              <div className={hl('nbEtp')}><NI label="Nb ETP" field="nbEtp" form={form} setF={setF} hint="Benchmark : 1 ETP / 250 000 € CA" /></div>
-              <div className={hl('masseSalarialePct')}><NI label="Masse salariale" field="masseSalarialePct" form={form} setF={setF} unit="% CA" hint="Cible : ≤15% (maturité) | ≤16% (croissance) | ≤18% (lancement)" /></div>
-              <div className={hl('tauxTurnover')}><NI label="Turnover" field="tauxTurnover" form={form} setF={setF} unit="%" hint="Cible : <15% (maturité) | <20% (croissance) | <25% (lancement)" /></div>
-              <div className={hl('tauxFormation')}><NI label="Formation EasyTraining" field="tauxFormation" form={form} setF={setF} unit="%" hint="Cible : >80% des collaborateurs à jour" /></div>
+              <div className={hl('nbEtp')}><NI label="Nb ETP" field="nbEtp" form={form} setF={setF} hint="Benchmark : 1 ETP / 250 000 € CA" seuil={customSeuils['nbEtp']} onSeuil={v => setCustomSeuil('nbEtp', v)} seuilIndicatif="Benchmark : 1 ETP / 250k€ CA" /></div>
+              <div className={hl('masseSalarialePct')}><NI label="Masse salariale" field="masseSalarialePct" form={form} setF={setF} unit="% CA" hint="Cible : ≤15% (maturité) | ≤16% (croissance) | ≤18% (lancement)" seuil={customSeuils['masseSalarialePct']} onSeuil={v => setCustomSeuil('masseSalarialePct', v)} seuilIndicatif="Indicatif : ≤15% maturité" /></div>
+              <div className={hl('tauxTurnover')}><NI label="Turnover" field="tauxTurnover" form={form} setF={setF} unit="%" hint="Cible : <15% (maturité) | <20% (croissance) | <25% (lancement)" seuil={customSeuils['tauxTurnover']} onSeuil={v => setCustomSeuil('tauxTurnover', v)} seuilIndicatif="Retail : 15-25%" /></div>
+              <div className={hl('tauxFormation')}><NI label="Formation EasyTraining" field="tauxFormation" form={form} setF={setF} unit="%" hint="Cible : >80% des collaborateurs à jour" seuil={customSeuils['tauxFormation']} onSeuil={v => setCustomSeuil('tauxFormation', v)} seuilIndicatif="Cible : >80%" /></div>
             </Section>
 
             <button

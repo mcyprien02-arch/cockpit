@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { MagasinData, Phase } from '@/types';
 import { KPI_DEFS, type KpiCategory, type KpiStatus } from '@/lib/kpis';
+import { SEUIL_DEFAULTS } from '@/lib/seuils';
 
 interface Props { data: MagasinData; }
 
@@ -20,6 +21,24 @@ const CAT_COLOR: Record<string, string> = {
   gamme: '#8b5cf6',
   rh: '#ef4444',
 };
+
+// ── Custom seuil traffic light ─────────────────────────────────────────────
+const KPI_DIRECTION: Record<string, 'higher' | 'lower'> = {
+  tauxMargeNette: 'higher', chvacv: 'higher', gmroi: 'higher',
+  tauxTransformation: 'higher', panierMoyen: 'higher', estalyParSemaine: 'higher',
+  noteGoogle: 'higher', poidsDigital: 'higher', tauxPiceasoft: 'higher',
+  tauxFormation: 'higher', gammeTel: 'higher', gammeJV: 'higher',
+  tauxDemarque: 'lower', stockAge: 'lower',
+  delaiTel: 'lower', delaiConsole: 'lower', delaiJV: 'lower', delaiTablette: 'lower', delaiPC: 'lower',
+  tauxAnnulationWeb: 'lower', tauxSAV: 'lower', tauxAchatExterne: 'lower',
+  masseSalarialePct: 'lower', tauxTurnover: 'lower',
+};
+
+function customSeuilStatus(key: string, value: number, seuil: number): KpiStatus {
+  const dir = KPI_DIRECTION[key] ?? 'higher';
+  if (dir === 'higher') return value >= seuil ? 'ok' : value >= seuil * 0.85 ? 'warn' : 'danger';
+  return value <= seuil ? 'ok' : value <= seuil * 1.2 ? 'warn' : 'danger';
+}
 
 // ── Phase-aware overrides for 6 KPIs ──────────────────────────────────────
 interface PhaseOverride {
@@ -224,6 +243,11 @@ export default function Diagnostic({ data }: Props) {
   const scores = getCategoryScoresPhase(data, phase);
   const allCats: KpiCategory[] = ['rentabilite', 'stock', 'commerce', 'gamme', 'rh'];
   const [openCat, setOpenCat] = useState<KpiCategory | null>(null);
+  const [customSeuils] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return { ...SEUIL_DEFAULTS };
+    try { const s = localStorage.getItem(`seuils_${data.nom}`); return s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }; }
+    catch { return { ...SEUIL_DEFAULTS }; }
+  });
 
   const scoreVals = Object.values(scores);
   const overall = Math.round(scoreVals.reduce((s, v) => s + v, 0) / scoreVals.length);
@@ -243,9 +267,9 @@ export default function Diagnostic({ data }: Props) {
       </div>
 
       {/* Phase banner */}
-      <div className="bg-blue-900/30 border border-blue-700 rounded-xl px-4 py-2 text-xs text-blue-300">
-        Seuils adaptés à votre phase : <strong className="text-white">{phase}</strong>
-        {' '}— Les KPIs marqués ✦ ont des seuils ajustés par rapport aux valeurs réseau standard.
+      <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl px-4 py-2 text-xs text-yellow-300/80">
+        Feux tricolores basés sur <strong className="text-yellow-200">vos seuils personnalisés</strong> (Dashboard → Modifier mes données).
+        {' '}Seuil vide = valeur brute affichée sans feu.
       </div>
 
       {/* Radar + bars */}
@@ -302,29 +326,28 @@ export default function Diagnostic({ data }: Props) {
                     const value = data[kpi.key];
                     const numVal = typeof value === 'number' ? value : 0;
                     const hasData = numVal > 0;
-                    const ov = getOverride(String(kpi.key), phase);
-                    const isPhaseAdjusted = ov !== null;
-                    const status = hasData ? (ov ? ov.getStatus(numVal) : kpi.getStatus(numVal)) : 'ok';
-                    const seuilOk = ov ? ov.seuilOk : kpi.seuilOk;
-                    const seuilVigilance = ov ? ov.seuilVigilance : kpi.seuilVigilance;
+                    const rawSeuil = customSeuils[String(kpi.key)];
+                    const hasSeuil = rawSeuil !== undefined && rawSeuil > 0;
+                    const status = hasData && hasSeuil ? customSeuilStatus(String(kpi.key), numVal, rawSeuil) : 'ok';
+                    const showBadge = hasData && hasSeuil;
                     return (
-                      <div key={String(kpi.key)} className={`px-4 py-3 border-l-2 ${hasData ? statusBg(status) : 'border-gray-600'}`}>
+                      <div key={String(kpi.key)} className={`px-4 py-3 border-l-2 ${showBadge ? statusBg(status) : 'border-gray-600'}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm font-medium text-gray-200">{kpi.label}</span>
-                              {isPhaseAdjusted && <span className="text-xs text-blue-400">✦</span>}
-                              {hasData && (
+                              {showBadge && (
                                 <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${statusColor(status)}`}>
                                   {statusLabel(status)}
                                 </span>
                               )}
                             </div>
-                            <div className="text-xs text-gray-400 mt-0.5">
-                              Cible : {seuilOk}
-                              {seuilVigilance && ` · Vigilance : ${seuilVigilance}`}
-                            </div>
-                            {hasData && status !== 'ok' && (
+                            {hasSeuil ? (
+                              <div className="text-xs text-yellow-600/70 mt-0.5">Mon seuil : {rawSeuil}{kpi.unit}</div>
+                            ) : (
+                              <div className="text-xs text-gray-500 mt-0.5 italic">Aucun seuil défini — saisissez-le dans le Dashboard</div>
+                            )}
+                            {showBadge && status !== 'ok' && (
                               <div className="text-xs mt-1.5 text-gray-300 bg-gray-900/50 rounded p-2">
                                 {status === 'danger' ? kpi.actionDanger : kpi.actionWarn}
                               </div>
@@ -332,7 +355,7 @@ export default function Diagnostic({ data }: Props) {
                           </div>
                           <div className="text-right flex-shrink-0">
                             {hasData ? (
-                              <span className={`text-sm font-bold ${statusColor(status)}`}>
+                              <span className={`text-sm font-bold ${showBadge ? statusColor(status) : 'text-gray-300'}`}>
                                 {numVal}{kpi.unit}
                               </span>
                             ) : (
