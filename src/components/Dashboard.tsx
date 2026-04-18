@@ -100,10 +100,11 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
 }
 
 // ── Number input helper ────────────────────────────────────────────────────
-function NI({ label, field, form, setF, unit, placeholder, hint }: {
+function NI({ label, field, form, setF, unit, placeholder, hint, seuil, onSeuil, seuilIndicatif }: {
   label: string; field: keyof MagasinData;
   form: MagasinData; setF: (k: keyof MagasinData, v: number) => void;
   unit?: string; placeholder?: string; hint?: string;
+  seuil?: number; onSeuil?: (v: number) => void; seuilIndicatif?: string;
 }) {
   return (
     <div>
@@ -115,6 +116,18 @@ function NI({ label, field, form, setF, unit, placeholder, hint }: {
         placeholder={placeholder ?? '0'}
       />
       {hint && <p className="text-[10px] text-gray-500 italic mt-0.5 leading-snug">{hint}</p>}
+      {onSeuil !== undefined && (
+        <div className="flex items-center gap-1.5 mt-1.5">
+          <span className="text-[10px] text-yellow-500/70 whitespace-nowrap">Mon seuil :</span>
+          <input type="number"
+            className="flex-1 min-w-0 bg-gray-900/60 border border-yellow-700/40 rounded px-2 py-1 text-yellow-300 text-xs focus:outline-none focus:border-yellow-500"
+            value={seuil ?? ''}
+            onChange={e => { const v = parseFloat(e.target.value); onSeuil(isNaN(v) ? 0 : v); }}
+            placeholder="cible..."
+          />
+        </div>
+      )}
+      {seuilIndicatif && <p className="text-[10px] text-yellow-600/50 italic mt-0.5 leading-snug">{seuilIndicatif}</p>}
     </div>
   );
 }
@@ -127,13 +140,31 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   const [pasteCount, setPasteCount] = useState(0);
   const [importMsg, setImportMsg] = useState('');
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
+  const [customSeuils, setCustomSeuils] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { const s = localStorage.getItem(`seuils_${data.nom}`); return s ? JSON.parse(s) as Record<string, number> : {}; }
+    catch { return {}; }
+  });
 
   useEffect(() => {
     setForm({ ...DEFAULT_DATA, ...data });
   }, [data]);
 
+  useEffect(() => {
+    try { const s = localStorage.getItem(`seuils_${data.nom}`); setCustomSeuils(s ? JSON.parse(s) as Record<string, number> : {}); }
+    catch { setCustomSeuils({}); }
+  }, [data.nom]);
+
   function setF(k: keyof MagasinData, v: number) {
     setForm(f => ({ ...f, [k]: v }));
+  }
+
+  function setCustomSeuil(key: string, v: number) {
+    setCustomSeuils(prev => {
+      const next = { ...prev };
+      if (v === 0) delete next[key]; else next[key] = v;
+      return next;
+    });
   }
 
   function handlePaste() {
@@ -177,6 +208,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   function handleSave() {
     if (!form.nom.trim()) return;
     onSave(form);
+    localStorage.setItem(`seuils_${form.nom}`, JSON.stringify(customSeuils));
     setShowModal(false);
     setHighlightedFields(new Set());
     setPasteCount(0);
@@ -339,7 +371,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 flex items-start justify-center pt-4 pb-8">
           <div className="bg-gray-800 rounded-2xl w-full max-w-2xl mx-4 p-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold">Données du magasin</h2>
+              <div>
+                <h2 className="text-lg font-bold">Données du magasin</h2>
+                <p className="text-[10px] text-yellow-600/60 mt-0.5">Champs jaunes = votre seuil cible personnalisé</p>
+              </div>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
 
@@ -387,10 +422,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
 
             {/* Rentabilité */}
             <Section title="💰 Rentabilité">
-              <div className={hl('caAnnuel')}><NI label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€" hint="Aucun seuil — dépend de votre magasin" /></div>
-              <div className={hl('tauxMargeNette')}><NI label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%" hint="Cible : 38-39% (maturité) | 36% (croissance) | 35% (lancement)" /></div>
-              <div className={hl('tauxDemarque')}><NI label="Taux de démarque" field="tauxDemarque" form={form} setF={setF} unit="%" hint="Cible : <3% du CA" /></div>
-              <div className={hl('chvacv')}><NI label="CHVACV" field="chvacv" form={form} setF={setF} unit="€/h" placeholder="40" hint="Indicateur interne — pas de benchmark, sert à chiffrer les coûts cachés" /></div>
+              <div className={hl('caAnnuel')}><NI label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€" hint="Aucun seuil — dépend de votre magasin" seuil={customSeuils['caAnnuel']} onSeuil={v => setCustomSeuil('caAnnuel', v)} /></div>
+              <div className={hl('tauxMargeNette')}><NI label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%" hint="Cible : 38-39% (maturité) | 36% (croissance) | 35% (lancement)" seuil={customSeuils['tauxMargeNette']} onSeuil={v => setCustomSeuil('tauxMargeNette', v)} seuilIndicatif="Indicatif : 38-39% maturité" /></div>
+              <div className={hl('tauxDemarque')}><NI label="Taux de démarque" field="tauxDemarque" form={form} setF={setF} unit="%" hint="Cible : <3% du CA" seuil={customSeuils['tauxDemarque']} onSeuil={v => setCustomSeuil('tauxDemarque', v)} seuilIndicatif="Règle d'or : <3% CA" /></div>
+              <div className={hl('chvacv')}><NI label="CHVACV" field="chvacv" form={form} setF={setF} unit="€/h" placeholder="40" hint="Indicateur interne — pas de benchmark, sert à chiffrer les coûts cachés" seuil={customSeuils['chvacv']} onSeuil={v => setCustomSeuil('chvacv', v)} seuilIndicatif="Indicateur interne, pas de benchmark" /></div>
             </Section>
 
             {/* Stock */}
