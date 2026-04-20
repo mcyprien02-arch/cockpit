@@ -24,7 +24,7 @@ const CAT_COLOR: Record<string, string> = {
 
 // ── Custom seuil traffic light ─────────────────────────────────────────────
 const KPI_DIRECTION: Record<string, 'higher' | 'lower'> = {
-  tauxMargeNette: 'higher', chvacv: 'higher', gmroi: 'higher',
+  tauxMargeNette: 'higher',
   tauxTransformation: 'higher', panierMoyen: 'higher', estalyParSemaine: 'higher',
   noteGoogle: 'higher', poidsDigital: 'higher', tauxPiceasoft: 'higher',
   tauxFormation: 'higher', gammeTel: 'higher', gammeJV: 'higher',
@@ -55,6 +55,8 @@ function sc3(v: number, okFn: (x: number) => boolean, warnFn: (x: number) => boo
   return okFn(v) ? 100 : warnFn(v) ? 50 : 0;
 }
 
+const EXCLUDED_KPIS = new Set(['chvacv', 'gmroi']);
+
 const PHASE_OVERRIDES: Record<string, Record<Phase, PhaseOverride>> = {
   stockAge: {
     Lancement: {
@@ -71,23 +73,6 @@ const PHASE_OVERRIDES: Record<string, Record<Phase, PhaseOverride>> = {
       seuilOk: '<20%', seuilVigilance: '20-30%',
       getStatus: v => v > 0 ? s3(v, x => x < 20, x => x <= 30) : 'ok',
       score: v => v <= 0 ? 0 : sc3(v, x => x < 20, x => x <= 30),
-    },
-  },
-  gmroi: {
-    Lancement: {
-      seuilOk: '>2', seuilVigilance: '1.5-2',
-      getStatus: v => s3(v, x => x >= 2, x => x >= 1.5),
-      score: v => sc3(v, x => x >= 2, x => x >= 1.5),
-    },
-    Croissance: {
-      seuilOk: '>3', seuilVigilance: '2-3',
-      getStatus: v => s3(v, x => x >= 3, x => x >= 2),
-      score: v => sc3(v, x => x >= 3, x => x >= 2),
-    },
-    Maturité: {
-      seuilOk: '>3.5', seuilVigilance: '2.5-3.5',
-      getStatus: v => s3(v, x => x >= 3.5, x => x >= 2.5),
-      score: v => sc3(v, x => x >= 3.5, x => x >= 2.5),
     },
   },
   masseSalarialePct: {
@@ -170,7 +155,7 @@ function getCategoryScoresPhase(data: MagasinData, phase: Phase): Record<KpiCate
   const result = {} as Record<KpiCategory, number>;
 
   for (const cat of cats) {
-    const kpis = KPI_DEFS.filter(k => k.category === cat);
+    const kpis = KPI_DEFS.filter(k => k.category === cat && !EXCLUDED_KPIS.has(String(k.key)));
     const vals = kpis
       .map(k => {
         const v = data[k.key];
@@ -301,7 +286,7 @@ export default function Diagnostic({ data }: Props) {
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-gray-300">Détail par indicateur</h3>
         {allCats.map(cat => {
-          const kpis = KPI_DEFS.filter(k => k.category === cat);
+          const kpis = KPI_DEFS.filter(k => k.category === cat && !EXCLUDED_KPIS.has(String(k.key)));
           const isOpen = openCat === cat;
           return (
             <div key={cat} className="bg-gray-800 rounded-xl overflow-hidden">
