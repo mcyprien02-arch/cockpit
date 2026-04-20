@@ -424,7 +424,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
               <div className={hl('caAnnuel')}><NI label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€" seuil={customSeuils['caAnnuel']} onSeuil={v => setCustomSeuil('caAnnuel', v)} /></div>
               <div className={hl('tauxMargeNette')}><NI label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%" seuil={customSeuils['tauxMargeNette']} onSeuil={v => setCustomSeuil('tauxMargeNette', v)} /></div>
               <div className={hl('tauxDemarque')}><NI label="Taux de démarque" field="tauxDemarque" form={form} setF={setF} unit="%" seuil={customSeuils['tauxDemarque']} onSeuil={v => setCustomSeuil('tauxDemarque', v)} /></div>
-              <div className={hl('chvacv')}><NI label="CHVACV" field="chvacv" form={form} setF={setF} unit="€/h" placeholder="40" seuil={customSeuils['chvacv']} onSeuil={v => setCustomSeuil('chvacv', v)} /></div>
             </Section>
 
             {/* Stock */}
