@@ -595,6 +595,33 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
     return (localStorage.getItem("mode_pilotage") as "Redresser" | "Performer") ?? "Redresser";
   });
   const [checkupOpen, setCheckupOpen] = useState(false);
+  type CheckupPhase = "Lancement" | "Croissance" | "Maturité";
+  const CHECKUP_FIELDS: Record<CheckupPhase, { key: string; label: string; unit: string }[]> = {
+    Lancement: [
+      { key: "noteGoogle", label: "Note Google", unit: "/5" },
+      { key: "estaly", label: "Nb contrats Estaly/semaine", unit: "" },
+      { key: "stock", label: "Stock total", unit: "€" },
+      { key: "panier", label: "Panier moyen", unit: "€" },
+      { key: "etp", label: "Nb ETP", unit: "" },
+    ],
+    Croissance: [
+      { key: "stockAge", label: "Stock âgé", unit: "%" },
+      { key: "gmroi", label: "GMROI", unit: "" },
+      { key: "masseSal", label: "Masse salariale", unit: "%" },
+      { key: "noteGoogle", label: "Note Google", unit: "/5" },
+      { key: "ventesAddi", label: "Ventes additionnelles", unit: "%" },
+    ],
+    Maturité: [
+      { key: "gmroi", label: "GMROI", unit: "" },
+      { key: "masseSal", label: "Masse salariale", unit: "%" },
+      { key: "margeNette", label: "Taux marge nette", unit: "%" },
+      { key: "turnover", label: "Turnover", unit: "%" },
+      { key: "digital", label: "Poids digital", unit: "%" },
+    ],
+  };
+  const [checkupPhase, setCheckupPhase] = useState<CheckupPhase>("Croissance");
+  const [checkupValues, setCheckupValues] = useState<Record<string, string>>({});
+  const [checkupSubmitted, setCheckupSubmitted] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!magasinId) return;
@@ -827,16 +854,80 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-[18px] font-bold" style={{ color: "var(--text)" }}>⏱ Check-up rapide</h2>
               <button
-                onClick={() => setCheckupOpen(false)}
+                onClick={() => { setCheckupOpen(false); setCheckupSubmitted(false); setCheckupValues({}); }}
                 className="text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
                 style={{ background: "var(--surfaceAlt)", color: "var(--textMuted)", border: "1px solid var(--border)" }}
               >
                 Fermer
               </button>
             </div>
+
+            {/* Phase selector */}
+            <div className="flex gap-1 mb-5 p-1 rounded-xl" style={{ background: "var(--surfaceAlt)" }}>
+              {(["Lancement", "Croissance", "Maturité"] as CheckupPhase[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => { setCheckupPhase(p); setCheckupValues({}); setCheckupSubmitted(false); }}
+                  className="flex-1 py-1.5 rounded-lg text-[12px] font-semibold transition-all"
+                  style={{
+                    background: checkupPhase === p ? "var(--surface)" : "transparent",
+                    color: checkupPhase === p ? "var(--accent)" : "var(--textMuted)",
+                    border: checkupPhase === p ? "1px solid var(--border)" : "1px solid transparent",
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
+            {/* Fields */}
+            <div className="space-y-3 mb-4">
+              {CHECKUP_FIELDS[checkupPhase].map((f) => (
+                <div key={f.key} className="flex items-center gap-3">
+                  <label className="text-[12px] font-medium flex-1" style={{ color: "var(--text)" }}>
+                    {f.label}{f.unit ? ` (${f.unit})` : ""}
+                  </label>
+                  <input
+                    type="number"
+                    value={checkupValues[f.key] ?? ""}
+                    onChange={(e) => setCheckupValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                    placeholder="—"
+                    className="w-24 rounded-lg px-3 py-1.5 text-[13px] font-semibold text-right outline-none"
+                    style={{ background: "var(--surfaceAlt)", color: "var(--text)", border: "1px solid var(--border)" }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Valider */}
+            <button
+              onClick={() => setCheckupSubmitted(true)}
+              className="w-full py-2.5 rounded-xl text-[13px] font-bold transition-all hover:opacity-90 active:scale-95"
+              style={{ background: "var(--accent)", color: "#000" }}
+            >
+              Valider
+            </button>
+
+            {/* Résumé */}
+            {checkupSubmitted && (
+              <div className="mt-4 rounded-xl p-4 space-y-2" style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
+                <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--textMuted)" }}>
+                  Récapitulatif — {checkupPhase}
+                </div>
+                {CHECKUP_FIELDS[checkupPhase].map((f) => (
+                  <div key={f.key} className="flex items-center justify-between">
+                    <span className="text-[12px]" style={{ color: "var(--textMuted)" }}>{f.label}</span>
+                    <span className="text-[13px] font-bold" style={{ color: "var(--accent)" }}>
+                      {checkupValues[f.key] ? `${checkupValues[f.key]}${f.unit}` : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
