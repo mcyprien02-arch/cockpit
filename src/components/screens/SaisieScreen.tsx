@@ -20,27 +20,6 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   dg: { color: "#ff4d6a", bg: "#ff4d6a18" },
 };
 
-// ─── Network benchmarks ────────────────────────────────────────
-const BENCHMARKS: Record<string, { value: number | string; unit: string }> = {
-  "ca / m²": { value: 7700, unit: "€/m²" },
-  "panier moyen": { value: 97.5, unit: "€" },
-  "taux de transformation": { value: 25.4, unit: "%" },
-  "taux marge nette": { value: 38.5, unit: "%" },
-  "masse salariale": { value: 15, unit: "%" },
-  "ebe": { value: 8, unit: "%" },
-  "démarque": { value: 3, unit: "%" },
-  "stock âgé": { value: 30, unit: "%" },
-  "note google": { value: 4.5, unit: "/5" },
-  "nps": { value: 72, unit: "" },
-  "sav": { value: 10, unit: "%" },
-  "gmroi": { value: 3.84, unit: "" },
-  "ca par collaborateur": { value: 20000, unit: "€/mois" },
-};
-function getBenchmark(nom: string) {
-  const n = nom.toLowerCase();
-  const key = Object.keys(BENCHMARKS).find(k => n.includes(k));
-  return key ? BENCHMARKS[key] : null;
-}
 
 function TrendChip({ current, previous }: { current: number; previous: number }) {
   const diff = current - previous;
@@ -338,11 +317,6 @@ export function SaisieScreen({ magasinId }: { magasinId: string }) {
                               <span style={{ color: "var(--textDim)" }}>
                                 {item.indicateur.direction === "up" ? "↑ plus = mieux" : "↓ moins = mieux"}
                               </span>
-                              {(() => {
-                                const bench = getBenchmark(item.indicateur.nom);
-                                if (!bench) return null;
-                                return <span style={{ color: "#a78bfa80" }}>Réseau: {bench.value}{bench.unit}</span>;
-                              })()}
                             </div>
                           </div>
 
