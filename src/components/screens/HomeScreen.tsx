@@ -590,6 +590,10 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
   const [papActions, setPapActions] = useState<Array<{id:string;kpiImpacte:string;statut:string;action:string;impactFinancier?:number}>>([]);
   const [diagIA, setDiagIA] = useState<DiagResult | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [modePilotage, setModePilotage] = useState<"Redresser" | "Performer">(() => {
+    if (typeof window === "undefined") return "Redresser";
+    return (localStorage.getItem("mode_pilotage") as "Redresser" | "Performer") ?? "Redresser";
+  });
 
   const loadData = useCallback(async () => {
     if (!magasinId) return;
@@ -771,8 +775,38 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
     );
   }
 
+  const handleModeChange = (mode: "Redresser" | "Performer") => {
+    setModePilotage(mode);
+    localStorage.setItem("mode_pilotage", mode);
+  };
+
   return (
     <div className="space-y-5">
+      {/* ── Switch mode pilotage ───────────────────────────────── */}
+      <div className="flex justify-center">
+        <div className="flex rounded-xl p-1 gap-1" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+          {(["Redresser", "Performer"] as const).map((mode) => {
+            const active = modePilotage === mode;
+            const isRedresser = mode === "Redresser";
+            const activeColor = isRedresser ? "#ff4d6a" : "#00d4aa";
+            return (
+              <button
+                key={mode}
+                onClick={() => handleModeChange(mode)}
+                className="px-5 py-2 rounded-lg text-[13px] font-bold transition-all"
+                style={{
+                  background: active ? `${activeColor}18` : "transparent",
+                  color: active ? activeColor : "var(--textMuted)",
+                  border: active ? `1px solid ${activeColor}40` : "1px solid transparent",
+                }}
+              >
+                {isRedresser ? "🆘" : "🚀"} {mode}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ── 5 Non-négociables + Missions du mois ───────────────── */}
       <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
         {/* 5 Non-négociables */}
