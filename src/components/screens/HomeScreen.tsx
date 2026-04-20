@@ -1083,6 +1083,69 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
               Voir tout →
             </button>
           </div>
+
+          {/* KPIs prioritaires selon le mode */}
+          {(() => {
+            const get = (partial: string) => valeurs.find(v => v.indicateur_nom?.toLowerCase().includes(partial.toLowerCase()));
+            const REDRESSER_KPIS = [
+              { key: "stock âg",  label: "Stock âgé",        fallback: "Déstockez le TOP 20 valeur cette semaine" },
+              { key: "gmroi",     label: "GMROI",             fallback: "Déstockez, n'achetez pas" },
+              { key: "masse sal", label: "Masse salariale",   fallback: "Gelez embauches, revoyez heures sup" },
+              { key: "marge",     label: "Taux marge nette",  fallback: "Auditez les prix d'achat vs cote EasyPrice" },
+            ];
+            const PERFORMER_KPIS = [
+              { key: "note",       label: "Note Google",              fallback: "Relance systématique en caisse" },
+              { key: "estaly",     label: "Contrats Estaly",          fallback: "Concours équipe + prime 5€/contrat" },
+              { key: "panier",     label: "Panier moyen",             fallback: "Renforcer le TLAC et ventes additionnelles" },
+              { key: "ventes addi", label: "Ventes additionnelles",   fallback: "Formation TLAC équipe cette semaine" },
+              { key: "digital",   label: "Poids digital",             fallback: "Pousser les avis Google et réseaux sociaux" },
+            ];
+            const list = modePilotage === "Redresser" ? REDRESSER_KPIS : PERFORMER_KPIS;
+            const modeColor = modePilotage === "Redresser" ? "#ff4d6a" : "#00d4aa";
+            const modeIcon = modePilotage === "Redresser" ? "🆘" : "🚀";
+
+            const priorityItems = list
+              .map(({ key, label, fallback }) => {
+                const v = get(key);
+                if (!v || v.status === "ok") return null;
+                return {
+                  label,
+                  valeur: v.valeur,
+                  unite: v.unite ?? "",
+                  status: v.status,
+                  action: v.action_defaut ?? fallback,
+                };
+              })
+              .filter(Boolean) as { label: string; valeur: number; unite: string; status: "wn" | "dg"; action: string }[];
+
+            if (priorityItems.length === 0) return (
+              <div className="mb-3 px-3 py-2 rounded-lg text-[11px]" style={{ background: `${modeColor}10`, color: modeColor, border: `1px solid ${modeColor}25` }}>
+                {modeIcon} Tous les KPIs {modePilotage === "Redresser" ? "de redressement" : "de performance"} sont au vert
+              </div>
+            );
+
+            return (
+              <div className="mb-3 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: modeColor }}>
+                  {modeIcon} Focus {modePilotage}
+                </div>
+                {priorityItems.map((item) => {
+                  const c = item.status === "dg" ? "#ff4d6a" : "#ffb347";
+                  return (
+                    <div key={item.label} className="rounded-lg p-2 border-l-2" style={{ background: `${c}08`, borderLeftColor: c }}>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-[10px] font-bold" style={{ color: c }}>{item.label}</span>
+                        <span className="text-[10px] font-semibold ml-auto" style={{ color: c }}>{item.valeur}{item.unite}</span>
+                      </div>
+                      <div className="text-[10px]" style={{ color: "var(--textMuted)" }}>→ {item.action}</div>
+                    </div>
+                  );
+                })}
+                <div className="border-t my-2" style={{ borderColor: "var(--border)" }} />
+              </div>
+            );
+          })()}
+
           {(() => {
             const now = new Date();
             const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -1091,7 +1154,7 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
               .slice(0, 5);
             const late = openActions.filter(a => a.statut !== "Fait" && a.statut !== "Abandonné" && a.echeance && new Date(a.echeance) < now);
             if (missions.length === 0 && late.length === 0) {
-              return <div className="text-[12px] text-center py-4" style={{ color: "var(--textDim)" }}>Aucune mission ce mois-ci</div>;
+              return <div className="text-[12px] text-center py-2" style={{ color: "var(--textDim)" }}>Aucune mission ce mois-ci</div>;
             }
             const all = [...late.filter(a => !missions.find(m => m.id === a.id)), ...missions].slice(0, 5);
             return (
