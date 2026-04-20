@@ -12,6 +12,35 @@ import type { ValeurAvecIndicateur, CategorieScore } from "@/types";
 import { callDiagnostiqueur } from "@/lib/agents/diagnostiqueur";
 import type { DiagResult } from "@/lib/agents/diagnostiqueur";
 
+function getProjection(
+  nom: string,
+  valeur: number,
+  caAnnuel: number | null,
+  stockTotal: number | null,
+): string | null {
+  const n = nom.toLowerCase();
+  const fmt = (v: number) => Math.round(v).toLocaleString("fr-FR");
+
+  if (n.includes("stock âg") || n.includes("stock age") || n.includes("stock ag")) {
+    if (stockTotal === null) return null;
+    const cashImmo = stockTotal * (valeur - 20) / 100;
+    const margePerdue = cashImmo * 0.08;
+    return `${fmt(cashImmo)} € de cash immobilisé + ${fmt(margePerdue)} € de marge perdue`;
+  }
+  if (n.includes("masse sal")) {
+    if (caAnnuel === null) return null;
+    const ebePerdu = caAnnuel * (valeur - 15) / 100 / 2;
+    return `${fmt(ebePerdu)} € d'EBE perdu`;
+  }
+  if ((n.includes("note") && (n.includes("google") || n.includes("web") || n.includes("réputation"))) || n === "note google") {
+    if (valeur >= 4) return null;
+    if (caAnnuel === null) return null;
+    const caPerdu = caAnnuel * 0.03 / 2;
+    return `${fmt(caPerdu)} € de CA perdu`;
+  }
+  return null;
+}
+
 const STATUS_COLORS = {
   ok: { color: "#00d4aa", bg: "#00d4aa18", label: "OK" },
   wn: { color: "#ffb347", bg: "#ffb34718", label: "Vigilance" },
@@ -83,6 +112,18 @@ export function DiagnosticScreen({ magasinId }: { magasinId: string }) {
 
   const score = computeScore(valeurs);
   const categories = computeCategoryScores(valeurs);
+
+  const caAnnuel: number | null = (() => {
+    const v = valeurs.find(x => x.indicateur_nom?.toLowerCase().includes("chiffre") || x.indicateur_nom?.toLowerCase().includes(" ca "));
+    return v?.valeur ? v.valeur * 12 : null;
+  })();
+  const stockTotal: number | null = (() => {
+    const v = valeurs.find(x => {
+      const n = x.indicateur_nom?.toLowerCase() ?? "";
+      return (n.includes("stock") && (x.unite === "€" || n.includes("total") || n.includes("valeur"))) && !n.includes("âg") && !n.includes("age");
+    });
+    return v?.valeur ?? null;
+  })();
 
   // Radar data
   const radarData = categories.map((c) => ({
@@ -447,6 +488,31 @@ export function DiagnosticScreen({ magasinId }: { magasinId: string }) {
                                     → {item.action_defaut}
                                   </div>
                                 )}
+
+                                {/* Projection 6 mois */}
+                                {s === "dg" && (() => {
+                                  const proj = getProjection(item.indicateur_nom, item.valeur, caAnnuel, stockTotal);
+                                  const unavailable = proj === null && (
+                                    item.indicateur_nom?.toLowerCase().includes("stock âg") ||
+                                    item.indicateur_nom?.toLowerCase().includes("masse sal") ||
+                                    (item.indicateur_nom?.toLowerCase().includes("note") && item.valeur < 4)
+                                  );
+                                  if (!proj && !unavailable) return null;
+                                  return (
+                                    <div
+                                      className="mt-2 px-3 py-2.5 rounded-lg text-[11px]"
+                                      style={{ background: "#2a2e3a", border: "1px solid #3a3f52", color: "var(--textMuted)" }}
+                                    >
+                                      <div className="font-semibold mb-1" style={{ color: "var(--textDim)" }}>
+                                        Si rien ne bouge dans 6 mois :
+                                      </div>
+                                      {proj
+                                        ? <span style={{ color: "#ff4d6a" }}>⚠ {proj}</span>
+                                        : <span style={{ color: "var(--textDim)" }}>Projection indisponible — saisissez vos données CA et stock</span>
+                                      }
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>
