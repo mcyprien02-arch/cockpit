@@ -571,6 +571,72 @@ function ArbreDecision({ valeurs, onNavigate }: ArbreProps) {
   );
 }
 
+// ─── Check-up constants ───────────────────────────────────────
+type CheckupPhase = "Lancement" | "Croissance" | "Maturité";
+
+const CHECKUP_FIELDS: Record<CheckupPhase, { key: string; label: string; unit: string }[]> = {
+  Lancement: [
+    { key: "noteGoogle",  label: "Note Google",              unit: "/5" },
+    { key: "estaly",      label: "Nb contrats Estaly/sem.",  unit: ""   },
+    { key: "stock",       label: "Stock total",              unit: "€"  },
+    { key: "panier",      label: "Panier moyen",             unit: "€"  },
+    { key: "etp",         label: "Nb ETP",                   unit: ""   },
+  ],
+  Croissance: [
+    { key: "stockAge",    label: "Stock âgé",                unit: "%" },
+    { key: "gmroi",       label: "GMROI",                    unit: ""  },
+    { key: "masseSal",    label: "Masse salariale",          unit: "%" },
+    { key: "noteGoogle",  label: "Note Google",              unit: "/5"},
+    { key: "ventesAddi",  label: "Ventes additionnelles",    unit: "%" },
+  ],
+  Maturité: [
+    { key: "gmroi",       label: "GMROI",                    unit: ""  },
+    { key: "masseSal",    label: "Masse salariale",          unit: "%" },
+    { key: "margeNette",  label: "Taux marge nette",         unit: "%" },
+    { key: "turnover",    label: "Turnover",                 unit: "%" },
+    { key: "digital",     label: "Poids digital",            unit: "%" },
+  ],
+};
+
+type SeuilDef = { direction: "up" | "down"; seuil_ok: number; seuil_vigilance: number };
+const CHECKUP_SEUIL_DEFAULTS: Record<string, SeuilDef> = {
+  noteGoogle:  { direction: "up",   seuil_ok: 4.4,  seuil_vigilance: 4.0  },
+  estaly:      { direction: "up",   seuil_ok: 5,    seuil_vigilance: 3    },
+  panier:      { direction: "up",   seuil_ok: 97.5, seuil_vigilance: 80   },
+  stockAge:    { direction: "down", seuil_ok: 30,   seuil_vigilance: 45   },
+  gmroi:       { direction: "up",   seuil_ok: 3.84, seuil_vigilance: 2.5  },
+  masseSal:    { direction: "down", seuil_ok: 15,   seuil_vigilance: 18   },
+  ventesAddi:  { direction: "up",   seuil_ok: 20,   seuil_vigilance: 15   },
+  margeNette:  { direction: "up",   seuil_ok: 38,   seuil_vigilance: 32   },
+  turnover:    { direction: "down", seuil_ok: 30,   seuil_vigilance: 50   },
+  digital:     { direction: "up",   seuil_ok: 15,   seuil_vigilance: 8    },
+};
+
+const CHECKUP_PRIORITY_ACTIONS: Record<string, string> = {
+  stockAge:   "Traitez votre TOP 20 valeur cette semaine",
+  masseSal:   "Revoyez vos heures sup, gelez embauches",
+  gmroi:      "Déstockez, n'achetez pas",
+  noteGoogle: "Relance systématique en caisse",
+  estaly:     "Concours équipe + prime 5€/contrat",
+};
+
+function checkupStatus(key: string, valeur: number, customSeuils: Record<string, SeuilDef>): "ok" | "wn" | "dg" | null {
+  const s = customSeuils[key] ?? CHECKUP_SEUIL_DEFAULTS[key];
+  if (!s) return null;
+  if (s.direction === "up") {
+    return valeur >= s.seuil_ok ? "ok" : valeur >= s.seuil_vigilance ? "wn" : "dg";
+  }
+  return valeur <= s.seuil_ok ? "ok" : valeur <= s.seuil_vigilance ? "wn" : "dg";
+}
+
+function checkupDistance(key: string, valeur: number, customSeuils: Record<string, SeuilDef>): number {
+  const s = customSeuils[key] ?? CHECKUP_SEUIL_DEFAULTS[key];
+  if (!s || s.seuil_ok === 0) return 0;
+  return s.direction === "up"
+    ? (s.seuil_ok - valeur) / s.seuil_ok
+    : (valeur - s.seuil_ok) / s.seuil_ok;
+}
+
 // ─── Main Home Screen ─────────────────────────────────────────
 interface HomeScreenProps {
   magasinId: string;
@@ -595,30 +661,6 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
     return (localStorage.getItem("mode_pilotage") as "Redresser" | "Performer") ?? "Redresser";
   });
   const [checkupOpen, setCheckupOpen] = useState(false);
-  type CheckupPhase = "Lancement" | "Croissance" | "Maturité";
-  const CHECKUP_FIELDS: Record<CheckupPhase, { key: string; label: string; unit: string }[]> = {
-    Lancement: [
-      { key: "noteGoogle", label: "Note Google", unit: "/5" },
-      { key: "estaly", label: "Nb contrats Estaly/semaine", unit: "" },
-      { key: "stock", label: "Stock total", unit: "€" },
-      { key: "panier", label: "Panier moyen", unit: "€" },
-      { key: "etp", label: "Nb ETP", unit: "" },
-    ],
-    Croissance: [
-      { key: "stockAge", label: "Stock âgé", unit: "%" },
-      { key: "gmroi", label: "GMROI", unit: "" },
-      { key: "masseSal", label: "Masse salariale", unit: "%" },
-      { key: "noteGoogle", label: "Note Google", unit: "/5" },
-      { key: "ventesAddi", label: "Ventes additionnelles", unit: "%" },
-    ],
-    Maturité: [
-      { key: "gmroi", label: "GMROI", unit: "" },
-      { key: "masseSal", label: "Masse salariale", unit: "%" },
-      { key: "margeNette", label: "Taux marge nette", unit: "%" },
-      { key: "turnover", label: "Turnover", unit: "%" },
-      { key: "digital", label: "Poids digital", unit: "%" },
-    ],
-  };
   const [checkupPhase, setCheckupPhase] = useState<CheckupPhase>("Croissance");
   const [checkupValues, setCheckupValues] = useState<Record<string, string>>({});
   const [checkupSubmitted, setCheckupSubmitted] = useState(false);
@@ -912,22 +954,72 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
               Valider
             </button>
 
-            {/* Résumé */}
-            {checkupSubmitted && (
-              <div className="mt-4 rounded-xl p-4 space-y-2" style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
-                <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--textMuted)" }}>
-                  Récapitulatif — {checkupPhase}
-                </div>
-                {CHECKUP_FIELDS[checkupPhase].map((f) => (
-                  <div key={f.key} className="flex items-center justify-between">
-                    <span className="text-[12px]" style={{ color: "var(--textMuted)" }}>{f.label}</span>
-                    <span className="text-[13px] font-bold" style={{ color: "var(--accent)" }}>
-                      {checkupValues[f.key] ? `${checkupValues[f.key]}${f.unit}` : "—"}
-                    </span>
+            {/* Résumé + scoring */}
+            {checkupSubmitted && (() => {
+              const customSeuils: Record<string, SeuilDef> = (() => {
+                try {
+                  const raw = localStorage.getItem(`seuils_${magasinId}`);
+                  return raw ? JSON.parse(raw) : {};
+                } catch { return {}; }
+              })();
+
+              const fields = CHECKUP_FIELDS[checkupPhase];
+              const STATUS_COLOR = { ok: "#00d4aa", wn: "#ffb347", dg: "#ff4d6a" };
+              const STATUS_LABEL = { ok: "OK", wn: "Vigilance", dg: "Action" };
+
+              // compute status + distance for each field that has a value
+              const scored = fields.map((f) => {
+                const raw = checkupValues[f.key];
+                const val = raw !== undefined && raw !== "" ? parseFloat(raw) : null;
+                const st = val !== null ? checkupStatus(f.key, val, customSeuils) : null;
+                const dist = val !== null && st !== null ? checkupDistance(f.key, val, customSeuils) : -Infinity;
+                return { ...f, val, st, dist };
+              });
+
+              // priority = most-red then highest distance
+              const dgItems = scored.filter((x) => x.st === "dg").sort((a, b) => b.dist - a.dist);
+              const wnItems = scored.filter((x) => x.st === "wn").sort((a, b) => b.dist - a.dist);
+              const priority = dgItems[0] ?? wnItems[0] ?? null;
+
+              return (
+                <>
+                  <div className="mt-4 rounded-xl p-4 space-y-2.5" style={{ background: "var(--surfaceAlt)", border: "1px solid var(--border)" }}>
+                    <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--textMuted)" }}>
+                      Récapitulatif — {checkupPhase}
+                    </div>
+                    {scored.map((f) => {
+                      const color = f.st ? STATUS_COLOR[f.st] : "var(--textDim)";
+                      return (
+                        <div key={f.key} className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                          <span className="text-[12px] flex-1" style={{ color: "var(--text)" }}>{f.label}</span>
+                          <span className="text-[12px] font-bold" style={{ color: "var(--text)" }}>
+                            {f.val !== null ? `${f.val}${f.unit}` : "—"}
+                          </span>
+                          {f.st && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${color}20`, color }}>
+                              {STATUS_LABEL[f.st]}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
+
+                  {priority && CHECKUP_PRIORITY_ACTIONS[priority.key] && (
+                    <div className="mt-3 rounded-xl p-4" style={{ background: "#ff4d6a0e", border: "1px solid #ff4d6a30" }}>
+                      <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: "#ff4d6a" }}>
+                        🎯 Priorité n°1
+                      </div>
+                      <div className="text-[13px] font-semibold mb-1" style={{ color: "var(--text)" }}>{priority.label}</div>
+                      <div className="text-[12px]" style={{ color: "var(--textMuted)" }}>
+                        → {CHECKUP_PRIORITY_ACTIONS[priority.key]}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
