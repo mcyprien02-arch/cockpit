@@ -594,6 +594,7 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
     if (typeof window === "undefined") return "Redresser";
     return (localStorage.getItem("mode_pilotage") as "Redresser" | "Performer") ?? "Redresser";
   });
+  const [checkupOpen, setCheckupOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!magasinId) return;
@@ -782,8 +783,8 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
 
   return (
     <div className="space-y-5">
-      {/* ── Switch mode pilotage ───────────────────────────────── */}
-      <div className="flex justify-center">
+      {/* ── Switch mode pilotage + Check-up ───────────────────── */}
+      <div className="flex items-center justify-center gap-3">
         <div className="flex rounded-xl p-1 gap-1" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
           {(["Redresser", "Performer"] as const).map((mode) => {
             const active = modePilotage === mode;
@@ -805,7 +806,40 @@ export function HomeScreen({ magasinId, onNavigate }: HomeScreenProps) {
             );
           })}
         </div>
+        <button
+          onClick={() => setCheckupOpen(true)}
+          className="px-4 py-2 rounded-xl text-[13px] font-bold transition-all hover:opacity-90 active:scale-95"
+          style={{ background: "#a78bfa22", color: "#a78bfa", border: "1px solid #a78bfa40" }}
+        >
+          ⏱ Check-up 15 min
+        </button>
       </div>
+
+      {/* ── Modal Check-up ─────────────────────────────────────── */}
+      {checkupOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+          onClick={() => setCheckupOpen(false)}
+        >
+          <div
+            className="rounded-2xl p-6 w-full max-w-md mx-4"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[18px] font-bold" style={{ color: "var(--text)" }}>⏱ Check-up rapide</h2>
+              <button
+                onClick={() => setCheckupOpen(false)}
+                className="text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+                style={{ background: "var(--surfaceAlt)", color: "var(--textMuted)", border: "1px solid var(--border)" }}
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 5 Non-négociables + Missions du mois ───────────────── */}
       <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
