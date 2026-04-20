@@ -184,6 +184,82 @@ function GanttChart({ actions, onScrollTo }: {
   );
 }
 
+// ── Word export ──────────────────────────────────────────────────────────────
+async function exportPAP(data: { nom: string }, actions: PAPAction[]) {
+  try {
+    const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, AlignmentType, WidthType, ShadingType } = await import('docx');
+
+    const dateStr = new Date().toLocaleDateString('fr-FR');
+    const sorted = [...actions].sort((a, b) => {
+      if (a.priorite !== b.priorite) return a.priorite - b.priorite;
+      if (!a.echeance && !b.echeance) return 0;
+      if (!a.echeance) return 1;
+      if (!b.echeance) return -1;
+      return a.echeance.localeCompare(b.echeance);
+    });
+
+    const COLS = ['Titre', 'Axe', 'Pilote', 'Copilote', 'Échéance', 'Priorité', 'Gain estimé', 'Statut'];
+    const headerRow = new TableRow({
+      children: COLS.map(text => new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text, bold: true })] })],
+        shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'D0D0D0' },
+      })),
+    });
+
+    const dataRows = sorted.map(a => new TableRow({
+      children: [
+        a.titre,
+        a.axe,
+        a.pilote || '',
+        a.copilote || '',
+        a.echeance ? new Date(a.echeance).toLocaleDateString('fr-FR') : '',
+        `P${a.priorite}`,
+        a.gain > 0 ? `${a.gain.toLocaleString('fr-FR')} €` : '',
+        a.statut,
+      ].map(text => new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text: String(text) })] })],
+      })),
+    }));
+
+    const doc = new Document({
+      sections: [{
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: 'EASYCASH', bold: true, size: 72, color: 'CC0000' })],
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            children: [new TextRun({ text: `Plan d'Action — ${data.nom} — ${dateStr}`, bold: true, size: 28 })],
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({ children: [] }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [headerRow, ...dataRows],
+          }),
+          new Paragraph({ children: [] }),
+          new Paragraph({
+            children: [new TextRun({ text: 'Document généré par Cockpit EasyCash', color: '888888', italics: true })],
+            alignment: AlignmentType.CENTER,
+          }),
+        ],
+      }],
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `PAP_${data.nom}_${new Date().toISOString().slice(0, 10)}.docx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(e);
+    alert(`Erreur export Word : ${msg}`);
+  }
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function PlanAction({ data, actions, onSave }: Props) {
   const [form, setForm] = useState<Omit<PAPAction, 'id'>>(EMPTY_ACTION);
@@ -288,12 +364,20 @@ export default function PlanAction({ data, actions, onSave }: Props) {
             {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <button
-          onClick={() => { setForm(EMPTY_ACTION); setEditId(null); setShowForm(true); }}
-          className="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
-        >
-          + Nouvelle action
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => exportPAP(data, actions)}
+            className="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+          >
+            📄 Exporter PAP en Word
+          </button>
+          <button
+            onClick={() => { setForm(EMPTY_ACTION); setEditId(null); setShowForm(true); }}
+            className="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+          >
+            + Nouvelle action
+          </button>
+        </div>
       </div>
 
       {/* Form */}

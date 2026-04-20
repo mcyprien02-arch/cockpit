@@ -41,6 +41,106 @@ const AVG_COLOR = (avg: number) =>
 
 function uid() { return Math.random().toString(36).slice(2); }
 
+const LEVEL_FILL = ['808080', '60a5fa', 'facc15', '22c55e'];
+
+async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
+  try {
+    const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, AlignmentType, WidthType, ShadingType } = await import('docx');
+
+    const dateStr = new Date().toLocaleDateString('fr-FR');
+
+    function makeCell(text: string, fill?: string) {
+      return new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text })] })],
+        ...(fill ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill } } : {}),
+      });
+    }
+
+    const headerRow = new TableRow({
+      children: [
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Compétence', bold: true })] })], shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'D0D0D0' } }),
+        ...collab.map(c => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: c.prenom + (c.poste ? ` (${c.poste})` : ''), bold: true })] })], shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'D0D0D0' } })),
+      ],
+    });
+
+    const compRows = DOMAINES.flatMap(domaine => [
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun({ text: domaine.titre, bold: true })] })],
+            columnSpan: collab.length + 1,
+            shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'E8E8E8' },
+          }),
+        ],
+      }),
+      ...domaine.competences.map(comp => new TableRow({
+        children: [
+          makeCell(comp),
+          ...collab.map(c => {
+            const lvl = c.competences[comp] ?? 0;
+            return makeCell(String(lvl), LEVEL_FILL[lvl]);
+          }),
+        ],
+      })),
+    ]);
+
+    // Dependency alerts
+    const dependencyAlerts: string[] = [];
+    ALL_COMPETENCES.forEach(comp => {
+      const masters = collab.filter(c => (c.competences[comp] ?? 0) === 3);
+      if (masters.length === 1) dependencyAlerts.push(`⚠ ${comp} repose sur ${masters[0].prenom} seul — risque dépendance`);
+    });
+    const noMasteryAlerts = collab
+      .filter(c => ALL_COMPETENCES.every(comp => (c.competences[comp] ?? 0) < 3))
+      .map(c => `⚠ ${c.prenom} : aucune compétence maîtrisée — besoin formation`);
+    const allAlerts = [...dependencyAlerts, ...noMasteryAlerts];
+
+    const doc = new Document({
+      sections: [{
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: 'EASYCASH', bold: true, size: 72, color: 'CC0000' })],
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            children: [new TextRun({ text: `Grille de Compétences — ${magasinNom} — ${dateStr}`, bold: true, size: 28 })],
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({ children: [] }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [headerRow, ...compRows],
+          }),
+          new Paragraph({ children: [] }),
+          new Paragraph({ children: [new TextRun({ text: 'Légende : 0 = Aucune connaissance | 1 = Connaissance sans pratique | 2 = Pratique occasionnelle | 3 = Maîtrisé', italics: true, color: '555555' })] }),
+          ...(allAlerts.length > 0 ? [
+            new Paragraph({ children: [] }),
+            new Paragraph({ children: [new TextRun({ text: 'Alertes équipe', bold: true })] }),
+            ...allAlerts.map(a => new Paragraph({ children: [new TextRun({ text: a, color: 'CC0000' })] })),
+          ] : []),
+          new Paragraph({ children: [] }),
+          new Paragraph({
+            children: [new TextRun({ text: 'Document généré par Cockpit EasyCash', color: '888888', italics: true })],
+            alignment: AlignmentType.CENTER,
+          }),
+        ],
+      }],
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Competences_${magasinNom}_${new Date().toISOString().slice(0, 10)}.docx`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(e);
+    alert(`Erreur export Word : ${msg}`);
+  }
+}
+
 export default function Competences({ magasinNom }: Props) {
   const storageKey = `comp_${magasinNom}`;
 
@@ -112,12 +212,20 @@ export default function Competences({ magasinNom }: Props) {
           <h2 className="text-lg font-bold">Compétences — {magasinNom || 'Magasin'}</h2>
           <p className="text-sm text-gray-400">{collab.length} collaborateur{collab.length > 1 ? 's' : ''}</p>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
-        >
-          + Collaborateur
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => exportCompetences(magasinNom, collab)}
+            className="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+          >
+            📄 Exporter grille en Word
+          </button>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+          >
+            + Collaborateur
+          </button>
+        </div>
       </div>
 
       {/* Add form */}

@@ -15,11 +15,24 @@ interface EquipeRow {
 interface EquipeStore {
   rows: EquipeRow[];
   caAnnuel: number;
+  tauxMarge: number;
 }
 
 function uid() { return Math.random().toString(36).slice(2); }
 
 const CONTRATS = ['CDI 35H', 'CDI 39H', 'CDD', 'Apprenti', 'Stage'];
+
+function caColor(v: number) {
+  if (v >= 200000 && v <= 300000) return 'text-green-400';
+  if ((v >= 150000 && v < 200000) || (v > 300000 && v <= 400000)) return 'text-yellow-400';
+  return 'text-red-400';
+}
+
+function margeColor(v: number) {
+  if (v > 90000) return 'text-green-400';
+  if (v >= 60000) return 'text-yellow-400';
+  return 'text-red-400';
+}
 
 export default function Simulateur({ magasinNom }: Props) {
   const equipeKey = `equipe_${magasinNom}`;
@@ -29,11 +42,12 @@ export default function Simulateur({ magasinNom }: Props) {
       const s = typeof window !== 'undefined' ? localStorage.getItem(equipeKey) : null;
       if (s) {
         const p = JSON.parse(s) as unknown;
-        if (Array.isArray(p)) return { rows: p as EquipeRow[], caAnnuel: 0 };
-        return p as EquipeStore;
+        if (Array.isArray(p)) return { rows: p as EquipeRow[], caAnnuel: 0, tauxMarge: 38 };
+        const parsed = p as EquipeStore;
+        return { ...parsed, tauxMarge: parsed.tauxMarge ?? 38 };
       }
-      return { rows: [], caAnnuel: 0 };
-    } catch { return { rows: [], caAnnuel: 0 }; }
+      return { rows: [], caAnnuel: 0, tauxMarge: 38 };
+    } catch { return { rows: [], caAnnuel: 0, tauxMarge: 38 }; }
   });
 
   const [showExplain, setShowExplain] = useState(false);
@@ -55,12 +69,14 @@ export default function Simulateur({ magasinNom }: Props) {
     saveEquipeStore({ ...equipeStore, rows: equipeStore.rows.filter(e => e.id !== id) });
   }
 
-  const { rows: equipe, caAnnuel } = equipeStore;
+  const { rows: equipe, caAnnuel, tauxMarge } = equipeStore;
   const totalMasseSal = equipe.reduce((s, e) => s + (e.heures * e.salaireHoraire * 12 * 1.42), 0);
   const totalHeures = equipe.reduce((s, e) => s + e.heures, 0);
   const totalEtp = totalHeures / 151.67;
   const masseSalPct = caAnnuel > 0 ? (totalMasseSal / caAnnuel) * 100 : 0;
   const ratioCAEtp = totalEtp > 0 && caAnnuel > 0 ? caAnnuel / totalEtp : 0;
+  const caParEtp = totalEtp > 0 && caAnnuel > 0 ? caAnnuel / totalEtp : 0;
+  const margeParEtp = totalEtp > 0 && caAnnuel > 0 ? (caAnnuel * tauxMarge / 100) / totalEtp : 0;
 
   return (
     <div className="space-y-5">
@@ -69,19 +85,31 @@ export default function Simulateur({ magasinNom }: Props) {
       </div>
 
       <div className="space-y-4">
-        {/* CA input */}
-        <div className="bg-gray-800 rounded-xl p-4">
-          <label className="text-xs text-gray-400 block mb-1">CA annuel du magasin (€)</label>
-          <input
-            type="number"
-            value={caAnnuel || ''}
-            onChange={e => saveEquipeStore({ ...equipeStore, caAnnuel: parseFloat(e.target.value) || 0 })}
-            placeholder="Ex : 2000000"
-            className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white w-full md:w-60 focus:outline-none focus:border-green-500"
-          />
+        {/* CA + taux marge inputs */}
+        <div className="bg-gray-800 rounded-xl p-4 flex flex-wrap gap-4">
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">CA annuel du magasin (€)</label>
+            <input
+              type="number"
+              value={caAnnuel || ''}
+              onChange={e => saveEquipeStore({ ...equipeStore, caAnnuel: parseFloat(e.target.value) || 0 })}
+              placeholder="Ex : 2000000"
+              className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white w-52 focus:outline-none focus:border-green-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">Taux de marge (%)</label>
+            <input
+              type="number"
+              value={tauxMarge || ''}
+              onChange={e => saveEquipeStore({ ...equipeStore, tauxMarge: parseFloat(e.target.value) || 38 })}
+              placeholder="38"
+              className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white w-28 focus:outline-none focus:border-green-500"
+            />
+          </div>
         </div>
 
-        {/* KPIs équipe */}
+        {/* KPIs équipe — row 1 */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-gray-800 rounded-xl p-3 text-center">
             <div className={`text-2xl font-black ${masseSalPct <= 15 ? 'text-green-400' : masseSalPct <= 18 ? 'text-yellow-400' : 'text-red-400'}`}>
@@ -97,6 +125,24 @@ export default function Simulateur({ magasinNom }: Props) {
           <div className="bg-gray-800 rounded-xl p-3 text-center">
             <div className="text-2xl font-black text-white">{totalEtp.toFixed(1)}</div>
             <div className="text-xs text-gray-400">ETP total</div>
+          </div>
+        </div>
+
+        {/* KPIs équipe — row 2 */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-gray-800 rounded-xl p-3 text-center">
+            <div className={`text-2xl font-black ${caParEtp > 0 ? caColor(caParEtp) : 'text-gray-500'}`}>
+              {caParEtp > 0 ? `${(caParEtp / 1000).toFixed(0)}k€` : '—'}
+            </div>
+            <div className="text-xs text-gray-400">CA par ETP</div>
+            <div className="text-xs text-gray-500">benchmark 250k€ · vert 200-300k</div>
+          </div>
+          <div className="bg-gray-800 rounded-xl p-3 text-center">
+            <div className={`text-2xl font-black ${margeParEtp > 0 ? margeColor(margeParEtp) : 'text-gray-500'}`}>
+              {margeParEtp > 0 ? `${(margeParEtp / 1000).toFixed(0)}k€` : '—'}
+            </div>
+            <div className="text-xs text-gray-400">Marge par ETP</div>
+            <div className="text-xs text-gray-500">vert &gt;90k · orange 60-90k · rouge &lt;60k</div>
           </div>
         </div>
 
@@ -210,6 +256,8 @@ export default function Simulateur({ magasinNom }: Props) {
           <div className="border-t border-gray-700 px-4 py-4 text-xs text-gray-300 space-y-2 leading-relaxed">
             <p><strong className="text-white">Masse salariale %</strong> = Coût salarial chargé annuel / CA annuel. Cible : ≤15% en maturité.</p>
             <p><strong className="text-white">Coût chargé</strong> = salaire brut × heures × 12 × 1.42 (charges patronales estimées France).</p>
+            <p><strong className="text-white">CA par ETP</strong> = CA annuel / nb ETP. Benchmark réseau : 250 000 €. Vert : 200-300k, orange : 150-200k ou 300-400k, rouge sinon.</p>
+            <p><strong className="text-white">Marge par ETP</strong> = (CA × taux marge) / nb ETP. Vert : &gt;90k€, orange : 60-90k€, rouge : &lt;60k€.</p>
             <p><strong className="text-white">Ratio CA/ETP</strong> = CA annuel / Nb ETP. Cible réseau : 250 000 € par ETP.</p>
             <p><strong className="text-white">Exemple :</strong> pour un CA de 3 M€, il faut environ 12 ETP (fourchette 11-14 selon profil magasin).</p>
           </div>
