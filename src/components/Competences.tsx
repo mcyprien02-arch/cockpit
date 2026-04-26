@@ -8,7 +8,7 @@ interface Collaborateur {
   id: string;
   prenom: string;
   poste: string;
-  competences: Record<string, number>; // 0-3
+  competences: Record<string, number>; // 0-2
 }
 
 const DOMAINES = [
@@ -33,15 +33,16 @@ const DOMAINES = [
 const ALL_COMPETENCES = DOMAINES.flatMap(d => d.competences);
 const TOTAL = ALL_COMPETENCES.length;
 
-// Level 0: gray (none), 1: blue (knowledge), 2: yellow (occasional), 3: green (mastered)
-const CELL_BG = ['bg-gray-700', 'bg-blue-400', 'bg-yellow-400', 'bg-green-500'];
-const LEVEL_LABELS = ['Aucune', 'Connaissance', 'Pratique', 'Maîtrise'];
+// Level 0: red (none), 1: orange (occasional), 2: green (mastered)
+const CELL_BG = ['bg-red-500', 'bg-orange-400', 'bg-green-500'];
+const LEVEL_LABELS = ['Aucune', 'Occasionnelle', 'Maîtrisée'];
 const AVG_COLOR = (avg: number) =>
-  avg >= 2.5 ? 'text-green-400' : avg >= 1.5 ? 'text-yellow-400' : avg >= 0.5 ? 'text-blue-400' : 'text-gray-500';
+  avg >= 1.5 ? 'text-green-400' : avg >= 0.5 ? 'text-orange-400' : 'text-red-400';
 
 function uid() { return Math.random().toString(36).slice(2); }
 
-const LEVEL_FILL = ['808080', '60a5fa', 'facc15', '22c55e'];
+// Word export colors: red, orange, green
+const LEVEL_FILL = ['EF4444', 'FB923C', '22C55E'];
 
 async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
   try {
@@ -87,12 +88,12 @@ async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
     // Dependency alerts
     const dependencyAlerts: string[] = [];
     ALL_COMPETENCES.forEach(comp => {
-      const masters = collab.filter(c => (c.competences[comp] ?? 0) === 3);
-      if (masters.length === 1) dependencyAlerts.push(`⚠ ${comp} repose sur ${masters[0].prenom} seul — risque dépendance`);
+      const masters = collab.filter(c => (c.competences[comp] ?? 0) === 2);
+      if (masters.length === 1) dependencyAlerts.push(`⚠ ${comp} repose sur ${masters[0].prenom} seul (seul niveau 2) — risque dépendance`);
     });
     const noMasteryAlerts = collab
-      .filter(c => ALL_COMPETENCES.every(comp => (c.competences[comp] ?? 0) < 3))
-      .map(c => `⚠ ${c.prenom} : aucune compétence maîtrisée — besoin formation`);
+      .filter(c => ALL_COMPETENCES.every(comp => (c.competences[comp] ?? 0) < 2))
+      .map(c => `⚠ ${c.prenom} : aucune compétence niveau 2 — besoin formation`);
     const allAlerts = [...dependencyAlerts, ...noMasteryAlerts];
 
     const doc = new Document({
@@ -112,7 +113,7 @@ async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
             rows: [headerRow, ...compRows],
           }),
           new Paragraph({ children: [] }),
-          new Paragraph({ children: [new TextRun({ text: 'Légende : 0 = Aucune connaissance | 1 = Connaissance sans pratique | 2 = Pratique occasionnelle | 3 = Maîtrisé', italics: true, color: '555555' })] }),
+          new Paragraph({ children: [new TextRun({ text: 'Légende : 0 = Aucune | 1 = Pratique occasionnelle | 2 = Maîtrisée', italics: true, color: '555555' })] }),
           ...(allAlerts.length > 0 ? [
             new Paragraph({ children: [] }),
             new Paragraph({ children: [new TextRun({ text: 'Alertes équipe', bold: true })] }),
@@ -148,12 +149,12 @@ export default function Competences({ magasinNom }: Props) {
     try {
       const s = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
       if (!s) return [];
-      // Migrate old data: clamp values to 0-3
+      // Migrate old data: clamp values to 0-2
       const parsed = JSON.parse(s) as Collaborateur[];
       return parsed.map(c => ({
         ...c,
         competences: Object.fromEntries(
-          Object.entries(c.competences).map(([k, v]) => [k, Math.min(v, 3)])
+          Object.entries(c.competences).map(([k, v]) => [k, Math.min(v, 2)])
         ),
       }));
     } catch { return []; }
@@ -181,7 +182,7 @@ export default function Competences({ magasinNom }: Props) {
   function cycleLevel(collabId: string, competence: string) {
     save(collab.map(c =>
       c.id === collabId
-        ? { ...c, competences: { ...c.competences, [competence]: ((c.competences[competence] ?? 0) + 1) % 4 } }
+        ? { ...c, competences: { ...c.competences, [competence]: ((c.competences[competence] ?? 0) + 1) % 3 } }
         : c
     ));
   }
@@ -193,16 +194,16 @@ export default function Competences({ magasinNom }: Props) {
     avgByComp[comp] = vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
   });
 
-  // Analysis: dependency risk (exactly 1 person at level 3)
+  // Analysis: dependency risk (exactly 1 person at level 2)
   const dependencyAlerts: Array<{ comp: string; prenom: string }> = [];
   ALL_COMPETENCES.forEach(comp => {
-    const masters = collab.filter(c => (c.competences[comp] ?? 0) === 3);
+    const masters = collab.filter(c => (c.competences[comp] ?? 0) === 2);
     if (masters.length === 1) dependencyAlerts.push({ comp, prenom: masters[0].prenom });
   });
 
-  // Analysis: no mastery alerts
+  // Analysis: no mastery alerts (no level-2 competence)
   const noMasteryAlerts = collab.filter(c =>
-    ALL_COMPETENCES.every(comp => (c.competences[comp] ?? 0) < 3)
+    ALL_COMPETENCES.every(comp => (c.competences[comp] ?? 0) < 2)
   );
 
   return (
@@ -260,7 +261,7 @@ export default function Competences({ magasinNom }: Props) {
         {LEVEL_LABELS.map((l, i) => (
           <div key={i} className="flex items-center gap-1.5">
             <div className={`w-4 h-4 rounded-sm ${CELL_BG[i]}`} />
-            <span>{i} — {l}</span>
+            <span>{i === 0 ? '🟥' : i === 1 ? '🟧' : '🟩'} {l}</span>
           </div>
         ))}
         <span className="text-gray-500 ml-2">Cliquer pour changer de niveau</span>
@@ -273,13 +274,13 @@ export default function Competences({ magasinNom }: Props) {
           {/* Per-person summary */}
           <div className="flex flex-wrap gap-2">
             {collab.map(c => {
-              const mastered = ALL_COMPETENCES.filter(comp => (c.competences[comp] ?? 0) === 3).length;
+              const mastered = ALL_COMPETENCES.filter(comp => (c.competences[comp] ?? 0) === 2).length;
               return (
                 <div key={c.id} className="bg-gray-800 rounded-lg px-3 py-2 text-xs">
                   <span className="text-gray-300 font-semibold">{c.prenom}</span>
                   {c.poste && <span className="text-gray-500 ml-1">({c.poste})</span>}
-                  <span className={`ml-2 font-bold ${mastered >= TOTAL * 0.7 ? 'text-green-400' : mastered >= TOTAL * 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
-                    {mastered}/{TOTAL} maîtrisées
+                  <span className={`ml-2 font-bold ${mastered >= TOTAL * 0.7 ? 'text-green-400' : mastered >= TOTAL * 0.4 ? 'text-orange-400' : 'text-red-400'}`}>
+                    {mastered}/{TOTAL} maîtrisées (niveau 2)
                   </span>
                 </div>
               );
@@ -341,12 +342,12 @@ export default function Competences({ magasinNom }: Props) {
               <p className="text-xs font-semibold text-red-300 mb-2">Alertes équipe</p>
               {dependencyAlerts.map(a => (
                 <p key={`dep-${a.comp}`} className="text-xs text-red-200">
-                  ⚠ <strong>{a.comp}</strong> repose sur <strong>{a.prenom}</strong> seul — risque dépendance
+                  ⚠ <strong>{a.comp}</strong> repose sur <strong>{a.prenom}</strong> seul (seul niveau 2) — risque dépendance
                 </p>
               ))}
               {noMasteryAlerts.map(c => (
                 <p key={`nm-${c.id}`} className="text-xs text-red-200">
-                  ⚠ <strong>{c.prenom}</strong> : aucune compétence maîtrisée — besoin formation
+                  ⚠ <strong>{c.prenom}</strong> : aucune compétence niveau 2 — besoin formation
                 </p>
               ))}
             </div>
