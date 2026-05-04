@@ -131,6 +131,50 @@ function NI({ label, field, form, setF, unit, placeholder, seuil, onSeuil }: {
   );
 }
 
+const CHECKUP_FIELDS: Record<string, Array<{ key: string; label: string; unit: string }>> = {
+  Lancement: [
+    { key: 'noteGoogle', label: 'Note Google', unit: '' },
+    { key: 'estalyParSemaine', label: 'Estaly / semaine', unit: '' },
+    { key: 'stockTotal', label: 'Stock total', unit: '€' },
+    { key: 'panierMoyen', label: 'Panier moyen', unit: '€' },
+    { key: 'nbEtp', label: 'Nb ETP', unit: '' },
+  ],
+  Croissance: [
+    { key: 'stockAge', label: 'Stock âgé', unit: '%' },
+    { key: 'gmroi', label: 'GMROI', unit: '' },
+    { key: 'masseSalarialePct', label: 'Masse salariale', unit: '%' },
+    { key: 'noteGoogle', label: 'Note Google', unit: '' },
+    { key: 'ventesAdditionnelles', label: 'Ventes additionnelles', unit: '%' },
+  ],
+  Maturité: [
+    { key: 'gmroi', label: 'GMROI', unit: '' },
+    { key: 'masseSalarialePct', label: 'Masse salariale', unit: '%' },
+    { key: 'tauxMargeNette', label: 'Marge nette', unit: '%' },
+    { key: 'tauxTurnover', label: 'Turnover', unit: '%' },
+    { key: 'poidsDigital', label: 'Poids digital', unit: '%' },
+  ],
+};
+
+const CHECKUP_DIR: Record<string, 'higher' | 'lower'> = {
+  noteGoogle: 'higher', estalyParSemaine: 'higher', panierMoyen: 'higher',
+  gmroi: 'higher', poidsDigital: 'higher', tauxMargeNette: 'higher',
+  ventesAdditionnelles: 'higher',
+  stockAge: 'lower', masseSalarialePct: 'lower', tauxTurnover: 'lower',
+};
+
+const CHECKUP_ACTION: Record<string, string> = {
+  stockAge: 'Traitez votre TOP 20 valeur cette semaine',
+  masseSalarialePct: 'Revoyez vos heures sup, gelez les embauches',
+  gmroi: "Déstockez avant d'acheter",
+  noteGoogle: 'Relance avis systématique en caisse',
+  estalyParSemaine: 'Concours équipe + prime 5€/contrat',
+  panierMoyen: 'Challenge +1 accessoire par vente',
+  ventesAdditionnelles: 'Brief vendeurs sur les périphériques',
+  tauxMargeNette: 'Vérifier mix rayon',
+  tauxTurnover: 'Entretiens individuels prioritaires',
+  poidsDigital: 'Push EC.fr et marketplaces',
+};
+
 export default function Dashboard({ data, onSave, actions, onNavigate }: Props) {
   const [showModal, setShowModal] = useState(!data.nom);
   const [form, setForm] = useState<MagasinData>({ ...DEFAULT_DATA, ...data });
@@ -144,6 +188,9 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     try { const s = localStorage.getItem(`seuils_${data.nom}`); return s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }; }
     catch { return { ...SEUIL_DEFAULTS }; }
   });
+  const [showCheckup, setShowCheckup] = useState(false);
+  const [checkupValues, setCheckupValues] = useState<Record<string, number>>({});
+  const [checkupResult, setCheckupResult] = useState<{ priorityKey: string; priorityLabel: string; action: string } | null>(null);
 
   useEffect(() => {
     setForm({ ...DEFAULT_DATA, ...data });
@@ -212,6 +259,30 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     setHighlightedFields(new Set());
     setPasteCount(0);
     setImportMsg('');
+  }
+
+  function handleCheckup() {
+    const fields = CHECKUP_FIELDS[phase] ?? CHECKUP_FIELDS['Maturité'];
+    let worstKey = '';
+    let worstLabel = '';
+    let worstDeviation = -Infinity;
+    fields.forEach(f => {
+      const value = checkupValues[f.key];
+      const seuil = customSeuils[f.key];
+      if (!value || !seuil) return;
+      const dir = CHECKUP_DIR[f.key] ?? 'higher';
+      const deviation = dir === 'higher' ? (seuil - value) / seuil : (value - seuil) / seuil;
+      if (deviation > worstDeviation) {
+        worstDeviation = deviation;
+        worstKey = f.key;
+        worstLabel = f.label;
+      }
+    });
+    setCheckupResult({
+      priorityKey: worstKey,
+      priorityLabel: worstLabel,
+      action: worstKey ? (CHECKUP_ACTION[worstKey] ?? '') : '',
+    });
   }
 
   // Phase-aware KPI scoring for Cercle du Cash
@@ -294,12 +365,20 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
           <h1 className="text-xl font-bold">{data.nom || <span className="text-gray-500">Aucun magasin configuré</span>}</h1>
           {data.nom && <span className="text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded-full mt-1 inline-block">{data.phase}</span>}
         </div>
-        <button
-          onClick={() => { setForm({ ...DEFAULT_DATA, ...data }); setShowModal(true); }}
-          className="px-4 py-2 rounded-lg text-sm font-semibold bg-gray-700 text-gray-200 hover:bg-gray-600 transition-colors"
-        >
-          ✏ Modifier mes données
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setCheckupValues({}); setCheckupResult(null); setShowCheckup(true); }}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-800 text-blue-100 hover:bg-blue-700 transition-colors"
+          >
+            ⏱ Check-up 15 min
+          </button>
+          <button
+            onClick={() => { setForm({ ...DEFAULT_DATA, ...data }); setShowModal(true); }}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-gray-700 text-gray-200 hover:bg-gray-600 transition-colors"
+          >
+            ✏ Modifier mes données
+          </button>
+        </div>
       </div>
 
       {!data.nom && !showModal && (
@@ -484,6 +563,80 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
               className="w-full py-3 rounded-xl font-bold text-sm bg-green-500 text-black disabled:opacity-40 hover:bg-green-400 transition-colors"
             >
               💾 Sauvegarder
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Check-up 15 min modal */}
+      {showCheckup && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[90vh]">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold">⏱ Check-up rapide</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Phase {phase} — 5 KPIs clés</p>
+              </div>
+              <button onClick={() => setShowCheckup(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
+            </div>
+
+            <div className="space-y-3">
+              {(CHECKUP_FIELDS[phase] ?? CHECKUP_FIELDS['Maturité']).map(f => (
+                <div key={f.key}>
+                  <label className="block text-xs text-gray-400 mb-1">{f.label}{f.unit ? ` (${f.unit})` : ''}</label>
+                  <input
+                    type="number"
+                    value={checkupValues[f.key] ?? ''}
+                    onChange={e => setCheckupValues(v => ({ ...v, [f.key]: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
+                    placeholder="0"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={handleCheckup}
+              className="w-full py-2.5 rounded-xl font-bold text-sm bg-green-500 text-black hover:bg-green-400 transition-colors"
+            >
+              Valider
+            </button>
+
+            {checkupResult && (
+              <div className="space-y-3 pt-2 border-t border-gray-700">
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Récap</p>
+                  {(CHECKUP_FIELDS[phase] ?? CHECKUP_FIELDS['Maturité']).map(f => (
+                    <div key={f.key} className="flex justify-between text-sm">
+                      <span className="text-gray-400">{f.label}</span>
+                      <span className="font-semibold text-white">
+                        {checkupValues[f.key] !== undefined && checkupValues[f.key] !== 0
+                          ? `${checkupValues[f.key]}${f.unit}`
+                          : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {checkupResult.priorityKey ? (
+                  <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-red-300 uppercase tracking-wider mb-1">Priorité n°1 du mois</p>
+                    <p className="font-bold text-white text-sm">{checkupResult.priorityLabel}</p>
+                    <p className="text-xs text-gray-300 mt-1.5">👉 {checkupResult.action}</p>
+                  </div>
+                ) : (
+                  <div className="bg-green-900/20 border border-green-700 rounded-xl px-4 py-3">
+                    <p className="text-sm text-green-300">✓ Tous les KPIs semblent dans les clous — définissez vos seuils dans le Dashboard pour plus de précision.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowCheckup(false)}
+              className="w-full py-2 rounded-xl text-xs text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 transition-colors"
+            >
+              Fermer
             </button>
           </div>
         </div>
