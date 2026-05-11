@@ -11,6 +11,7 @@ import Competences from '@/components/Competences';
 import Comparatif from '@/components/Comparatif';
 import VisiteCR from '@/components/VisiteCR';
 import AssistantIA from '@/components/AssistantIA';
+import { detectSpiral } from '@/lib/spiral';
 
 const TABS = [
   { id: 'dashboard',   label: 'Dashboard' },
@@ -24,7 +25,6 @@ const TABS = [
 ] as const;
 type TabId = typeof TABS[number]['id'];
 
-// ── Storage helpers ────────────────────────────────────────────────────────
 function getMagasinsKey() { return 'ec_magasins'; }
 function getDataKey(nom: string) { return `ec_data_${nom}`; }
 function getActionsKey(nom: string) { return `ec_actions_${nom}`; }
@@ -89,36 +89,49 @@ export default function App() {
     if (currentNom) localStorage.setItem(getActionsKey(currentNom), JSON.stringify(a));
   }
 
+  const spiral = data.nom ? detectSpiral(data) : 'none';
+  const isCritical = spiral === 'critical';
+  const showSpiralBanner = spiral === 'critical' || spiral === 'risk';
+
   return (
     <div className="min-h-screen bg-gray-900 text-white">
-      {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
+      {/* Header — Easycash brand */}
+      <div className="bg-[#FF1F2E] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2.5">
             <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center font-bold text-xs text-white flex-shrink-0">E</div>
-              <span className="font-bold text-sm hidden sm:block">EasyCash Cockpit</span>
+              <span className="text-xl font-black tracking-widest text-white select-none">
+                COCKPIT ♦ F
+              </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {magasins.length > 1 && (
                 <select
                   value={currentNom}
                   onChange={e => switchMagasin(e.target.value)}
-                  className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
+                  className="bg-white/20 border border-white/30 rounded-md px-3 py-1 text-sm text-white focus:outline-none"
                 >
-                  {magasins.map(m => <option key={m} value={m}>{m}</option>)}
+                  {magasins.map(m => <option key={m} value={m} className="text-gray-900">{m}</option>)}
                 </select>
               )}
-              {currentNom && <span className="text-gray-300 text-sm font-semibold hidden md:block">{currentNom}</span>}
+              {currentNom && (
+                <span className="text-white/80 text-sm font-semibold hidden md:block">
+                  {currentNom} · {data.phase}
+                </span>
+              )}
             </div>
           </div>
+
+          {/* Tabs */}
           <div className="flex overflow-x-auto -mb-px scrollbar-hide">
             {TABS.map(t => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`px-3 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 flex-shrink-0 transition-colors ${
-                  tab === t.id ? 'text-green-400 border-green-400' : 'text-gray-400 border-transparent hover:text-gray-200'
+                  tab === t.id
+                    ? 'text-white border-white'
+                    : 'text-white/60 border-transparent hover:text-white/90'
                 }`}
               >
                 {t.label}
@@ -128,12 +141,23 @@ export default function App() {
         </div>
       </div>
 
+      {/* Spiral banner */}
+      {showSpiralBanner && (
+        <div className={`${isCritical ? 'bg-[#FF1F2E]' : 'bg-orange-600'} text-white px-4 py-2.5 text-center`}>
+          <span className="font-bold text-sm">
+            {isCritical
+              ? '⚠️ SPIRALE DÉTECTÉE — Déstockage prioritaire avant tout nouvel achat'
+              : '⚠ Vigilance spirale — Stock âgé élevé + marge sous pression'}
+          </span>
+        </div>
+      )}
+
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 py-5">
         {tab === 'dashboard'   && <Dashboard   data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
         {tab === 'diagnostic'  && <Diagnostic  data={data} />}
         {tab === 'plan'        && <PlanAction   data={data} actions={actions} onSave={saveActions} />}
-        {tab === 'simulateur'  && <Simulateur   magasinNom={currentNom} />}
+        {tab === 'simulateur'  && <Simulateur   magasinNom={currentNom} isCriticalSpiral={isCritical} />}
         {tab === 'competences' && <Competences  magasinNom={currentNom} />}
         {tab === 'comparatif'  && <Comparatif   magasins={magasins} />}
         {tab === 'visite'      && <VisiteCR      data={data} actions={actions} />}

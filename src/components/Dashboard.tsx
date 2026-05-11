@@ -354,8 +354,54 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   const thisMonth = today.slice(0, 7);
   const monthActions = actions.filter(a => a.echeance.startsWith(thisMonth) && a.statut !== 'Fait').slice(0, 5);
 
-  const ic = 'w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500';
-  const hl = (k: string) => highlightedFields.has(k) ? 'ring-2 ring-green-500' : '';
+  // ── Priority computation (AXE 1) ───────────────────────────────────────────
+  const [bilanOpen, setBilanOpen] = useState(false);
+
+  const KPI_DIR_DASH: Record<string, 'higher' | 'lower'> = {
+    tauxMargeNette: 'higher', gmroi: 'higher', noteGoogle: 'higher',
+    estalyParSemaine: 'higher', panierMoyen: 'higher', tauxTransformation: 'higher',
+    poidsDigital: 'higher', tauxPiceasoft: 'higher', tauxFormation: 'higher',
+    stockAge: 'lower', tauxDemarque: 'lower', masseSalarialePct: 'lower',
+    tauxTurnover: 'lower', tauxAnnulationWeb: 'lower', tauxAchatExterne: 'lower',
+  };
+  const KPI_ACTION_DASH: Record<string, string> = {
+    stockAge: 'Traitez votre TOP 20 valeur cette semaine',
+    masseSalarialePct: 'Revoyez vos heures sup, gelez les embauches',
+    gmroi: "Déstockez avant d'acheter",
+    noteGoogle: 'Relance avis systématique en caisse',
+    estalyParSemaine: 'Concours équipe + prime 5€/contrat',
+    panierMoyen: 'Challenge +1 accessoire par vente',
+    tauxMargeNette: 'Vérifier mix rayon',
+    tauxTurnover: 'Entretiens individuels prioritaires',
+    poidsDigital: 'Push EC.fr et marketplaces',
+    tauxDemarque: 'Audit démarque urgent — procédure et inventaire',
+    tauxTransformation: 'Brief argumentation — méthode VPD',
+  };
+
+  let topKey = '', topLabel = '', topAction = '', topGain = 0;
+  let topDev = -Infinity;
+  Object.entries(KPI_DIR_DASH).forEach(([key, dir]) => {
+    const val = data[key as keyof MagasinData] as number;
+    const seuil = customSeuils[key];
+    if (!val || !seuil) return;
+    const dev = dir === 'higher' ? (seuil - val) / seuil : (val - seuil) / seuil;
+    if (dev > topDev) {
+      topDev = dev;
+      topKey = key;
+      topLabel = KPI_DEFS.find(d => d.key === key)?.label ?? key;
+      topAction = KPI_ACTION_DASH[key] ?? '';
+      if (key === 'stockAge' && data.stockTotal) {
+        topGain = Math.round(data.stockTotal * Math.max(dev, 0) * (data.gmroi || 1.5) * 0.25);
+      } else if (key === 'masseSalarialePct' && data.caAnnuel) {
+        topGain = Math.round(data.caAnnuel * Math.max(dev, 0) * 0.05);
+      } else if (data.caAnnuel) {
+        topGain = Math.round(data.caAnnuel * Math.max(dev, 0) * 0.03);
+      }
+    }
+  });
+
+  const ic = 'w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#FF1F2E]';
+  const hl = (k: string) => highlightedFields.has(k) ? 'ring-2 ring-[#FF1F2E]' : '';
 
   return (
     <div className="space-y-5">
@@ -368,7 +414,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
         <div className="flex gap-2">
           <button
             onClick={() => { setCheckupValues({}); setCheckupResult(null); setShowCheckup(true); }}
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-800 text-blue-100 hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 rounded-md text-sm font-bold uppercase tracking-wide bg-[#FF1F2E] text-white hover:bg-red-600 transition-colors"
           >
             ⏱ Check-up 15 min
           </button>
@@ -385,7 +431,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
         <div className="text-center py-16">
           <div className="text-5xl mb-3">🏪</div>
           <p className="text-gray-400">Configurez votre magasin pour commencer.</p>
-          <button onClick={() => setShowModal(true)} className="mt-4 px-5 py-2.5 rounded-xl font-bold text-sm bg-green-500 text-black">
+          <button onClick={() => setShowModal(true)} className="mt-4 px-5 py-2.5 rounded-xl font-bold text-sm uppercase tracking-wide bg-[#FF1F2E] text-white">
             Saisir mes données
           </button>
         </div>
@@ -393,51 +439,117 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
 
       {data.nom && (
         <>
-          {/* Cercle du Cash */}
-          <div className="bg-gray-800 rounded-2xl p-5 flex flex-col items-center">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Cercle du Cash</h2>
-            <CercleDuCash acheter={acheterScore} stocker={stockerScore} vendre={vendreScore} encaisser={encaisserScore} />
-            <p className="text-xs text-gray-500 mt-2">L'étape la plus faible est encadrée en rouge</p>
-          </div>
-
-          {/* Problem buttons */}
-          <div className="bg-gray-800 rounded-2xl p-5">
-            <p className="text-sm font-semibold text-gray-300 mb-3">Quel est votre problème aujourd'hui ?</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { icon: '💰', label: "Je ne gagne pas assez d'argent", tab: 'diagnostic' },
-                { icon: '📉', label: 'Mes ventes baissent', tab: 'diagnostic' },
-                { icon: '📦', label: 'Mon stock me pose problème', tab: 'diagnostic' },
-                { icon: '👥', label: 'Mon équipe ne performe pas', tab: 'diagnostic' },
-              ].map(b => (
-                <button
-                  key={b.label}
-                  onClick={() => onNavigate(b.tab)}
-                  className="text-left p-3 rounded-xl bg-gray-700 hover:bg-gray-600 transition-colors text-sm"
-                >
-                  <span className="mr-1.5">{b.icon}</span>{b.label}
-                </button>
-              ))}
+          {/* Section 1 — Votre priorité cette semaine */}
+          {topKey && topDev > 0 ? (
+            <div className="bg-[#FF1F2E] rounded-xl p-5 text-white">
+              <p className="text-xs font-bold uppercase tracking-widest text-white/80 mb-2">Votre priorité cette semaine</p>
+              <h2 className="text-xl font-black leading-tight">{topAction}</h2>
+              <p className="text-sm text-white/80 mt-1">{topLabel} — écart {Math.round(topDev * 100)}% vs seuil</p>
+              {topGain > 0 && (
+                <p className="text-3xl font-black mt-3">+{topGain.toLocaleString('fr-FR')} €</p>
+              )}
+              <button
+                onClick={() => onNavigate('plan')}
+                className="mt-4 px-4 py-2 bg-white text-[#FF1F2E] font-bold text-sm rounded-md uppercase tracking-wide hover:bg-white/90 transition-colors"
+              >
+                Ajouter au plan d&apos;action
+              </button>
             </div>
+          ) : (
+            <div className="bg-green-900/30 border border-green-700 rounded-xl p-4 text-center">
+              <p className="text-green-400 font-semibold text-sm">✓ Tous vos KPIs sont dans les seuils — continuez comme ça !</p>
+              {!topKey && <p className="text-xs text-gray-500 mt-1">Saisissez vos données et vos seuils dans le formulaire pour obtenir des recommandations.</p>}
+            </div>
+          )}
+
+          {/* Section 2 — Votre situation (3 KPI critiques) */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { key: 'stockAge',        label: 'Stock âgé',    unit: '%',  dir: 'lower'  as const, defaultSeuil: 30 },
+              { key: 'gmroi',           label: 'GMROI',        unit: '',   dir: 'higher' as const, defaultSeuil: 3.84 },
+              { key: 'masseSalarialePct', label: 'Masse sal.', unit: '% CA', dir: 'lower' as const, defaultSeuil: 15 },
+            ].map(kpi => {
+              const val = data[kpi.key as keyof MagasinData] as number;
+              const seuil = customSeuils[kpi.key] || kpi.defaultSeuil;
+              const hasData = val > 0;
+              const isOk  = hasData && (kpi.dir === 'higher' ? val >= seuil : val <= seuil);
+              const isBad = hasData && (kpi.dir === 'higher' ? val < seuil * 0.85 : val > seuil * 1.2);
+              return (
+                <div key={kpi.key} className={`bg-gray-800 rounded-xl p-3 text-center border-l-4 ${
+                  !hasData ? 'border-gray-600' : isOk ? 'border-green-500' : isBad ? 'border-[#FF1F2E]' : 'border-orange-400'
+                }`}>
+                  <div className={`text-2xl font-black ${
+                    !hasData ? 'text-gray-500' : isOk ? 'text-green-400' : isBad ? 'text-[#FF1F2E]' : 'text-orange-400'
+                  }`}>
+                    {hasData ? `${kpi.unit === '%' || kpi.unit === '% CA' ? '' : ''}${val}${kpi.unit ? ' '+kpi.unit : ''}` : '—'}
+                  </div>
+                  <div className="text-xs text-gray-300 font-medium">{kpi.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">seuil {seuil}{kpi.unit ? ' '+kpi.unit : ''}</div>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Actions du mois */}
-          <div className="bg-gray-800 rounded-2xl p-5">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-              Actions du mois ({monthActions.length})
-            </h2>
-            {monthActions.length === 0 ? (
-              <p className="text-gray-500 text-sm">Aucune action ce mois-ci.</p>
-            ) : (
-              <div className="space-y-2">
-                {monthActions.map(a => (
-                  <div key={a.id} className="flex items-center gap-3 text-sm">
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${a.statut === 'En cours' ? 'bg-yellow-400' : 'bg-gray-600'}`} />
-                    <span className="flex-1 truncate font-medium">{a.titre}</span>
-                    <span className="text-gray-500 text-xs">{a.pilote}</span>
-                    {a.gain > 0 && <span className="text-green-400 text-xs font-semibold">+{a.gain.toLocaleString('fr-FR')}€</span>}
+          {/* Section 3 — Bilan complet (accordion) */}
+          <div className="bg-gray-800 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setBilanOpen(!bilanOpen)}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-750 transition-colors"
+            >
+              <span className="font-semibold text-sm text-gray-200">Bilan complet</span>
+              <span className="text-gray-400 text-xs">{bilanOpen ? '▲ Replier' : '▼ Déplier'}</span>
+            </button>
+
+            {bilanOpen && (
+              <div className="border-t border-gray-700 p-5 space-y-5">
+                {/* Cercle du Cash */}
+                <div className="flex flex-col items-center">
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Cercle du Cash</h3>
+                  <CercleDuCash acheter={acheterScore} stocker={stockerScore} vendre={vendreScore} encaisser={encaisserScore} />
+                  <p className="text-xs text-gray-500 mt-2">L&apos;étape la plus faible est encadrée en rouge</p>
+                </div>
+
+                {/* Problem buttons */}
+                <div>
+                  <p className="text-sm font-semibold text-gray-300 mb-3">Quel est votre problème aujourd&apos;hui ?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { icon: '💰', label: "Je ne gagne pas assez d'argent", tab: 'diagnostic' },
+                      { icon: '📉', label: 'Mes ventes baissent', tab: 'diagnostic' },
+                      { icon: '📦', label: 'Mon stock me pose problème', tab: 'diagnostic' },
+                      { icon: '👥', label: 'Mon équipe ne performe pas', tab: 'diagnostic' },
+                    ].map(b => (
+                      <button
+                        key={b.label}
+                        onClick={() => onNavigate(b.tab)}
+                        className="text-left p-3 rounded-xl bg-gray-700 hover:bg-gray-600 transition-colors text-sm"
+                      >
+                        <span className="mr-1.5">{b.icon}</span>{b.label}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                </div>
+
+                {/* Actions du mois */}
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                    Actions du mois ({monthActions.length})
+                  </h3>
+                  {monthActions.length === 0 ? (
+                    <p className="text-gray-500 text-sm">Aucune action ce mois-ci.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {monthActions.map(a => (
+                        <div key={a.id} className="flex items-center gap-3 text-sm">
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${a.statut === 'En cours' ? 'bg-yellow-400' : 'bg-gray-600'}`} />
+                          <span className="flex-1 truncate font-medium">{a.titre}</span>
+                          <span className="text-gray-500 text-xs">{a.pilote}</span>
+                          {a.gain > 0 && <span className="text-green-400 text-xs font-semibold">+{a.gain.toLocaleString('fr-FR')}€</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

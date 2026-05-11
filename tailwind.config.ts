@@ -9,6 +9,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Easycash brand
+        ec: {
+          red:    "#FF1F2E",
+          dark:   "#1A0A0C",
+          light:  "#FFF5F5",
+          border: "#FFCDD1",
+        },
+        // Legacy dark theme tokens
         bg: "#0f1117",
         surface: "#1a1d27",
         surfaceAlt: "#222632",
