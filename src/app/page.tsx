@@ -6,6 +6,7 @@ import { DEFAULT_DATA } from '@/types';
 import Dashboard from '@/components/Dashboard';
 import Diagnostic from '@/components/Diagnostic';
 import PlanAction from '@/components/PlanAction';
+import Objectifs from '@/components/Objectifs';
 import Simulateur from '@/components/Simulateur';
 import Competences from '@/components/Competences';
 import Comparatif from '@/components/Comparatif';
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'dashboard',   label: 'Dashboard' },
   { id: 'diagnostic',  label: 'Diagnostic' },
   { id: 'plan',        label: "Plan d'Action" },
+  { id: 'objectifs',   label: '🎯 Objectifs' },
   { id: 'simulateur',  label: 'Simulateur' },
   { id: 'competences', label: 'Compétences' },
   { id: 'comparatif',  label: 'Comparatif' },
@@ -60,7 +62,7 @@ export default function App() {
   }, []);
 
   if (!mounted) return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center text-gray-400 text-sm">
+    <div className="min-h-screen bg-[#F5F5F5] flex items-center justify-center text-[#6B7280] text-sm">
       Chargement...
     </div>
   );
@@ -94,16 +96,12 @@ export default function App() {
   const showSpiralBanner = spiral === 'critical' || spiral === 'risk';
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      {/* Header — Easycash brand */}
-      <div className="bg-[#FF1F2E] sticky top-0 z-50">
+    <div className="min-h-screen bg-[#F5F5F5] text-[#1A1A1A]">
+      {/* Header */}
+      <div className="bg-[#E30613] sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between py-2.5">
-            <div className="flex items-center gap-3">
-              <span className="text-xl font-black tracking-widest text-white select-none">
-                COCKPIT ♦ F
-              </span>
-            </div>
+            <span className="text-xl font-black tracking-widest text-white select-none">EASYCASH</span>
             <div className="flex items-center gap-3">
               {magasins.length > 1 && (
                 <select
@@ -111,14 +109,13 @@ export default function App() {
                   onChange={e => switchMagasin(e.target.value)}
                   className="bg-white/20 border border-white/30 rounded-md px-3 py-1 text-sm text-white focus:outline-none"
                 >
-                  {magasins.map(m => <option key={m} value={m} className="text-gray-900">{m}</option>)}
+                  {magasins.map(m => <option key={m} value={m} className="text-[#1A1A1A]">{m}</option>)}
                 </select>
               )}
-              {currentNom && (
-                <span className="text-white/80 text-sm font-semibold hidden md:block">
-                  {currentNom} · {data.phase}
-                </span>
-              )}
+              {currentNom
+                ? <span className="text-white/80 text-sm font-medium hidden md:block">{currentNom} · {data.phase}</span>
+                : <span className="text-white/60 text-sm italic hidden md:block">Cockpit consultant</span>
+              }
             </div>
           </div>
 
@@ -143,7 +140,7 @@ export default function App() {
 
       {/* Spiral banner */}
       {showSpiralBanner && (
-        <div className={`${isCritical ? 'bg-[#FF1F2E]' : 'bg-orange-600'} text-white px-4 py-2.5 text-center`}>
+        <div className={`${isCritical ? 'bg-[#E30613]' : 'bg-orange-600'} text-white px-4 py-2.5 text-center`}>
           <span className="font-bold text-sm">
             {isCritical
               ? '⚠️ SPIRALE DÉTECTÉE — Déstockage prioritaire avant tout nouvel achat'
@@ -157,6 +154,7 @@ export default function App() {
         {tab === 'dashboard'   && <Dashboard   data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
         {tab === 'diagnostic'  && <Diagnostic  data={data} />}
         {tab === 'plan'        && <PlanAction   data={data} actions={actions} onSave={saveActions} />}
+        {tab === 'objectifs'   && <Objectifs    magasinNom={currentNom} />}
         {tab === 'simulateur'  && <Simulateur   magasinNom={currentNom} isCriticalSpiral={isCritical} />}
         {tab === 'competences' && <Competences  magasinNom={currentNom} />}
         {tab === 'comparatif'  && <Comparatif   magasins={magasins} />}

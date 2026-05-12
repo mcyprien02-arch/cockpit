@@ -25,7 +25,6 @@ function loadData(nom: string): MagasinData {
   } catch { return DEFAULT_DATA; }
 }
 
-// Radar chart for multiple magasins overlay
 function MultiRadar({ datasets }: { datasets: Array<{ nom: string; scores: CategoryScores; color: string }> }) {
   const cats = ['rentabilite', 'stock', 'commerce', 'rh'];
   const n = cats.length;
@@ -43,12 +42,12 @@ function MultiRadar({ datasets }: { datasets: Array<{ nom: string; scores: Categ
       {levels.map(lvl => (
         <polygon key={lvl}
           points={cats.map((_, i) => pt(i, lvl)).map(p => `${p.x},${p.y}`).join(' ')}
-          fill="none" stroke="#374151" strokeWidth="0.5"
+          fill="none" stroke="#E0E0E0" strokeWidth="0.5"
         />
       ))}
       {cats.map((_, i) => {
         const end = pt(i, 100);
-        return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#4b5563" strokeWidth="0.5" />;
+        return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#D1D5DB" strokeWidth="0.5" />;
       })}
       {datasets.map((ds) => {
         const polygon = cats.map((c, i) => pt(i, ds.scores[c as keyof CategoryScores] ?? 50)).map(p => `${p.x},${p.y}`).join(' ');
@@ -61,7 +60,7 @@ function MultiRadar({ datasets }: { datasets: Array<{ nom: string; scores: Categ
         const p = pt(i, 115);
         return (
           <text key={c} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle"
-            fill="#9ca3af" fontSize="9" fontWeight="600">
+            fill="#6B7280" fontSize="9" fontWeight="600">
             {CAT_LABELS[c]}
           </text>
         );
@@ -84,7 +83,7 @@ export default function Comparatif({ magasins }: Props) {
 
   if (magasins.length === 0) {
     return (
-      <div className="text-center text-gray-500 text-sm py-10">
+      <div className="text-center text-[#6B7280] text-sm py-10">
         Aucun magasin enregistré. Commencez par saisir les données dans le Dashboard.
       </div>
     );
@@ -92,7 +91,7 @@ export default function Comparatif({ magasins }: Props) {
 
   if (magasins.length < 2) {
     return (
-      <div className="text-center text-gray-500 text-sm py-10">
+      <div className="text-center text-[#6B7280] text-sm py-10">
         Comparatif disponible avec au moins 2 magasins.
         <br />Ajoutez un second magasin en changeant le nom dans le Dashboard.
       </div>
@@ -101,59 +100,54 @@ export default function Comparatif({ magasins }: Props) {
 
   const cats = ['rentabilite', 'stock', 'commerce', 'rh'] as const;
 
-  // Which magasin leads each category
   function leader(cat: typeof cats[number]) {
     return datasets.reduce((best, ds) =>
       ds.scores[cat] > (best?.scores[cat] ?? -1) ? ds : best, datasets[0]);
   }
 
-  // KPI comparison table — selected KPIs to display
   const compKpis = KPI_DEFS.filter(k =>
     ['tauxMargeNette', 'tauxDemarque', 'gmroi', 'stockAge', 'tauxTransformation', 'panierMoyen', 'noteGoogle', 'masseSalarialePct'].includes(String(k.key))
   );
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-bold">Comparatif réseau ({magasins.length} magasins)</h2>
+      <h2 className="text-lg font-bold text-[#1A1A1A]">Comparatif réseau ({magasins.length} magasins)</h2>
 
-      {/* Radar overlay */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3 text-center">Vue radar comparative</h3>
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
+          <h3 className="text-sm font-semibold text-[#1A1A1A] mb-3 text-center">Vue radar comparative</h3>
           <MultiRadar datasets={datasets.map((ds, i) => ({ nom: ds.nom, scores: ds.scores, color: COLORS[i % COLORS.length] }))} />
-          {/* Legend */}
           <div className="flex flex-wrap gap-3 justify-center mt-2">
             {datasets.map((ds, i) => (
               <div key={ds.nom} className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                <span className="text-xs text-gray-300">{ds.nom}</span>
+                <span className="text-xs text-[#1A1A1A]">{ds.nom}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Category scores table */}
-        <div className="bg-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Scores par catégorie</h3>
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
+          <h3 className="text-sm font-semibold text-[#1A1A1A] mb-3">Scores par catégorie</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-gray-700">
-                  <th className="text-left py-2 text-gray-400 font-medium">Catégorie</th>
+                <tr className="border-b border-[#E0E0E0]">
+                  <th className="text-left py-2 text-[#6B7280] font-medium">Catégorie</th>
                   {datasets.map((ds, i) => (
                     <th key={ds.nom} className="text-center py-2 font-medium" style={{ color: COLORS[i % COLORS.length] }}>{ds.nom}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700">
+              <tbody className="divide-y divide-[#E0E0E0]">
                 {cats.map(cat => {
                   const lead = leader(cat);
                   return (
                     <tr key={cat}>
-                      <td className="py-2 text-gray-300 font-medium">{CAT_LABELS[cat]}</td>
-                      {datasets.map((ds, i) => (
+                      <td className="py-2 text-[#6B7280] font-medium">{CAT_LABELS[cat]}</td>
+                      {datasets.map((ds) => (
                         <td key={ds.nom} className="py-2 text-center">
-                          <span className={`font-bold ${ds.nom === lead.nom ? 'text-green-400' : 'text-white'}`}>
+                          <span className={`font-bold ${ds.nom === lead.nom ? 'text-green-600' : 'text-[#1A1A1A]'}`}>
                             {Math.round(ds.scores[cat])}
                           </span>
                         </td>
@@ -161,13 +155,13 @@ export default function Comparatif({ magasins }: Props) {
                     </tr>
                   );
                 })}
-                <tr className="border-t border-gray-600">
-                  <td className="py-2 text-white font-semibold">Global</td>
-                  {datasets.map((ds, i) => {
+                <tr className="border-t border-[#E0E0E0]">
+                  <td className="py-2 text-[#1A1A1A] font-semibold">Global</td>
+                  {datasets.map((ds) => {
                     const overall = Math.round(cats.reduce((s, c) => s + ds.scores[c], 0) / cats.length);
                     return (
                       <td key={ds.nom} className="py-2 text-center">
-                        <span className={`font-black text-base ${overall >= 65 ? 'text-green-400' : overall >= 35 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        <span className={`font-black text-base ${overall >= 65 ? 'text-green-600' : overall >= 35 ? 'text-orange-500' : 'text-red-600'}`}>
                           {overall}
                         </span>
                       </td>
@@ -181,34 +175,34 @@ export default function Comparatif({ magasins }: Props) {
       </div>
 
       {/* KPI detail comparison */}
-      <div className="bg-gray-800 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-700">
-          <h3 className="font-semibold text-sm">Indicateurs clés comparés</h3>
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-[#E0E0E0] bg-[#F5F5F5]">
+          <h3 className="font-semibold text-sm text-[#1A1A1A]">Indicateurs clés comparés</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-gray-700">
-                <th className="text-left px-4 py-2 text-gray-400 font-medium">Indicateur</th>
-                <th className="text-center px-3 py-2 text-gray-400 font-medium">Cible</th>
+              <tr className="border-b border-[#E0E0E0]">
+                <th className="text-left px-4 py-2 text-[#6B7280] font-medium">Indicateur</th>
+                <th className="text-center px-3 py-2 text-[#6B7280] font-medium">Cible</th>
                 {datasets.map((ds, i) => (
                   <th key={ds.nom} className="text-center px-3 py-2 font-medium min-w-[80px]" style={{ color: COLORS[i % COLORS.length] }}>{ds.nom}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700">
+            <tbody className="divide-y divide-[#E0E0E0]">
               {compKpis.map(kpi => {
                 const values = datasets.map(ds => {
                   const v = ds.data[kpi.key];
                   return typeof v === 'number' ? v : 0;
                 });
                 return (
-                  <tr key={String(kpi.key)} className="hover:bg-gray-750">
-                    <td className="px-4 py-2 text-gray-300">{kpi.label}</td>
-                    <td className="px-3 py-2 text-center text-gray-500">{kpi.seuilOk}</td>
+                  <tr key={String(kpi.key)} className="hover:bg-[#F9F9F9]">
+                    <td className="px-4 py-2 text-[#6B7280]">{kpi.label}</td>
+                    <td className="px-3 py-2 text-center text-[#9CA3AF]">{kpi.seuilOk}</td>
                     {values.map((v, i) => {
                       const status = v > 0 ? kpi.getStatus(v) : null;
-                      const color = status === 'ok' ? 'text-green-400' : status === 'warn' ? 'text-yellow-400' : status === 'danger' ? 'text-red-400' : 'text-gray-500';
+                      const color = status === 'ok' ? 'text-green-600' : status === 'warn' ? 'text-orange-500' : status === 'danger' ? 'text-red-600' : 'text-[#9CA3AF]';
                       return (
                         <td key={i} className={`px-3 py-2 text-center font-semibold ${color}`}>
                           {v > 0 ? `${v}${kpi.unit}` : '—'}

@@ -12,14 +12,14 @@ interface Props {
 }
 
 const SECTIONS_TEMPLATE = [
-  { id: 'bilan',           label: 'Bilan de la période',    placeholder: 'CA, tendances, contexte marché local...' },
-  { id: 'stock',           label: 'Points stock',           placeholder: 'GMROI, stock âgé, familles en retard...' },
-  { id: 'commerce',        label: 'Commerce & digital',     placeholder: 'Transformation, panier moyen, web, Estaly...' },
-  { id: 'rh',              label: 'Équipe & RH',            placeholder: 'Recrutement, formation, ambiance, planning...' },
-  { id: 'points_positifs', label: 'Points positifs',        placeholder: 'Bonnes pratiques, réussites, progrès...' },
-  { id: 'points_vigilance',label: 'Points de vigilance',    placeholder: "Risques, axes d'amélioration prioritaires..." },
-  { id: 'engagements',     label: 'Engagements franchisé',  placeholder: 'Actions concrètes à mettre en place...' },
-  { id: 'prochaine_visite',label: 'Prochaine visite',       placeholder: 'Date prévue, thèmes abordés, objectifs...' },
+  { id: 'bilan',            label: 'Bilan de la période',    placeholder: 'CA, tendances, contexte marché local...' },
+  { id: 'stock',            label: 'Points stock',           placeholder: 'GMROI, stock âgé, familles en retard...' },
+  { id: 'commerce',         label: 'Commerce & digital',     placeholder: 'Transformation, panier moyen, web, Estaly...' },
+  { id: 'rh',               label: 'Équipe & RH',            placeholder: 'Recrutement, formation, ambiance, planning...' },
+  { id: 'points_positifs',  label: 'Points positifs',        placeholder: 'Bonnes pratiques, réussites, progrès...' },
+  { id: 'points_vigilance', label: 'Points de vigilance',    placeholder: "Risques, axes d'amélioration prioritaires..." },
+  { id: 'engagements',      label: 'Engagements franchisé',  placeholder: 'Actions concrètes à mettre en place...' },
+  { id: 'prochaine_visite', label: 'Prochaine visite',       placeholder: 'Date prévue, thèmes abordés, objectifs...' },
 ];
 
 export default function VisiteCR({ data, actions }: Props) {
@@ -171,10 +171,7 @@ export default function VisiteCR({ data, actions }: Props) {
         children.push(new Paragraph({ text: 'Indicateurs en alerte', heading: HeadingLevel.HEADING_2 }));
         children.push(new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: [
-            tableHeader(['Indicateur', 'Valeur', 'Cible', 'Statut', 'Recommandation']),
-            ...alertRows,
-          ],
+          rows: [tableHeader(['Indicateur', 'Valeur', 'Cible', 'Statut', 'Recommandation']), ...alertRows],
         }));
         children.push(new Paragraph({ text: '' }));
       }
@@ -183,21 +180,13 @@ export default function VisiteCR({ data, actions }: Props) {
         children.push(new Paragraph({ text: "Plan d'action", heading: HeadingLevel.HEADING_2 }));
         children.push(new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: [
-            tableHeader(['Action', 'Priorité', 'Pilote', 'Échéance', 'Statut']),
-            ...actionRows,
-          ],
+          rows: [tableHeader(['Action', 'Priorité', 'Pilote', 'Échéance', 'Statut']), ...actionRows],
         }));
         children.push(new Paragraph({ text: '' }));
       }
 
       children.push(new Paragraph({
-        children: [new TextRun({
-          text: 'Document généré par Cockpit EasyCash',
-          italics: true,
-          color: '888888',
-          size: 18,
-        })],
+        children: [new TextRun({ text: 'Document généré par Cockpit EasyCash', italics: true, color: '888888', size: 18 })],
         alignment: AlignmentType.CENTER,
       }));
 
@@ -216,13 +205,15 @@ export default function VisiteCR({ data, actions }: Props) {
     if (generated) navigator.clipboard.writeText(generated).catch(() => {});
   }
 
+  const inputCls = 'w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]';
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-lg font-bold">Compte-Rendu de Visite — {data.nom || 'Magasin'}</h2>
+        <h2 className="text-lg font-bold text-[#1A1A1A]">Compte-Rendu de Visite — {data.nom || 'Magasin'}</h2>
         <button
           onClick={autoFill}
-          className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+          className="bg-[#E30613] hover:bg-[#B8050F] text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
         >
           Auto-remplir depuis les données
         </button>
@@ -230,20 +221,20 @@ export default function VisiteCR({ data, actions }: Props) {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-xs text-gray-400">Date de visite</label>
+          <label className="text-xs text-[#6B7280]">Date de visite</label>
           <input
             type="date"
             value={dateVisite}
             onChange={e => setDateVisite(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
+            className={inputCls}
           />
         </div>
         <div>
-          <label className="text-xs text-gray-400">Consultant</label>
+          <label className="text-xs text-[#6B7280]">Consultant</label>
           <input
             value={consultant}
             onChange={e => setConsultant(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white mt-1"
+            className={inputCls}
             placeholder="Votre nom"
           />
         </div>
@@ -251,14 +242,14 @@ export default function VisiteCR({ data, actions }: Props) {
 
       <div className="space-y-3">
         {SECTIONS_TEMPLATE.map(section => (
-          <div key={section.id} className="bg-gray-800 rounded-xl p-4">
-            <label className="text-sm font-semibold text-gray-200 block mb-2">{section.label}</label>
+          <div key={section.id} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
+            <label className="text-sm font-semibold text-[#1A1A1A] block mb-2">{section.label}</label>
             <textarea
               value={sections[section.id]}
               onChange={e => updateSection(section.id, e.target.value)}
               rows={3}
               placeholder={section.placeholder}
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white resize-none focus:outline-none focus:border-green-500"
+              className="w-full bg-[#F9F9F9] border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] resize-none focus:outline-none focus:border-[#E30613]"
             />
           </div>
         ))}
@@ -267,21 +258,21 @@ export default function VisiteCR({ data, actions }: Props) {
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={generateCR}
-          className="bg-green-600 hover:bg-green-500 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+          className="bg-[#E30613] hover:bg-[#B8050F] text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
         >
           Générer le CR
         </button>
         <button
           onClick={exportWord}
           disabled={exporting}
-          className="bg-blue-700 hover:bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
+          className="bg-white border border-[#E0E0E0] hover:bg-[#F5F5F5] text-[#1A1A1A] text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
         >
           {exporting ? 'Export...' : 'Exporter Word (.docx)'}
         </button>
         {generated && (
           <button
             onClick={copyText}
-            className="bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            className="bg-white border border-[#E0E0E0] hover:bg-[#F5F5F5] text-[#1A1A1A] text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
           >
             Copier le texte
           </button>
@@ -289,9 +280,9 @@ export default function VisiteCR({ data, actions }: Props) {
       </div>
 
       {generated && (
-        <div className="bg-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Aperçu du compte-rendu</h3>
-          <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto">
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
+          <h3 className="text-sm font-semibold text-[#1A1A1A] mb-3">Aperçu du compte-rendu</h3>
+          <pre className="text-xs text-[#1A1A1A] whitespace-pre-wrap font-mono bg-[#F5F5F5] rounded-lg p-4 max-h-96 overflow-y-auto">
             {generated}
           </pre>
         </div>

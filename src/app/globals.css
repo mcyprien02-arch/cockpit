@@ -5,13 +5,13 @@
 * { box-sizing: border-box; }
 
 body {
-  background: #111827;
-  color: #f9fafb;
+  background: #FFFFFF;
+  color: #1A1A1A;
   min-height: 100vh;
   font-family: system-ui, -apple-system, sans-serif;
 }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #1f2937; }
-::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+::-webkit-scrollbar-track { background: #F5F5F5; }
+::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }

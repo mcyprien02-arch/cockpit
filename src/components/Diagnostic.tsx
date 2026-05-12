@@ -22,7 +22,6 @@ const CAT_COLOR: Record<string, string> = {
   rh: '#ef4444',
 };
 
-// ── Custom seuil traffic light ─────────────────────────────────────────────
 const KPI_DIRECTION: Record<string, 'higher' | 'lower'> = {
   tauxMargeNette: 'higher',
   tauxTransformation: 'higher', panierMoyen: 'higher', estalyParSemaine: 'higher',
@@ -40,7 +39,6 @@ function customSeuilStatus(key: string, value: number, seuil: number): KpiStatus
   return value <= seuil ? 'ok' : value <= seuil * 1.2 ? 'warn' : 'danger';
 }
 
-// ── Phase-aware overrides for 6 KPIs ──────────────────────────────────────
 interface PhaseOverride {
   seuilOk: string;
   seuilVigilance: string;
@@ -59,89 +57,29 @@ const EXCLUDED_KPIS = new Set(['chvacv', 'gmroi']);
 
 const PHASE_OVERRIDES: Record<string, Record<Phase, PhaseOverride>> = {
   stockAge: {
-    Lancement: {
-      seuilOk: '<25%', seuilVigilance: '25-35%',
-      getStatus: v => v > 0 ? s3(v, x => x < 25, x => x <= 35) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x < 25, x => x <= 35),
-    },
-    Croissance: {
-      seuilOk: '<22%', seuilVigilance: '22-32%',
-      getStatus: v => v > 0 ? s3(v, x => x < 22, x => x <= 32) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x < 22, x => x <= 32),
-    },
-    Maturité: {
-      seuilOk: '<20%', seuilVigilance: '20-30%',
-      getStatus: v => v > 0 ? s3(v, x => x < 20, x => x <= 30) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x < 20, x => x <= 30),
-    },
+    Lancement:  { seuilOk: '<25%',  seuilVigilance: '25-35%', getStatus: v => v > 0 ? s3(v, x => x < 25, x => x <= 35) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x < 25, x => x <= 35) },
+    Croissance: { seuilOk: '<22%',  seuilVigilance: '22-32%', getStatus: v => v > 0 ? s3(v, x => x < 22, x => x <= 32) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x < 22, x => x <= 32) },
+    Maturité:   { seuilOk: '<20%',  seuilVigilance: '20-30%', getStatus: v => v > 0 ? s3(v, x => x < 20, x => x <= 30) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x < 20, x => x <= 30) },
   },
   masseSalarialePct: {
-    Lancement: {
-      seuilOk: '≤18%', seuilVigilance: '18-22%',
-      getStatus: v => v > 0 ? s3(v, x => x <= 18, x => x <= 22) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x <= 18, x => x <= 22),
-    },
-    Croissance: {
-      seuilOk: '≤16%', seuilVigilance: '16-19%',
-      getStatus: v => v > 0 ? s3(v, x => x <= 16, x => x <= 19) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x <= 16, x => x <= 19),
-    },
-    Maturité: {
-      seuilOk: '≤15%', seuilVigilance: '15-18%',
-      getStatus: v => v > 0 ? s3(v, x => x <= 15, x => x <= 18) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x <= 15, x => x <= 18),
-    },
+    Lancement:  { seuilOk: '≤18%', seuilVigilance: '18-22%', getStatus: v => v > 0 ? s3(v, x => x <= 18, x => x <= 22) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x <= 18, x => x <= 22) },
+    Croissance: { seuilOk: '≤16%', seuilVigilance: '16-19%', getStatus: v => v > 0 ? s3(v, x => x <= 16, x => x <= 19) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x <= 16, x => x <= 19) },
+    Maturité:   { seuilOk: '≤15%', seuilVigilance: '15-18%', getStatus: v => v > 0 ? s3(v, x => x <= 15, x => x <= 18) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x <= 15, x => x <= 18) },
   },
   tauxMargeNette: {
-    Lancement: {
-      seuilOk: '≥35%', seuilVigilance: '30-35%',
-      getStatus: v => s3(v, x => x >= 35, x => x >= 30),
-      score: v => sc3(v, x => x >= 35, x => x >= 30),
-    },
-    Croissance: {
-      seuilOk: '≥36%', seuilVigilance: '33-36%',
-      getStatus: v => s3(v, x => x >= 36, x => x >= 33),
-      score: v => sc3(v, x => x >= 36, x => x >= 33),
-    },
-    Maturité: {
-      seuilOk: '≥38%', seuilVigilance: '35-38%',
-      getStatus: v => s3(v, x => x >= 38, x => x >= 35),
-      score: v => sc3(v, x => x >= 38, x => x >= 35),
-    },
+    Lancement:  { seuilOk: '≥35%', seuilVigilance: '30-35%', getStatus: v => s3(v, x => x >= 35, x => x >= 30), score: v => sc3(v, x => x >= 35, x => x >= 30) },
+    Croissance: { seuilOk: '≥36%', seuilVigilance: '33-36%', getStatus: v => s3(v, x => x >= 36, x => x >= 33), score: v => sc3(v, x => x >= 36, x => x >= 33) },
+    Maturité:   { seuilOk: '≥38%', seuilVigilance: '35-38%', getStatus: v => s3(v, x => x >= 38, x => x >= 35), score: v => sc3(v, x => x >= 38, x => x >= 35) },
   },
   noteGoogle: {
-    Lancement: {
-      seuilOk: '>4.0', seuilVigilance: '3.5-4.0',
-      getStatus: v => s3(v, x => x > 4.0, x => x >= 3.5),
-      score: v => sc3(v, x => x > 4.0, x => x >= 3.5),
-    },
-    Croissance: {
-      seuilOk: '>4.2', seuilVigilance: '3.8-4.2',
-      getStatus: v => s3(v, x => x > 4.2, x => x >= 3.8),
-      score: v => sc3(v, x => x > 4.2, x => x >= 3.8),
-    },
-    Maturité: {
-      seuilOk: '>4.4', seuilVigilance: '4.0-4.4',
-      getStatus: v => s3(v, x => x > 4.4, x => x >= 4.0),
-      score: v => sc3(v, x => x > 4.4, x => x >= 4.0),
-    },
+    Lancement:  { seuilOk: '>4.0', seuilVigilance: '3.5-4.0', getStatus: v => s3(v, x => x > 4.0, x => x >= 3.5), score: v => sc3(v, x => x > 4.0, x => x >= 3.5) },
+    Croissance: { seuilOk: '>4.2', seuilVigilance: '3.8-4.2', getStatus: v => s3(v, x => x > 4.2, x => x >= 3.8), score: v => sc3(v, x => x > 4.2, x => x >= 3.8) },
+    Maturité:   { seuilOk: '>4.4', seuilVigilance: '4.0-4.4', getStatus: v => s3(v, x => x > 4.4, x => x >= 4.0), score: v => sc3(v, x => x > 4.4, x => x >= 4.0) },
   },
   tauxTurnover: {
-    Lancement: {
-      seuilOk: '<25%', seuilVigilance: '25-35%',
-      getStatus: v => v > 0 ? s3(v, x => x < 25, x => x <= 35) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x < 25, x => x <= 35),
-    },
-    Croissance: {
-      seuilOk: '<20%', seuilVigilance: '20-30%',
-      getStatus: v => v > 0 ? s3(v, x => x < 20, x => x <= 30) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x < 20, x => x <= 30),
-    },
-    Maturité: {
-      seuilOk: '<15%', seuilVigilance: '15-25%',
-      getStatus: v => v > 0 ? s3(v, x => x < 15, x => x <= 25) : 'ok',
-      score: v => v <= 0 ? 0 : sc3(v, x => x < 15, x => x <= 25),
-    },
+    Lancement:  { seuilOk: '<25%', seuilVigilance: '25-35%', getStatus: v => v > 0 ? s3(v, x => x < 25, x => x <= 35) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x < 25, x => x <= 35) },
+    Croissance: { seuilOk: '<20%', seuilVigilance: '20-30%', getStatus: v => v > 0 ? s3(v, x => x < 20, x => x <= 30) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x < 20, x => x <= 30) },
+    Maturité:   { seuilOk: '<15%', seuilVigilance: '15-25%', getStatus: v => v > 0 ? s3(v, x => x < 15, x => x <= 25) : 'ok', score: v => v <= 0 ? 0 : sc3(v, x => x < 15, x => x <= 25) },
   },
 };
 
@@ -149,11 +87,9 @@ function getOverride(key: string, phase: Phase): PhaseOverride | null {
   return PHASE_OVERRIDES[key]?.[phase] ?? null;
 }
 
-// Phase-aware category scores
 function getCategoryScoresPhase(data: MagasinData, phase: Phase): Record<KpiCategory, number> {
   const cats: KpiCategory[] = ['rentabilite', 'stock', 'commerce', 'gamme', 'rh'];
   const result = {} as Record<KpiCategory, number>;
-
   for (const cat of cats) {
     const kpis = KPI_DEFS.filter(k => k.category === cat && !EXCLUDED_KPIS.has(String(k.key)));
     const vals = kpis
@@ -169,7 +105,6 @@ function getCategoryScoresPhase(data: MagasinData, phase: Phase): Record<KpiCate
   return result;
 }
 
-// SVG Radar
 function RadarChart({ scores }: { scores: Record<string, number> }) {
   const cats = Object.keys(scores);
   const n = cats.length;
@@ -189,18 +124,18 @@ function RadarChart({ scores }: { scores: Record<string, number> }) {
       {levels.map(lvl => (
         <polygon key={lvl}
           points={cats.map((_, i) => pt(i, lvl)).map(p => `${p.x},${p.y}`).join(' ')}
-          fill="none" stroke="#374151" strokeWidth="0.5" />
+          fill="none" stroke="#E0E0E0" strokeWidth="0.5" />
       ))}
       {cats.map((_, i) => {
         const end = pt(i, 100);
-        return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#4b5563" strokeWidth="0.5" />;
+        return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#D1D5DB" strokeWidth="0.5" />;
       })}
-      <polygon points={polygon} fill="rgba(16,185,129,0.2)" stroke="#10b981" strokeWidth="1.5" />
+      <polygon points={polygon} fill="rgba(16,185,129,0.15)" stroke="#10b981" strokeWidth="1.5" />
       {cats.map((c, i) => {
         const p = pt(i, 115);
         return (
           <text key={c} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle"
-            fill="#9ca3af" fontSize="9" fontWeight="600">
+            fill="#6B7280" fontSize="9" fontWeight="600">
             {CAT_LABELS[c as KpiCategory]}
           </text>
         );
@@ -214,10 +149,10 @@ function RadarChart({ scores }: { scores: Record<string, number> }) {
 }
 
 function statusColor(s: string) {
-  return s === 'ok' ? 'text-green-400' : s === 'warn' ? 'text-yellow-400' : 'text-red-400';
+  return s === 'ok' ? 'text-green-600' : s === 'warn' ? 'text-orange-500' : 'text-red-600';
 }
 function statusBg(s: string) {
-  return s === 'ok' ? 'bg-green-900/40 border-green-700' : s === 'warn' ? 'bg-yellow-900/40 border-yellow-700' : 'bg-red-900/40 border-red-700';
+  return s === 'ok' ? 'bg-green-50 border-green-300' : s === 'warn' ? 'bg-orange-50 border-orange-300' : 'bg-red-50 border-red-200';
 }
 function statusLabel(s: string) {
   return s === 'ok' ? 'OK' : s === 'warn' ? 'Vigilance' : 'Danger';
@@ -242,38 +177,38 @@ export default function Diagnostic({ data }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h2 className="text-lg font-bold">Diagnostic {data.nom || 'Magasin'}</h2>
-          <p className="text-sm text-gray-400">Score global : <span className="font-bold text-white">{overall}/100</span></p>
+          <h2 className="text-lg font-bold text-[#1A1A1A]">Diagnostic {data.nom || 'Magasin'}</h2>
+          <p className="text-sm text-[#6B7280]">Score global : <span className="font-bold text-[#1A1A1A]">{overall}/100</span></p>
         </div>
         <div className="text-right">
-          <div className={`text-2xl font-black ${overall >= 65 ? 'text-green-400' : overall >= 35 ? 'text-yellow-400' : 'text-red-400'}`}>{overall}</div>
-          <div className="text-xs text-gray-400">/ 100</div>
+          <div className={`text-2xl font-black ${overall >= 65 ? 'text-green-600' : overall >= 35 ? 'text-orange-500' : 'text-red-600'}`}>{overall}</div>
+          <div className="text-xs text-[#6B7280]">/ 100</div>
         </div>
       </div>
 
       {/* Phase banner */}
-      <div className="bg-yellow-900/20 border border-yellow-700/40 rounded-xl px-4 py-2 text-xs text-yellow-300/80">
-        Feux tricolores basés sur <strong className="text-yellow-200">vos seuils personnalisés</strong> (Dashboard → Modifier mes données).
+      <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-2 text-xs text-orange-700">
+        Feux tricolores basés sur <strong className="text-orange-800">vos seuils personnalisés</strong> (Dashboard → Modifier mes données).
         {' '}Seuil vide = valeur brute affichée sans feu.
       </div>
 
       {/* Radar + bars */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gray-800 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3 text-center">Vue globale</h3>
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
+          <h3 className="text-sm font-semibold text-[#1A1A1A] mb-3 text-center">Vue globale</h3>
           <RadarChart scores={scores} />
         </div>
-        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">Scores par catégorie</h3>
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-[#1A1A1A] mb-3">Scores par catégorie</h3>
           {allCats.map(cat => {
             const s = scores[cat] ?? 50;
             return (
               <div key={cat}>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-gray-300">{CAT_LABELS[cat]}</span>
-                  <span className="font-bold text-white">{s}</span>
+                  <span className="text-[#6B7280]">{CAT_LABELS[cat]}</span>
+                  <span className="font-bold text-[#1A1A1A]">{s}</span>
                 </div>
-                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-2 bg-[#E0E0E0] rounded-full overflow-hidden">
                   <div className="h-full rounded-full transition-all" style={{ width: `${s}%`, background: CAT_COLOR[cat] }} />
                 </div>
               </div>
@@ -284,29 +219,29 @@ export default function Diagnostic({ data }: Props) {
 
       {/* KPI detail by category */}
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-gray-300">Détail par indicateur</h3>
+        <h3 className="text-sm font-semibold text-[#1A1A1A]">Détail par indicateur</h3>
         {allCats.map(cat => {
           const kpis = KPI_DEFS.filter(k => k.category === cat && !EXCLUDED_KPIS.has(String(k.key)));
           const isOpen = openCat === cat;
           return (
-            <div key={cat} className="bg-gray-800 rounded-xl overflow-hidden">
+            <div key={cat} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
               <button
                 onClick={() => setOpenCat(isOpen ? null : cat)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-750 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F5F5F5] transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-2.5 h-2.5 rounded-full" style={{ background: CAT_COLOR[cat] }} />
-                  <span className="font-semibold text-sm">{CAT_LABELS[cat]}</span>
-                  <span className="text-xs text-gray-400">{kpis.length} indicateurs</span>
+                  <span className="font-semibold text-sm text-[#1A1A1A]">{CAT_LABELS[cat]}</span>
+                  <span className="text-xs text-[#6B7280]">{kpis.length} indicateurs</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold">{scores[cat] ?? 50}/100</span>
-                  <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
+                  <span className="text-sm font-bold text-[#1A1A1A]">{scores[cat] ?? 50}/100</span>
+                  <span className="text-[#6B7280] text-xs">{isOpen ? '▲' : '▼'}</span>
                 </div>
               </button>
 
               {isOpen && (
-                <div className="border-t border-gray-700 divide-y divide-gray-700">
+                <div className="border-t border-[#E0E0E0] divide-y divide-[#E0E0E0]">
                   {kpis.map(kpi => {
                     const value = data[kpi.key];
                     const numVal = typeof value === 'number' ? value : 0;
@@ -316,11 +251,11 @@ export default function Diagnostic({ data }: Props) {
                     const status = hasData && hasSeuil ? customSeuilStatus(String(kpi.key), numVal, rawSeuil) : 'ok';
                     const showBadge = hasData && hasSeuil;
                     return (
-                      <div key={String(kpi.key)} className={`px-4 py-3 border-l-2 ${showBadge ? statusBg(status) : 'border-gray-600'}`}>
+                      <div key={String(kpi.key)} className={`px-4 py-3 border-l-2 ${showBadge ? statusBg(status) : 'border-[#E0E0E0]'}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium text-gray-200">{kpi.label}</span>
+                              <span className="text-sm font-medium text-[#1A1A1A]">{kpi.label}</span>
                               {showBadge && (
                                 <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${statusColor(status)}`}>
                                   {statusLabel(status)}
@@ -328,23 +263,23 @@ export default function Diagnostic({ data }: Props) {
                               )}
                             </div>
                             {hasSeuil ? (
-                              <div className="text-xs text-yellow-600/70 mt-0.5">Mon seuil : {rawSeuil}{kpi.unit}</div>
+                              <div className="text-xs text-amber-600 mt-0.5">Mon seuil : {rawSeuil}{kpi.unit}</div>
                             ) : (
-                              <div className="text-xs text-gray-500 mt-0.5 italic">Aucun seuil défini — saisissez-le dans le Dashboard</div>
+                              <div className="text-xs text-[#6B7280] mt-0.5 italic">Aucun seuil défini — saisissez-le dans le Dashboard</div>
                             )}
                             {showBadge && status !== 'ok' && (
-                              <div className="text-xs mt-1.5 text-gray-300 bg-gray-900/50 rounded p-2">
+                              <div className="text-xs mt-1.5 text-[#1A1A1A] bg-[#F5F5F5] rounded p-2">
                                 {status === 'danger' ? kpi.actionDanger : kpi.actionWarn}
                               </div>
                             )}
                           </div>
                           <div className="text-right flex-shrink-0">
                             {hasData ? (
-                              <span className={`text-sm font-bold ${showBadge ? statusColor(status) : 'text-gray-300'}`}>
+                              <span className={`text-sm font-bold ${showBadge ? statusColor(status) : 'text-[#6B7280]'}`}>
                                 {numVal}{kpi.unit}
                               </span>
                             ) : (
-                              <span className="text-xs text-gray-500">—</span>
+                              <span className="text-xs text-[#6B7280]">—</span>
                             )}
                           </div>
                         </div>
