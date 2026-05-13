@@ -7,6 +7,7 @@ import Dashboard from '@/components/Dashboard';
 import Diagnostic from '@/components/Diagnostic';
 import PlanAction from '@/components/PlanAction';
 import Objectifs from '@/components/Objectifs';
+import CouvertureGamme from '@/components/CouvertureGamme';
 import Simulateur from '@/components/Simulateur';
 import Competences from '@/components/Competences';
 import Comparatif from '@/components/Comparatif';
@@ -19,6 +20,7 @@ const TABS = [
   { id: 'diagnostic',  label: 'Diagnostic' },
   { id: 'plan',        label: "Plan d'Action" },
   { id: 'objectifs',   label: '🎯 Objectifs' },
+  { id: 'couverture',  label: '🎯 Couverture de gamme' },
   { id: 'simulateur',  label: 'Simulateur' },
   { id: 'competences', label: 'Compétences' },
   { id: 'comparatif',  label: 'Comparatif' },
@@ -154,8 +156,9 @@ export default function App() {
         {tab === 'dashboard'   && <Dashboard   data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
         {tab === 'diagnostic'  && <Diagnostic  data={data} />}
         {tab === 'plan'        && <PlanAction   data={data} actions={actions} onSave={saveActions} />}
-        {tab === 'objectifs'   && <Objectifs    magasinNom={currentNom} />}
-        {tab === 'simulateur'  && <Simulateur   magasinNom={currentNom} isCriticalSpiral={isCritical} />}
+        {tab === 'objectifs'   && <Objectifs       magasinNom={currentNom} />}
+        {tab === 'couverture'  && <CouvertureGamme magasinNom={currentNom} />}
+        {tab === 'simulateur'  && <Simulateur      magasinNom={currentNom} isCriticalSpiral={isCritical} />}
         {tab === 'competences' && <Competences  magasinNom={currentNom} />}
         {tab === 'comparatif'  && <Comparatif   magasins={magasins} />}
         {tab === 'visite'      && <VisiteCR      data={data} actions={actions} />}
