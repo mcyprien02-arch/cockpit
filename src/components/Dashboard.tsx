@@ -13,6 +13,12 @@ interface Props {
   onNavigate: (tab: string) => void;
 }
 
+interface ProcessState {
+  piceasoft: boolean;
+  formation: boolean;
+  briefing: boolean;
+}
+
 // ── Cercle du Cash SVG ─────────────────────────────────────────────────────
 function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
   acheter: number; stocker: number; vendre: number; encaisser: number;
@@ -41,8 +47,7 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
   const minScore = Math.min(acheter, stocker, vendre, encaisser);
 
   function arcPath(sa: number, ea: number): string {
-    const s = sa + gap;
-    const e = ea - gap;
+    const s = sa + gap; const e = ea - gap;
     const cos1 = Math.cos(s); const sin1 = Math.sin(s);
     const cos2 = Math.cos(e); const sin2 = Math.sin(e);
     const x1o = cx + outerR * cos1; const y1o = cy + outerR * sin1;
@@ -52,7 +57,7 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
     return `M ${x1o} ${y1o} A ${outerR} ${outerR} 0 0 1 ${x2o} ${y2o} L ${x2i} ${y2i} A ${innerR} ${innerR} 0 0 0 ${x1i} ${y1i} Z`;
   }
 
-  function labelXY(midAngle: number): { x: number; y: number } {
+  function labelXY(midAngle: number) {
     const r = outerR + 26;
     return { x: cx + r * Math.cos(midAngle), y: cy + r * Math.sin(midAngle) };
   }
@@ -65,14 +70,9 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
         const isMin = st.score === minScore && minScore < 65;
         return (
           <g key={i}>
-            <path
-              d={arcPath(st.sa, st.ea)}
-              fill={c(st.score)}
-              stroke={isMin ? '#dc2626' : 'none'}
-              strokeWidth={isMin ? 4 : 0}
-              opacity={0.85}
-              className={isMin ? 'animate-pulse' : ''}
-            />
+            <path d={arcPath(st.sa, st.ea)} fill={c(st.score)}
+              stroke={isMin ? '#dc2626' : 'none'} strokeWidth={isMin ? 4 : 0}
+              opacity={0.85} className={isMin ? 'animate-pulse' : ''} />
             <text x={lp.x} y={lp.y} textAnchor="middle" dominantBaseline="middle"
               fill="#1A1A1A" fontSize="10" fontWeight="700" letterSpacing="0.5">
               {st.label}
@@ -81,13 +81,10 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
         );
       })}
       {steps.map((st, i) => {
-        const nextAngle = st.ea;
-        const arrowX = cx + outerR * 1.02 * Math.cos(nextAngle);
-        const arrowY = cy + outerR * 1.02 * Math.sin(nextAngle);
-        return (
-          <text key={`arr${i}`} x={arrowX} y={arrowY} textAnchor="middle"
-            dominantBaseline="middle" fill="#9CA3AF" fontSize="11">→</text>
-        );
+        const arrowX = cx + outerR * 1.02 * Math.cos(st.ea);
+        const arrowY = cy + outerR * 1.02 * Math.sin(st.ea);
+        return <text key={`arr${i}`} x={arrowX} y={arrowY} textAnchor="middle"
+          dominantBaseline="middle" fill="#9CA3AF" fontSize="11">→</text>;
       })}
       <text x={cx} y={cy - 10} textAnchor="middle" fill={scoreColor} fontSize="30" fontWeight="800">{score}</text>
       <text x={cx} y={cy + 14} textAnchor="middle" fill="#6B7280" fontSize="10">/100</text>
@@ -95,33 +92,53 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
   );
 }
 
-// ── Number input helper ────────────────────────────────────────────────────
-function NI({ label, field, form, setF, unit, placeholder, seuil, onSeuil }: {
+// ── KPI row : label | valeur | seuil sur une ligne ─────────────────────────
+function KpiRow({ label, field, form, setF, unit, placeholder, seuil, onSeuil }: {
   label: string; field: keyof MagasinData;
   form: MagasinData; setF: (k: keyof MagasinData, v: number) => void;
   unit?: string; placeholder?: string;
   seuil?: number; onSeuil?: (v: number) => void;
 }) {
   return (
-    <div>
-      <label className="block text-xs text-[#6B7280] mb-1">{label}{unit ? ` (${unit})` : ''}</label>
-      <input type="number"
-        className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 py-3 border-b border-[#F0F0F0] last:border-0">
+      <span className="flex-1 text-sm text-[#1A1A1A] font-medium">
+        {label}
+        {unit && <span className="text-[#9CA3AF] ml-1 text-xs font-normal">({unit})</span>}
+      </span>
+      <input
+        type="number"
+        className="w-full sm:w-32 bg-white border border-[#E0E0E0] rounded-lg px-2 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
         value={(form[field] as number) || ''}
         onChange={e => setF(field, parseFloat(e.target.value) || 0)}
         placeholder={placeholder ?? '0'}
       />
       {onSeuil !== undefined && (
-        <div className="flex items-center gap-1.5 mt-1.5">
-          <span className="text-[10px] text-amber-600 whitespace-nowrap">Mon seuil :</span>
-          <input type="number"
-            className="flex-1 min-w-0 bg-amber-50 border border-amber-300 rounded px-2 py-1 text-amber-700 text-xs focus:outline-none focus:border-amber-400"
-            value={seuil ?? ''}
-            onChange={e => { const v = parseFloat(e.target.value); onSeuil(isNaN(v) ? 0 : v); }}
-            placeholder="cible..."
-          />
-        </div>
+        <input
+          type="number"
+          className="w-full sm:w-28 bg-amber-50 border border-amber-300 rounded-lg px-2 py-2 text-amber-700 text-xs focus:outline-none focus:border-amber-400"
+          value={seuil ?? ''}
+          onChange={e => { const v = parseFloat(e.target.value); onSeuil(isNaN(v) ? 0 : v); }}
+          placeholder="Mon seuil…"
+        />
       )}
+    </div>
+  );
+}
+
+// ── Toggle row ─────────────────────────────────────────────────────────────
+function ToggleRow({ label, value, onChange, hint }: {
+  label: string; value: boolean; onChange: (v: boolean) => void; hint?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 py-3 border-b border-[#F0F0F0] last:border-0">
+      <span className="flex-1 text-sm text-[#1A1A1A] font-medium">{label}</span>
+      <button
+        onClick={() => onChange(!value)}
+        className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${value ? 'bg-green-500' : 'bg-[#D1D5DB]'}`}
+      >
+        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
+      </button>
+      {hint && <span className="text-[10px] text-[#6B7280] italic max-w-[120px] leading-snug">{hint}</span>}
     </div>
   );
 }
@@ -139,19 +156,20 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     try { const s = localStorage.getItem(`seuils_${data.nom}`); return s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }; }
     catch { return { ...SEUIL_DEFAULTS }; }
   });
+  const [process, setProcess] = useState<ProcessState>({ piceasoft: false, formation: false, briefing: false });
 
-  useEffect(() => {
-    setForm({ ...DEFAULT_DATA, ...data });
-  }, [data]);
+  useEffect(() => { setForm({ ...DEFAULT_DATA, ...data }); }, [data]);
 
   useEffect(() => {
     try { const s = localStorage.getItem(`seuils_${data.nom}`); setCustomSeuils(s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }); }
     catch { setCustomSeuils({ ...SEUIL_DEFAULTS }); }
+    try {
+      const p = localStorage.getItem(`process_${data.nom}`);
+      setProcess(p ? JSON.parse(p) as ProcessState : { piceasoft: false, formation: false, briefing: false });
+    } catch { setProcess({ piceasoft: false, formation: false, briefing: false }); }
   }, [data.nom]);
 
-  function setF(k: keyof MagasinData, v: number) {
-    setForm(f => ({ ...f, [k]: v }));
-  }
+  function setF(k: keyof MagasinData, v: number) { setForm(f => ({ ...f, [k]: v })); }
 
   function setCustomSeuil(key: string, v: number) {
     setCustomSeuils(prev => {
@@ -159,6 +177,12 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       if (v === 0) delete next[key]; else next[key] = v;
       return next;
     });
+  }
+
+  function toggleProcess(key: keyof ProcessState) {
+    const next = { ...process, [key]: !process[key] };
+    setProcess(next);
+    if (data.nom) localStorage.setItem(`process_${data.nom}`, JSON.stringify(next));
   }
 
   function handlePaste() {
@@ -178,7 +202,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       const wb = XLSX.read(data2, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 });
-
       const headers: string[] = [];
       const values: unknown[] = [];
       rows.forEach((row: unknown[]) => {
@@ -187,7 +210,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
           values.push(row[1]);
         }
       });
-
       const text = headers.map((h, i) => `${h} ${values[i]}`).join('\n');
       const parsed = parsePastedText(text);
       const keys = Object.keys(parsed);
@@ -203,6 +225,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     if (!form.nom.trim()) return;
     onSave(form);
     localStorage.setItem(`seuils_${form.nom}`, JSON.stringify(customSeuils));
+    if (form.nom) localStorage.setItem(`process_${form.nom}`, JSON.stringify(process));
     setShowModal(false);
     setHighlightedFields(new Set());
     setPasteCount(0);
@@ -217,11 +240,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       if (phase === 'Lancement') return value < 25 ? 100 : value <= 35 ? 50 : 0;
       if (phase === 'Croissance') return value < 22 ? 100 : value <= 32 ? 50 : 0;
       return value < 20 ? 100 : value <= 30 ? 50 : 0;
-    }
-    if (key === 'gmroi') {
-      if (phase === 'Lancement') return value >= 2 ? 100 : value >= 1.5 ? 50 : 0;
-      if (phase === 'Croissance') return value >= 3 ? 100 : value >= 2 ? 50 : 0;
-      return value >= 3.5 ? 100 : value >= 2.5 ? 50 : 0;
     }
     if (key === 'tauxMargeNette') {
       if (phase === 'Lancement') return value >= 35 ? 100 : value >= 30 ? 50 : 0;
@@ -241,29 +259,13 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
   }
 
-  const acheterScore = avgScores([
-    phaseScore('tauxAchatExterne', data.tauxAchatExterne),
-    phaseScore('gammeTel', data.gammeTel),
-    phaseScore('tauxPiceasoft', data.tauxPiceasoft),
-  ]);
-
-  const delaiKeys: Array<keyof MagasinData> = ['delaiTel', 'delaiConsole', 'delaiJV', 'delaiTablette', 'delaiPC'];
-  const delaiScores = delaiKeys
-    .map(k => { const v = data[k] as number; if (v <= 0) return null; const def = KPI_DEFS.find(d => d.key === k); return def ? def.score(v) : null; })
-    .filter((v): v is number => v !== null);
-  const stockerScore = avgScores([
-    phaseScore('stockAge', data.stockAge),
-    phaseScore('gmroi', data.gmroi),
-    delaiScores.length > 0 ? Math.round(delaiScores.reduce((s, v) => s + v, 0) / delaiScores.length) : 50,
-  ]);
-
-  const vendreScore = avgScores([
+  const acheterScore = phaseScore('tauxAchatExterne', data.tauxAchatExterne);
+  const stockerScore = phaseScore('stockAge', data.stockAge);
+  const vendreScore  = avgScores([
     phaseScore('tauxTransformation', data.tauxTransformation),
-    phaseScore('panierMoyen', data.panierMoyen),
     phaseScore('estalyParSemaine', data.estalyParSemaine),
     phaseScore('noteGoogle', data.noteGoogle),
   ]);
-
   const encaisserScore = avgScores([
     phaseScore('tauxMargeNette', data.tauxMargeNette),
     phaseScore('tauxDemarque', data.tauxDemarque),
@@ -272,28 +274,22 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   const today = new Date().toISOString();
   const thisMonth = today.slice(0, 7);
   const monthActions = actions.filter(a => a.echeance.startsWith(thisMonth) && a.statut !== 'Fait').slice(0, 5);
-
   const [bilanOpen, setBilanOpen] = useState(false);
 
   const KPI_DIR_DASH: Record<string, 'higher' | 'lower'> = {
-    tauxMargeNette: 'higher', gmroi: 'higher', noteGoogle: 'higher',
-    estalyParSemaine: 'higher', panierMoyen: 'higher', tauxTransformation: 'higher',
-    poidsDigital: 'higher', tauxPiceasoft: 'higher', tauxFormation: 'higher',
-    stockAge: 'lower', tauxDemarque: 'lower', masseSalarialePct: 'lower',
-    tauxTurnover: 'lower', tauxAnnulationWeb: 'lower', tauxAchatExterne: 'lower',
+    tauxMargeNette: 'higher', noteGoogle: 'higher', estalyParSemaine: 'higher',
+    tauxTransformation: 'higher', poidsDigital: 'higher', tauxAchatExterne: 'lower',
+    stockAge: 'lower', tauxDemarque: 'lower',
   };
   const KPI_ACTION_DASH: Record<string, string> = {
     stockAge: 'Traitez votre TOP 20 valeur cette semaine',
-    masseSalarialePct: 'Revoyez vos heures sup, gelez les embauches',
-    gmroi: "Déstockez avant d'acheter",
     noteGoogle: 'Relance avis systématique en caisse',
     estalyParSemaine: 'Concours équipe + prime 5€/contrat',
-    panierMoyen: 'Challenge +1 accessoire par vente',
     tauxMargeNette: 'Vérifier mix rayon',
-    tauxTurnover: 'Entretiens individuels prioritaires',
     poidsDigital: 'Push EC.fr et marketplaces',
     tauxDemarque: 'Audit démarque urgent — procédure et inventaire',
     tauxTransformation: 'Brief argumentation — méthode VPD',
+    tauxAchatExterne: 'Réduire les achats externes — renforcer la collecte',
   };
 
   let topKey = '', topLabel = '', topAction = '', topGain = 0;
@@ -309,17 +305,14 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       topLabel = KPI_DEFS.find(d => d.key === key)?.label ?? key;
       topAction = KPI_ACTION_DASH[key] ?? '';
       if (key === 'stockAge' && data.stockTotal) {
-        topGain = Math.round(data.stockTotal * Math.max(dev, 0) * (data.gmroi || 1.5) * 0.25);
-      } else if (key === 'masseSalarialePct' && data.caAnnuel) {
-        topGain = Math.round(data.caAnnuel * Math.max(dev, 0) * 0.05);
+        topGain = Math.round(data.stockTotal * Math.max(dev, 0) * 1.5 * 0.25);
       } else if (data.caAnnuel) {
         topGain = Math.round(data.caAnnuel * Math.max(dev, 0) * 0.03);
       }
     }
   });
 
-  const ic = 'w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]';
-  const hl = (k: string) => highlightedFields.has(k) ? 'ring-2 ring-[#E30613]' : '';
+  const hl = (k: string) => highlightedFields.has(k) ? 'ring-2 ring-[#E30613] rounded-lg' : '';
 
   return (
     <div className="space-y-5">
@@ -329,58 +322,12 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
           <h1 className="text-xl font-bold text-[#1A1A1A]">{data.nom || <span className="text-[#6B7280]">Aucun magasin configuré</span>}</h1>
           {data.nom && <span className="text-xs text-[#6B7280] bg-[#F5F5F5] border border-[#E0E0E0] px-2 py-0.5 rounded-full mt-1 inline-block">{data.phase}</span>}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => {
-              const exportData: Record<string, string> = {};
-              for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key) exportData[key] = localStorage.getItem(key) ?? '';
-              }
-              const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `cockpit_${data.nom || 'export'}_${new Date().toISOString().split('T')[0]}.json`;
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-            className="px-3 py-2 rounded-md text-sm font-medium bg-white border border-[#E30613] text-[#E30613] hover:bg-[#FEE2E2] transition-colors"
-          >
-            📤 Exporter données
-          </button>
-          <button
-            onClick={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = '.json';
-              input.onchange = async (e) => {
-                const file = (e.target as HTMLInputElement).files?.[0];
-                if (!file) return;
-                if (!confirm(`Cette opération va écraser vos données actuelles avec celles de "${file.name}". Continuer ?`)) return;
-                try {
-                  const text = await file.text();
-                  const importData = JSON.parse(text) as Record<string, string>;
-                  Object.keys(importData).forEach(key => localStorage.setItem(key, importData[key]));
-                  alert(`Import réussi. ${Object.keys(importData).length} entrées chargées. Rechargement...`);
-                  window.location.reload();
-                } catch {
-                  alert('Erreur : fichier JSON invalide.');
-                }
-              };
-              input.click();
-            }}
-            className="px-3 py-2 rounded-md text-sm font-medium bg-white border border-[#E30613] text-[#E30613] hover:bg-[#FEE2E2] transition-colors"
-          >
-            📥 Importer données
-          </button>
-          <button
-            onClick={() => { setForm({ ...DEFAULT_DATA, ...data }); setShowModal(true); }}
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#F5F5F5] transition-colors"
-          >
-            ✏ Modifier mes données
-          </button>
-        </div>
+        <button
+          onClick={() => { setForm({ ...DEFAULT_DATA, ...data }); setShowModal(true); }}
+          className="px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#F5F5F5] transition-colors"
+        >
+          ✏ Modifier mes données
+        </button>
       </div>
 
       {!data.nom && !showModal && (
@@ -395,19 +342,14 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
 
       {data.nom && (
         <>
-          {/* Section 1 — Votre priorité cette semaine */}
+          {/* Priorité */}
           {topKey && topDev > 0 ? (
             <div className="bg-[#E30613] rounded-xl p-5 text-white">
               <p className="text-xs font-bold uppercase tracking-widest text-white/80 mb-2">Votre priorité cette semaine</p>
               <h2 className="text-xl font-black leading-tight">{topAction}</h2>
               <p className="text-sm text-white/80 mt-1">{topLabel} — écart {Math.round(topDev * 100)}% vs seuil</p>
-              {topGain > 0 && (
-                <p className="text-3xl font-black mt-3">+{topGain.toLocaleString('fr-FR')} €</p>
-              )}
-              <button
-                onClick={() => onNavigate('plan')}
-                className="mt-4 px-4 py-2 bg-white text-[#E30613] font-bold text-sm rounded-md uppercase tracking-wide hover:bg-white/90 transition-colors"
-              >
+              {topGain > 0 && <p className="text-3xl font-black mt-3">+{topGain.toLocaleString('fr-FR')} €</p>}
+              <button onClick={() => onNavigate('plan')} className="mt-4 px-4 py-2 bg-white text-[#E30613] font-bold text-sm rounded-md uppercase tracking-wide hover:bg-white/90 transition-colors">
                 Ajouter au plan d&apos;action
               </button>
             </div>
@@ -418,12 +360,12 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
             </div>
           )}
 
-          {/* Section 2 — 3 KPI critiques */}
+          {/* 3 KPI cards */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { key: 'stockAge',          label: 'Stock âgé',    unit: '%',    dir: 'lower'  as const, defaultSeuil: 30 },
-              { key: 'gmroi',             label: 'GMROI',        unit: '',     dir: 'higher' as const, defaultSeuil: 3.84 },
-              { key: 'masseSalarialePct', label: 'Masse sal.',   unit: '% CA', dir: 'lower'  as const, defaultSeuil: 15 },
+              { key: 'stockAge',      label: 'Stock âgé',   unit: '%',  dir: 'lower'  as const, defaultSeuil: 30 },
+              { key: 'tauxMargeNette', label: 'Marge nette', unit: '%',  dir: 'higher' as const, defaultSeuil: 38 },
+              { key: 'noteGoogle',    label: 'Note Google',  unit: '/5', dir: 'higher' as const, defaultSeuil: 4.4 },
             ].map(kpi => {
               const val = data[kpi.key as keyof MagasinData] as number;
               const seuil = customSeuils[kpi.key] || kpi.defaultSeuil;
@@ -437,25 +379,21 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                   <div className={`text-2xl font-black ${
                     !hasData ? 'text-[#6B7280]' : isOk ? 'text-green-600' : isBad ? 'text-[#E30613]' : 'text-orange-500'
                   }`}>
-                    {hasData ? `${val}${kpi.unit ? ' '+kpi.unit : ''}` : '—'}
+                    {hasData ? `${val}${kpi.unit}` : '—'}
                   </div>
-                  <div className="text-xs text-[#1A1A1A] font-medium">{kpi.label}</div>
-                  <div className="text-xs text-[#6B7280] mt-0.5">seuil {seuil}{kpi.unit ? ' '+kpi.unit : ''}</div>
+                  <div className="text-xs text-[#1A1A1A] font-medium mt-0.5">{kpi.label}</div>
+                  <div className="text-xs text-[#6B7280]">seuil {seuil}{kpi.unit}</div>
                 </div>
               );
             })}
           </div>
 
-          {/* Section 3 — Bilan complet (accordion) */}
+          {/* Bilan accordion */}
           <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
-            <button
-              onClick={() => setBilanOpen(!bilanOpen)}
-              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-[#F5F5F5] transition-colors"
-            >
+            <button onClick={() => setBilanOpen(!bilanOpen)} className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-[#F5F5F5] transition-colors">
               <span className="font-semibold text-sm text-[#1A1A1A]">Bilan complet</span>
               <span className="text-[#6B7280] text-xs">{bilanOpen ? '▲ Replier' : '▼ Déplier'}</span>
             </button>
-
             {bilanOpen && (
               <div className="border-t border-[#E0E0E0] p-5 space-y-5">
                 <div className="flex flex-col items-center">
@@ -463,7 +401,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                   <CercleDuCash acheter={acheterScore} stocker={stockerScore} vendre={vendreScore} encaisser={encaisserScore} />
                   <p className="text-xs text-[#6B7280] mt-2">L&apos;étape la plus faible est encadrée en rouge</p>
                 </div>
-
                 <div>
                   <p className="text-sm font-semibold text-[#1A1A1A] mb-3">Quel est votre problème aujourd&apos;hui ?</p>
                   <div className="grid grid-cols-2 gap-2">
@@ -473,21 +410,14 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                       { icon: '📦', label: 'Mon stock me pose problème', tab: 'diagnostic' },
                       { icon: '👥', label: 'Mon équipe ne performe pas', tab: 'diagnostic' },
                     ].map(b => (
-                      <button
-                        key={b.label}
-                        onClick={() => onNavigate(b.tab)}
-                        className="text-left p-3 rounded-xl bg-[#F5F5F5] border border-[#E0E0E0] hover:bg-[#EBEBEB] transition-colors text-sm text-[#1A1A1A]"
-                      >
+                      <button key={b.label} onClick={() => onNavigate(b.tab)} className="text-left p-3 rounded-xl bg-[#F5F5F5] border border-[#E0E0E0] hover:bg-[#EBEBEB] transition-colors text-sm text-[#1A1A1A]">
                         <span className="mr-1.5">{b.icon}</span>{b.label}
                       </button>
                     ))}
                   </div>
                 </div>
-
                 <div>
-                  <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">
-                    Actions du mois ({monthActions.length})
-                  </h3>
+                  <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Actions du mois ({monthActions.length})</h3>
                   {monthActions.length === 0 ? (
                     <p className="text-[#6B7280] text-sm">Aucune action ce mois-ci.</p>
                   ) : (
@@ -512,119 +442,152 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 flex items-start justify-center pt-4 pb-8">
-          <div className="bg-white rounded-2xl w-full max-w-2xl mx-4 p-6 space-y-6 shadow-xl">
-            <div className="flex items-center justify-between">
+          <div className="bg-white rounded-2xl w-full max-w-2xl mx-4 shadow-xl">
+
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[#E0E0E0]">
               <div>
                 <h2 className="text-lg font-bold text-[#1A1A1A]">Données du magasin</h2>
-                <p className="text-[10px] text-amber-600 mt-0.5">Champs dorés = votre seuil cible personnalisé</p>
+                <p className="text-[10px] text-amber-600 mt-0.5">Champ doré = votre seuil cible personnalisé</p>
               </div>
-              <button onClick={() => setShowModal(false)} className="text-[#6B7280] hover:text-[#1A1A1A] text-xl">✕</button>
+              <button onClick={() => setShowModal(false)} className="text-[#6B7280] hover:text-[#1A1A1A] text-xl leading-none">✕</button>
             </div>
 
-            {/* Import buttons */}
-            <div className="flex gap-2 flex-wrap">
-              <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#F5F5F5] border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB] transition-colors">
-                📂 Importer Excel/CSV
-                <input type="file" accept=".xlsx,.csv" className="hidden" onChange={e => e.target.files?.[0] && handleExcel(e.target.files[0])} />
-              </label>
-              <button onClick={() => setPasteMode(!pasteMode)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#F5F5F5] border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB]">
-                📋 Coller mes données
-              </button>
-              {importMsg && <span className="text-xs text-green-600 self-center">{importMsg}</span>}
-              {pasteCount > 0 && !importMsg && <span className="text-xs text-green-600 self-center">✓ {pasteCount} valeur(s) détectée(s)</span>}
-            </div>
-
-            {pasteMode && (
-              <div className="space-y-2">
-                <textarea
-                  className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none resize-none"
-                  rows={4}
-                  value={pasteText}
-                  onChange={e => setPasteText(e.target.value)}
-                  placeholder="Collez vos données ici (ex: marge 38%, stock âgé 25%, GMROI 2.1...)"
-                />
-                <button onClick={handlePaste} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#E30613] text-white hover:bg-[#B8050F]">
-                  Détecter les valeurs
+            <div className="px-6 py-5 space-y-5">
+              {/* Import rapide */}
+              <div className="flex gap-2 flex-wrap">
+                <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#F5F5F5] border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB] transition-colors">
+                  📂 Importer Excel/CSV
+                  <input type="file" accept=".xlsx,.csv" className="hidden" onChange={e => e.target.files?.[0] && handleExcel(e.target.files[0])} />
+                </label>
+                <button onClick={() => setPasteMode(!pasteMode)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#F5F5F5] border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB]">
+                  📋 Coller mes données
                 </button>
+                {importMsg && <span className="text-xs text-green-600 self-center">{importMsg}</span>}
+                {pasteCount > 0 && !importMsg && <span className="text-xs text-green-600 self-center">✓ {pasteCount} valeur(s) détectée(s)</span>}
               </div>
-            )}
 
-            {/* General */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-[#6B7280] mb-1">Nom du magasin *</label>
-                <input className={ic} value={form.nom} onChange={e => setForm(f => ({ ...f, nom: e.target.value }))} placeholder="ex: EasyCash Lyon Centre" />
-              </div>
-              <div>
-                <label className="block text-xs text-[#6B7280] mb-1">Phase de vie</label>
-                <select className={ic} value={form.phase} onChange={e => setForm(f => ({ ...f, phase: e.target.value as Phase }))}>
-                  <option>Lancement</option><option>Croissance</option><option>Maturité</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Rentabilité */}
-            <Section title="💰 Rentabilité">
-              <div className={hl('caAnnuel')}><NI label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€" seuil={customSeuils['caAnnuel']} onSeuil={v => setCustomSeuil('caAnnuel', v)} /></div>
-              <div className={hl('tauxMargeNette')}><NI label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%" seuil={customSeuils['tauxMargeNette']} onSeuil={v => setCustomSeuil('tauxMargeNette', v)} /></div>
-              <div className={hl('tauxDemarque')}><NI label="Taux de démarque" field="tauxDemarque" form={form} setF={setF} unit="%" seuil={customSeuils['tauxDemarque']} onSeuil={v => setCustomSeuil('tauxDemarque', v)} /></div>
-            </Section>
-
-            {/* Stock */}
-            <Section title="📦 Stock">
-              <div className={hl('stockTotal')}><NI label="Stock total" field="stockTotal" form={form} setF={setF} unit="€" seuil={customSeuils['stockTotal']} onSeuil={v => setCustomSeuil('stockTotal', v)} /></div>
-              <div className={hl('stockAge')}><NI label="Stock âgé" field="stockAge" form={form} setF={setF} unit="%" seuil={customSeuils['stockAge']} onSeuil={v => setCustomSeuil('stockAge', v)} /></div>
-              <div className={hl('gmroi')}><NI label="GMROI" field="gmroi" form={form} setF={setF} placeholder="3.84" seuil={customSeuils['gmroi']} onSeuil={v => setCustomSeuil('gmroi', v)} /></div>
-              <div className="col-span-1">
-                <label className="text-xs text-[#6B7280] block mb-1">Top 20 vieux stock traité ?</label>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setForm(f => ({ ...f, top20Traite: !f.top20Traite }))}
-                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${form.top20Traite ? 'bg-green-500' : 'bg-[#D1D5DB]'}`}>
-                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow ${form.top20Traite ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              {pasteMode && (
+                <div className="space-y-2">
+                  <textarea
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none resize-none"
+                    rows={4}
+                    value={pasteText}
+                    onChange={e => setPasteText(e.target.value)}
+                    placeholder="Collez vos données ici (ex: marge 38%, stock âgé 25%...)"
+                  />
+                  <button onClick={handlePaste} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#E30613] text-white hover:bg-[#B8050F]">
+                    Détecter les valeurs
                   </button>
                 </div>
-                <p className="text-[10px] text-[#6B7280] italic mt-0.5 leading-snug">Priorité absolue — Intranet &gt; Stats &gt; Stocks &gt; Ventilation</p>
+              )}
+
+              {/* Général */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-[#6B7280] mb-1">Nom du magasin *</label>
+                  <input
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
+                    value={form.nom}
+                    onChange={e => setForm(f => ({ ...f, nom: e.target.value }))}
+                    placeholder="ex: EasyCash Lyon Centre"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-[#6B7280] mb-1">Phase de vie</label>
+                  <select
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
+                    value={form.phase}
+                    onChange={e => setForm(f => ({ ...f, phase: e.target.value as Phase }))}
+                  >
+                    <option>Lancement</option><option>Croissance</option><option>Maturité</option>
+                  </select>
+                </div>
               </div>
-              <NI label="Délai Tel. (j)" field="delaiTel" form={form} setF={setF} seuil={customSeuils['delaiTel']} onSeuil={v => setCustomSeuil('delaiTel', v)} />
-              <NI label="Délai Console (j)" field="delaiConsole" form={form} setF={setF} seuil={customSeuils['delaiConsole']} onSeuil={v => setCustomSeuil('delaiConsole', v)} />
-              <NI label="Délai JV (j)" field="delaiJV" form={form} setF={setF} seuil={customSeuils['delaiJV']} onSeuil={v => setCustomSeuil('delaiJV', v)} />
-              <NI label="Délai Tablette (j)" field="delaiTablette" form={form} setF={setF} seuil={customSeuils['delaiTablette']} onSeuil={v => setCustomSeuil('delaiTablette', v)} />
-              <NI label="Délai PC (j)" field="delaiPC" form={form} setF={setF} seuil={customSeuils['delaiPC']} onSeuil={v => setCustomSeuil('delaiPC', v)} />
-            </Section>
 
-            {/* Commerce */}
-            <Section title="🛒 Commerce">
-              <div className={hl('tauxTransformation')}><NI label="Taux transformation" field="tauxTransformation" form={form} setF={setF} unit="%" seuil={customSeuils['tauxTransformation']} onSeuil={v => setCustomSeuil('tauxTransformation', v)} /></div>
-              <div className={hl('panierMoyen')}><NI label="Panier moyen" field="panierMoyen" form={form} setF={setF} unit="€" seuil={customSeuils['panierMoyen']} onSeuil={v => setCustomSeuil('panierMoyen', v)} /></div>
-              <NI label="Ventes additionnelles" field="ventesAdditionnelles" form={form} setF={setF} unit="€" seuil={customSeuils['ventesAdditionnelles']} onSeuil={v => setCustomSeuil('ventesAdditionnelles', v)} />
-              <div className={hl('estalyParSemaine')}><NI label="Estaly/semaine" field="estalyParSemaine" form={form} setF={setF} seuil={customSeuils['estalyParSemaine']} onSeuil={v => setCustomSeuil('estalyParSemaine', v)} /></div>
-              <div className={hl('noteGoogle')}><NI label="Note Google" field="noteGoogle" form={form} setF={setF} placeholder="4.3" seuil={customSeuils['noteGoogle']} onSeuil={v => setCustomSeuil('noteGoogle', v)} /></div>
-              <div className={hl('poidsDigital')}><NI label="Poids digital" field="poidsDigital" form={form} setF={setF} unit="%" seuil={customSeuils['poidsDigital']} onSeuil={v => setCustomSeuil('poidsDigital', v)} /></div>
-              <NI label="Annulation web" field="tauxAnnulationWeb" form={form} setF={setF} unit="%" seuil={customSeuils['tauxAnnulationWeb']} onSeuil={v => setCustomSeuil('tauxAnnulationWeb', v)} />
-              <NI label="Taux SAV" field="tauxSAV" form={form} setF={setF} unit="%" seuil={customSeuils['tauxSAV']} onSeuil={v => setCustomSeuil('tauxSAV', v)} />
-            </Section>
+              {/* Section 1 — Indicateurs essentiels */}
+              <FormSection title="📊 Mes indicateurs essentiels">
+                <div className={hl('caAnnuel')}>
+                  <KpiRow label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€"
+                    seuil={customSeuils['caAnnuel']} onSeuil={v => setCustomSeuil('caAnnuel', v)} />
+                </div>
+                <div className={hl('tauxMargeNette')}>
+                  <KpiRow label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['tauxMargeNette']} onSeuil={v => setCustomSeuil('tauxMargeNette', v)} />
+                </div>
+                <div className={hl('tauxDemarque')}>
+                  <KpiRow label="Taux de démarque" field="tauxDemarque" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['tauxDemarque']} onSeuil={v => setCustomSeuil('tauxDemarque', v)} />
+                </div>
+                <div className={hl('stockTotal')}>
+                  <KpiRow label="Stock total" field="stockTotal" form={form} setF={setF} unit="€"
+                    seuil={customSeuils['stockTotal']} onSeuil={v => setCustomSeuil('stockTotal', v)} />
+                </div>
+                <div className={hl('stockAge')}>
+                  <KpiRow label="Stock âgé" field="stockAge" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['stockAge']} onSeuil={v => setCustomSeuil('stockAge', v)} />
+                </div>
+                <ToggleRow
+                  label="Top 20 vieux stock traité ?"
+                  value={form.top20Traite}
+                  onChange={v => setForm(f => ({ ...f, top20Traite: v }))}
+                  hint="Intranet › Stats › Stocks › Ventilation"
+                />
+                <div className={hl('estalyParSemaine')}>
+                  <KpiRow label="Estaly / mois" field="estalyParSemaine" form={form} setF={setF}
+                    seuil={customSeuils['estalyParSemaine']} onSeuil={v => setCustomSeuil('estalyParSemaine', v)} />
+                </div>
+                <div className={hl('noteGoogle')}>
+                  <KpiRow label="Note Google" field="noteGoogle" form={form} setF={setF} placeholder="4.3"
+                    seuil={customSeuils['noteGoogle']} onSeuil={v => setCustomSeuil('noteGoogle', v)} />
+                </div>
+                <div className={hl('tauxSAV')}>
+                  <KpiRow label="Taux SAV" field="tauxSAV" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['tauxSAV']} onSeuil={v => setCustomSeuil('tauxSAV', v)} />
+                </div>
+                <div className={hl('tauxTransformation')}>
+                  <KpiRow label="Taux de transformation" field="tauxTransformation" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['tauxTransformation']} onSeuil={v => setCustomSeuil('tauxTransformation', v)} />
+                </div>
+                <KpiRow label="Ventes additionnelles" field="ventesAdditionnelles" form={form} setF={setF} unit="€"
+                  seuil={customSeuils['ventesAdditionnelles']} onSeuil={v => setCustomSeuil('ventesAdditionnelles', v)} />
+                <div className={hl('poidsDigital')}>
+                  <KpiRow label="Poids digital" field="poidsDigital" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['poidsDigital']} onSeuil={v => setCustomSeuil('poidsDigital', v)} />
+                </div>
+                <div className={hl('tauxAchatExterne')}>
+                  <KpiRow label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['tauxAchatExterne']} onSeuil={v => setCustomSeuil('tauxAchatExterne', v)} />
+                </div>
+              </FormSection>
 
-            {/* Gamme */}
-            <Section title="🎯 Gamme">
-              <div className={hl('tauxAchatExterne')}><NI label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%" seuil={customSeuils['tauxAchatExterne']} onSeuil={v => setCustomSeuil('tauxAchatExterne', v)} /></div>
-              <div className={hl('tauxPiceasoft')}><NI label="Piceasoft" field="tauxPiceasoft" form={form} setF={setF} unit="%" seuil={customSeuils['tauxPiceasoft']} onSeuil={v => setCustomSeuil('tauxPiceasoft', v)} /></div>
-            </Section>
+              {/* Section 2 — Process */}
+              <FormSection title="✅ Process appliqués">
+                {([
+                  { key: 'piceasoft' as const, label: 'Piceasoft utilisé sur tous les mobiles' },
+                  { key: 'formation' as const, label: 'Formation EasyTraining à jour pour toute l\'équipe' },
+                  { key: 'briefing' as const, label: 'Briefing quotidien tenu' },
+                ] as const).map(item => (
+                  <div key={item.key} className="flex items-center gap-3 py-3 border-b border-[#F0F0F0] last:border-0">
+                    <span className="flex-1 text-sm text-[#1A1A1A] font-medium">{item.label}</span>
+                    <button
+                      onClick={() => toggleProcess(item.key)}
+                      className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${process[item.key] ? 'bg-green-500' : 'bg-[#D1D5DB]'}`}
+                    >
+                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow ${process[item.key] ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                ))}
+              </FormSection>
 
-            {/* RH */}
-            <Section title="👥 RH">
-              <div className={hl('nbEtp')}><NI label="Nb ETP" field="nbEtp" form={form} setF={setF} seuil={customSeuils['nbEtp']} onSeuil={v => setCustomSeuil('nbEtp', v)} /></div>
-              <div className={hl('masseSalarialePct')}><NI label="Masse salariale" field="masseSalarialePct" form={form} setF={setF} unit="% CA" seuil={customSeuils['masseSalarialePct']} onSeuil={v => setCustomSeuil('masseSalarialePct', v)} /></div>
-              <div className={hl('tauxTurnover')}><NI label="Turnover" field="tauxTurnover" form={form} setF={setF} unit="%" seuil={customSeuils['tauxTurnover']} onSeuil={v => setCustomSeuil('tauxTurnover', v)} /></div>
-              <div className={hl('tauxFormation')}><NI label="Formation EasyTraining" field="tauxFormation" form={form} setF={setF} unit="%" seuil={customSeuils['tauxFormation']} onSeuil={v => setCustomSeuil('tauxFormation', v)} /></div>
-            </Section>
-
-            <button
-              onClick={handleSave}
-              disabled={!form.nom.trim()}
-              className="w-full py-3 rounded-xl font-bold text-sm bg-[#E30613] text-white disabled:opacity-40 hover:bg-[#B8050F] transition-colors"
-            >
-              💾 Sauvegarder
-            </button>
+              <button
+                onClick={handleSave}
+                disabled={!form.nom.trim()}
+                className="w-full py-3 rounded-xl font-bold text-sm bg-[#E30613] text-white disabled:opacity-40 hover:bg-[#B8050F] transition-colors"
+              >
+                💾 Sauvegarder
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -632,11 +595,11 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div>
-      <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">{title}</h3>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{children}</div>
+    <div className="bg-white border border-[#E0E0E0] rounded-lg shadow-sm p-6">
+      <h3 className="font-bold text-sm text-[#1A1A1A] mb-4">{title}</h3>
+      <div>{children}</div>
     </div>
   );
 }
