@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import type { MagasinData, PAPAction } from '@/types';
 import { DEFAULT_DATA } from '@/types';
 import Dashboard from '@/components/Dashboard';
@@ -14,9 +13,7 @@ import Competences from '@/components/Competences';
 import Comparatif from '@/components/Comparatif';
 import VisiteCR from '@/components/VisiteCR';
 import AssistantIA from '@/components/AssistantIA';
-import ProtectedRoute from '@/components/ProtectedRoute';
 import { detectSpiral } from '@/lib/spiral';
-import { supabase } from '@/lib/supabase';
 
 const TABS = [
   { id: 'dashboard',   label: 'Dashboard' },
@@ -51,12 +48,6 @@ function loadActions(nom: string): PAPAction[] {
 
 export default function App() {
   const [tab, setTab] = useState<TabId>('dashboard');
-  const router = useRouter();
-
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.replace('/login');
-  }
   const [magasins, setMagasins] = useState<string[]>([]);
   const [currentNom, setCurrentNom] = useState<string>('');
   const [data, setData] = useState<MagasinData>(DEFAULT_DATA);
@@ -107,7 +98,6 @@ export default function App() {
   const showSpiralBanner = spiral === 'critical' || spiral === 'risk';
 
   return (
-    <ProtectedRoute>
     <div className="min-h-screen bg-[#F5F5F5] text-[#1A1A1A]">
       {/* Header */}
       <div className="bg-[#E30613] sticky top-0 z-50">
@@ -128,12 +118,6 @@ export default function App() {
                 ? <span className="text-white/80 text-sm font-medium hidden md:block">{currentNom} · {data.phase}</span>
                 : <span className="text-white/60 text-sm italic hidden md:block">Cockpit consultant</span>
               }
-              <button
-                onClick={handleLogout}
-                className="text-white/70 hover:text-white text-xs font-medium border border-white/30 rounded-md px-2.5 py-1 transition-colors"
-              >
-                Déconnexion
-              </button>
             </div>
           </div>
 
@@ -181,6 +165,5 @@ export default function App() {
         {tab === 'assistant'   && <AssistantIA   data={data} actions={actions} />}
       </main>
     </div>
-    </ProtectedRoute>
   );
 }
