@@ -4,17 +4,6 @@ import { useState } from 'react';
 
 interface Props { magasinNom: string; isCriticalSpiral?: boolean; }
 
-const GMROI_RESEAU: Array<{ code: string; label: string; gmroi: number; coutMin: number }> = [
-  { code: 'JCON', label: 'Jeux Console',            gmroi: 2.12, coutMin: 8000  },
-  { code: 'JCDR', label: 'Jeux CD / DVD',           gmroi: 2.07, coutMin: 2500  },
-  { code: 'IPOR', label: 'Informatique portable',   gmroi: 1.19, coutMin: 4000  },
-  { code: 'TLCE', label: 'Téléphonie',              gmroi: 1.03, coutMin: 16000 },
-  { code: 'BMAR', label: 'Bijouterie / Montres',    gmroi: 0.93, coutMin: 0     },
-  { code: 'BOR',  label: 'Objets reconditionnés',   gmroi: 0.42, coutMin: 0     },
-];
-const BUDGET_GAMME_MINIMALE = 31000;
-const BUDGET_IDEAL = 92000;
-
 interface EquipeRow {
   id: string;
   prenom: string;
@@ -62,7 +51,6 @@ export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
   });
 
   const [showExplain, setShowExplain] = useState(false);
-  const [budget, setBudget] = useState<number>(0);
 
   function saveEquipeStore(store: EquipeStore) {
     setEquipeStore(store);
@@ -254,95 +242,6 @@ export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
         </div>
         <p className="text-xs text-[#6B7280]">Coût chargé = salaire brut × heures × 12 × 1.42 (charges patronales estimées France)</p>
       </div>
-
-      {/* GMROI réseau */}
-      {isCriticalSpiral ? (
-        <div className="bg-[#E30613] rounded-xl px-4 py-4 text-white">
-          <p className="font-bold text-sm">⚠ Simulateur d&apos;investissement masqué</p>
-          <p className="text-xs text-white/80 mt-1">Spirale détectée : déstockez avant tout nouvel achat. Résolvez la situation avant d&apos;investir.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4 space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold text-[#1A1A1A] mb-1">Arbitrage budget — GMROI réseau 2026</h3>
-            <p className="text-xs text-[#6B7280]">Ordre d&apos;investissement optimal par rendement décroissant</p>
-          </div>
-
-          <div className="flex flex-wrap gap-3 items-end">
-            <div>
-              <label className="text-xs text-[#6B7280] block mb-1">Budget disponible (€)</label>
-              <input
-                type="number"
-                value={budget || ''}
-                onChange={e => setBudget(parseFloat(e.target.value) || 0)}
-                placeholder="Ex : 50000"
-                className={`${inputCls} w-44`}
-              />
-            </div>
-            {budget > 0 && budget < BUDGET_GAMME_MINIMALE && (
-              <div className="text-xs text-[#E30613] font-semibold">
-                ⚠ Budget insuffisant — gamme incomplète. Prioriser JCON + JCDR ({(BUDGET_GAMME_MINIMALE).toLocaleString('fr-FR')} € min).
-              </div>
-            )}
-            {budget >= BUDGET_IDEAL && (
-              <div className="text-xs text-green-600 font-semibold">✓ Budget idéal atteint ({BUDGET_IDEAL.toLocaleString('fr-FR')} €)</div>
-            )}
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-[#E0E0E0] bg-[#F5F5F5] text-[#6B7280]">
-                  <th className="text-left px-3 py-2 font-semibold">Famille</th>
-                  <th className="text-right px-3 py-2 font-semibold">GMROI réseau</th>
-                  <th className="text-right px-3 py-2 font-semibold">Investissement min</th>
-                  {budget > 0 && <th className="text-right px-3 py-2 font-semibold">Gain estimé 30j</th>}
-                  <th className="text-center px-3 py-2 font-semibold">Priorité</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E0E0E0]">
-                {GMROI_RESEAU.map((f, idx) => {
-                  const montantAlloue = budget > 0 ? Math.min(budget, f.coutMin > 0 ? f.coutMin : budget / 3) : 0;
-                  const gainEstime = montantAlloue > 0 ? Math.round(montantAlloue * f.gmroi * 0.25) : 0;
-                  const isRecommended = budget > 0 && budget >= (f.coutMin || 0) && idx < 3;
-                  return (
-                    <tr key={f.code} className={isRecommended ? 'bg-green-50' : ''}>
-                      <td className="px-3 py-2">
-                        <span className="text-xs text-[#9CA3AF] font-mono mr-1.5">{f.code}</span>
-                        <span className="text-[#1A1A1A]">{f.label}</span>
-                      </td>
-                      <td className={`px-3 py-2 text-right font-bold ${
-                        f.gmroi >= 2 ? 'text-green-600' : f.gmroi >= 1 ? 'text-orange-500' : 'text-red-600'
-                      }`}>
-                        {f.gmroi.toFixed(2)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-[#6B7280]">
-                        {f.coutMin > 0 ? `${f.coutMin.toLocaleString('fr-FR')} €` : '—'}
-                      </td>
-                      {budget > 0 && (
-                        <td className="px-3 py-2 text-right text-green-600 font-semibold">
-                          {gainEstime > 0 ? `+${gainEstime.toLocaleString('fr-FR')} €` : '—'}
-                        </td>
-                      )}
-                      <td className="px-3 py-2 text-center">
-                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                          idx === 0 ? 'bg-[#E30613] text-white' :
-                          idx === 1 ? 'bg-orange-100 text-orange-700' :
-                          idx === 2 ? 'bg-yellow-100 text-yellow-700' :
-                          'text-[#9CA3AF]'
-                        }`}>
-                          {idx < 3 ? `#${idx + 1}` : '—'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-xs text-[#6B7280]">Gain estimé 30j = montant × GMROI réseau × 0.25 · Source : Réunion Régionale Easycash 2026</p>
-        </div>
-      )}
 
       {/* Explanations */}
       <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">

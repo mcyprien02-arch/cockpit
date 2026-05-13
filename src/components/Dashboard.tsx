@@ -329,12 +329,58 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
           <h1 className="text-xl font-bold text-[#1A1A1A]">{data.nom || <span className="text-[#6B7280]">Aucun magasin configuré</span>}</h1>
           {data.nom && <span className="text-xs text-[#6B7280] bg-[#F5F5F5] border border-[#E0E0E0] px-2 py-0.5 rounded-full mt-1 inline-block">{data.phase}</span>}
         </div>
-        <button
-          onClick={() => { setForm({ ...DEFAULT_DATA, ...data }); setShowModal(true); }}
-          className="px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#F5F5F5] transition-colors"
-        >
-          ✏ Modifier mes données
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              const exportData: Record<string, string> = {};
+              for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key) exportData[key] = localStorage.getItem(key) ?? '';
+              }
+              const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `cockpit_${data.nom || 'export'}_${new Date().toISOString().split('T')[0]}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="px-3 py-2 rounded-md text-sm font-medium bg-white border border-[#E30613] text-[#E30613] hover:bg-[#FEE2E2] transition-colors"
+          >
+            📤 Exporter données
+          </button>
+          <button
+            onClick={() => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.json';
+              input.onchange = async (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (!file) return;
+                if (!confirm(`Cette opération va écraser vos données actuelles avec celles de "${file.name}". Continuer ?`)) return;
+                try {
+                  const text = await file.text();
+                  const importData = JSON.parse(text) as Record<string, string>;
+                  Object.keys(importData).forEach(key => localStorage.setItem(key, importData[key]));
+                  alert(`Import réussi. ${Object.keys(importData).length} entrées chargées. Rechargement...`);
+                  window.location.reload();
+                } catch {
+                  alert('Erreur : fichier JSON invalide.');
+                }
+              };
+              input.click();
+            }}
+            className="px-3 py-2 rounded-md text-sm font-medium bg-white border border-[#E30613] text-[#E30613] hover:bg-[#FEE2E2] transition-colors"
+          >
+            📥 Importer données
+          </button>
+          <button
+            onClick={() => { setForm({ ...DEFAULT_DATA, ...data }); setShowModal(true); }}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#F5F5F5] transition-colors"
+          >
+            ✏ Modifier mes données
+          </button>
+        </div>
       </div>
 
       {!data.nom && !showModal && (
@@ -560,10 +606,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
 
             {/* Gamme */}
             <Section title="🎯 Gamme">
-              <div className={hl('gammeTel')}><NI label="% Téléphonie" field="gammeTel" form={form} setF={setF} unit="%" seuil={customSeuils['gammeTel']} onSeuil={v => setCustomSeuil('gammeTel', v)} /></div>
-              <NI label="% Jeux Vidéo" field="gammeJV" form={form} setF={setF} unit="%" seuil={customSeuils['gammeJV']} onSeuil={v => setCustomSeuil('gammeJV', v)} />
-              <NI label="% Console" field="gammeConsole" form={form} setF={setF} unit="%" seuil={customSeuils['gammeConsole']} onSeuil={v => setCustomSeuil('gammeConsole', v)} />
-              <NI label="% Tablette" field="gammeTablette" form={form} setF={setF} unit="%" seuil={customSeuils['gammeTablette']} onSeuil={v => setCustomSeuil('gammeTablette', v)} />
               <div className={hl('tauxAchatExterne')}><NI label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%" seuil={customSeuils['tauxAchatExterne']} onSeuil={v => setCustomSeuil('tauxAchatExterne', v)} /></div>
               <div className={hl('tauxPiceasoft')}><NI label="Piceasoft" field="tauxPiceasoft" form={form} setF={setF} unit="%" seuil={customSeuils['tauxPiceasoft']} onSeuil={v => setCustomSeuil('tauxPiceasoft', v)} /></div>
             </Section>
