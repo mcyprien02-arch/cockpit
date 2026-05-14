@@ -33,89 +33,60 @@ const DEFAULT_PRATIQUES: PratiquesState = {
   dashboardWeb: false, expeditions48h: false, moduleAcceleration: false,
 };
 
-// ── Coûts cachés ────────────────────────────────────────────────────────────
+// ── Pratiques opérationnelles ────────────────────────────────────────────────
 interface CoutCacheItem {
   key: keyof PratiquesState;
   label: string;
-  calcul: (vah: number, nbEtp: number) => number;
   action: string;
 }
 
 const COUT_CACHE_ITEMS: CoutCacheItem[] = [
-  // Bloc 1
   { key: 'decouverteBesoins', label: 'Découverte des besoins non systématique',
-    calcul: (vah) => vah * 0.5 * 250,
-    action: "Formez l'équipe au questionnement client. 1 min de qualification = panier plus juste." },
-  { key: 'accessoires', label: "Pas de proposition d'accessoire",
-    calcul: (vah) => vah * 0.25 * 250,
-    action: "Briefez vos vendeurs : 1 accessoire proposé à chaque vente principale." },
-  { key: 'avisGoogle', label: 'Pas de relance avis Google',
-    calcul: (vah) => vah * 0.1 * 250,
-    action: "Mettez en place une relance systématique en caisse. 5 avis positifs/semaine = note qui monte." },
-  { key: 'estalyPratique', label: 'Pas de proposition Estaly systématique',
-    calcul: (vah) => vah * 0.2 * 250,
-    action: "Brief équipe sur les primes Estaly. 1 contrat/jour = +1 100 €/an pour le vendeur." },
+    action: "Formez l'équipe au questionnement client. 1 min de qualification = panier plus juste et client mieux servi." },
+  { key: 'accessoires', label: "Pas de proposition d'accessoire systématique",
+    action: "Briefez vos vendeurs : 1 accessoire proposé à chaque vente principale, sans exception." },
+  { key: 'avisGoogle', label: 'Pas de relance avis Google systématique',
+    action: "Mettez en place une relance en caisse après chaque transaction. Objectif : 5 avis positifs par semaine." },
+  { key: 'estalyPratique', label: 'Estaly non proposé systématiquement',
+    action: "Brief équipe sur les primes Estaly. 1 contrat/jour crée de la valeur pour le vendeur et fidélise le client." },
   { key: 'caissePics', label: "Caisse mal organisée aux pics d'affluence",
-    calcul: (vah) => vah * 0.5 * 100,
     action: "Anticipez les pics : doublez la caisse les samedis et veilles de fête." },
-  // Bloc 2
   { key: 'testProduit', label: 'Test produit bâclé au rachat',
-    calcul: (vah) => vah * 2 * 10 * 12,
-    action: "Durcir les tests au rachat. Le SAV se joue à l'entrée du produit." },
+    action: "Durcissez les tests au rachat. Le SAV se joue à l'entrée du produit, pas après la vente." },
   { key: 'vpdAppliquee', label: 'VPD non appliquée',
-    calcul: (vah) => vah * 0.5 * 250,
     action: "Réafficher les 5 questions VPD au comptoir. La marge se fait à l'achat." },
   { key: 'negociationRachat', label: 'Pas de négociation systématique au rachat',
-    calcul: (vah) => vah * 0.25 * 250,
-    action: "Coachez vos acheteurs. Chaque euro négocié = marge directe." },
+    action: "Coachez vos acheteurs. Chaque euro négocié se retrouve directement en marge nette." },
   { key: 'piceasoft', label: 'Piceasoft non utilisé sur les mobiles',
-    calcul: (vah) => vah * 2 * 10 * 12,
-    action: "Test systématique sur tous les mobiles rachetés. SAV divisé par 2." },
+    action: "Mettez en place le test Piceasoft systématique sur tous les mobiles rachetés. Réduction directe du SAV." },
   { key: 'deuxAcheteurs', label: 'Acheteur seul au comptoir',
-    calcul: (vah) => vah * 1 * 250,
-    action: "Formez un 2e acheteur. La fluidité au comptoir = ventes en plus." },
-  // Bloc 3
+    action: "Formez un 2e acheteur. La fluidité au comptoir libère du temps vendeur et améliore l'accueil client." },
   { key: 'briefingQuotidien', label: 'Pas de briefing quotidien',
-    calcul: (vah, nbEtp) => vah * 0.25 * nbEtp * 250,
-    action: "5 min chaque matin avant ouverture. Routine simple, impact durable." },
+    action: "5 min chaque matin avant ouverture. La clarté des objectifs améliore l'efficacité collective." },
   { key: 'entretiensMenusuels', label: "Pas d'entretien mensuel par collaborateur",
-    calcul: (vah) => vah * 80,
-    action: "1h par mois par collaborateur. Investissement humain garanti." },
+    action: "1h par mois par collaborateur. L'investissement humain préserve la motivation et réduit le turnover." },
   { key: 'easyTraining', label: 'Plan EasyTraining non suivi',
-    calcul: (vah) => vah * 80,
-    action: "Bloquez 1h/semaine pour les modules EasyTraining manquants." },
+    action: "Bloquez 1h/semaine pour les modules EasyTraining manquants. La montée en compétences est un levier direct." },
   { key: 'polyvalence', label: 'Vendeur unique sur rayon majeur',
-    calcul: (vah) => vah * 200,
-    action: "Formez un suppléant sur chaque rayon majeur." },
+    action: "Formez un suppléant sur chaque rayon majeur. La dépendance crée un risque opérationnel." },
   { key: 'coachingVente', label: 'Pas de coaching vente en magasin',
-    calcul: (vah, nbEtp) => vah * 0.5 * nbEtp * 50,
-    action: "30 min de coaching individuel/semaine par collaborateur." },
-  // Bloc 4
+    action: "30 min de coaching terrain par collaborateur par semaine. La formation en situation réelle est la plus efficace." },
   { key: 'top20Hebdo', label: 'Top 20 vieux stock non traité chaque semaine',
-    calcul: (vah) => vah * 2 * 52,
-    action: "Extraire TOP 20 chaque lundi. Levier d'urgence cash immédiat." },
+    action: "Extraire le TOP 20 chaque lundi matin. C'est le levier n°1 pour libérer du cash et améliorer la rotation." },
   { key: 'accelerationsAnticipees', label: 'Accélérations traitées tardivement',
-    calcul: (vah) => vah * 1 * 52,
-    action: "Anticipez : -10%/semaine plutôt que -30%/mois." },
+    action: "Anticipez : -10%/semaine plutôt que -30%/mois. L'anticipation préserve la valeur du stock." },
   { key: 'inventairesTournants', label: 'Inventaires tournants non respectés',
-    calcul: (vah) => vah * 100,
-    action: "Planning IT respecté = vision stock réelle." },
+    action: "Respectez le planning inventaires réseau. Un inventaire à jour = vision stock fiable = pilotage précis." },
   { key: 'rebutsDestock', label: 'Rebuts non destockés via module Démarque',
-    calcul: (vah) => vah * 0.5 * 50,
-    action: "Module Démarque hebdomadaire. Faux stock = faux pilotage." },
+    action: "Passez le module Démarque chaque semaine. Un faux stock en Intranet entraîne un faux pilotage." },
   { key: 'rattachementF3', label: 'Produits techniques non rattachés via F3',
-    calcul: (vah) => vah * 0.5 * 100,
-    action: "Scanner systématique produits techniques. Données = ventes." },
-  // Bloc 5
+    action: "Scanner systématiquement les produits techniques. Les données de cotation sont votre boussole achat." },
   { key: 'dashboardWeb', label: 'Dashboard web non consulté quotidiennement',
-    calcul: (vah) => vah * 0.5 * 250,
-    action: "Dashboard ouvert en permanence. Le web = votre 2e magasin." },
+    action: "Ouvrez le dashboard web à l'ouverture du magasin. Le canal web est votre deuxième magasin." },
   { key: 'expeditions48h', label: 'Délai expédition supérieur à 48h',
-    calcul: (vah) => vah * 100,
-    action: "Process expé quotidien. Service postal collecte chez vous." },
+    action: "Mettez en place un process expédition quotidien. La réactivité web impacte la satisfaction et la note Google." },
   { key: 'moduleAcceleration', label: 'Module Accélération web non utilisé',
-    calcul: (vah) => vah * 50,
-    action: "Accélérez sur le web AVANT que ça pourrisse." },
+    action: "Activez les accélérations sur le web avant que le produit vieillisse. L'anticipation est clé." },
 ];
 
 // ── KPIs du Diagnostic ──────────────────────────────────────────────────────
@@ -301,30 +272,6 @@ export default function Diagnostic({ data }: Props) {
     } catch { return DEFAULT_PRATIQUES; }
   });
 
-  const [vah] = useState<number>(() => {
-    if (typeof window === 'undefined') return 0;
-    try {
-      const stored = parseFloat(localStorage.getItem(`vah_resultat_${data.nom}`) ?? '0');
-      if (stored > 0) return stored;
-      const heures = parseFloat(localStorage.getItem(`vah_heures_${data.nom}`) ?? '0');
-      if (!heures || !data.caAnnuel || !data.tauxMargeNette) return 0;
-      return (data.caAnnuel * data.tauxMargeNette / 100) / heures;
-    } catch { return 0; }
-  });
-
-  const [nbEtp] = useState<number>(() => {
-    if (typeof window === 'undefined') return 3;
-    try {
-      const s = localStorage.getItem(`equipe_${data.nom}`);
-      if (!s) return 3;
-      const store = JSON.parse(s) as unknown;
-      const rows: Array<{ heures: number }> = Array.isArray(store)
-        ? store as Array<{ heures: number }>
-        : ((store as { rows?: Array<{ heures: number }> }).rows ?? []);
-      const total = rows.reduce((sum, r) => sum + (r.heures || 0), 0);
-      return total > 0 ? Math.max(1, Math.round(total / 151.67)) : 3;
-    } catch { return 3; }
-  });
 
   // ── Scores par catégorie ──
   const allCats: DiagCat[] = ['rentabilite', 'stock', 'commerce', 'web'];
@@ -362,7 +309,6 @@ export default function Diagnostic({ data }: Props) {
 
   // ── Coûts cachés ──
   const coutCacheItems = COUT_CACHE_ITEMS.filter(item => !pratiques[item.key]);
-  const totalCoutCache = coutCacheItems.reduce((sum, item) => sum + Math.round(item.calcul(vah, nbEtp)), 0);
   const nbCochees = Object.values(pratiques).filter(Boolean).length;
   const totalPratiques = Object.keys(DEFAULT_PRATIQUES).length;
 
@@ -452,55 +398,33 @@ export default function Diagnostic({ data }: Props) {
         </div>
       )}
 
-      {/* Coût caché des dysfonctionnements */}
+      {/* Dysfonctionnements opérationnels */}
       {data.nom && (
         <div className="space-y-3">
           <h3 className="text-sm font-bold text-[#1A1A1A]">🔍 Coût caché des dysfonctionnements</h3>
 
-          {vah > 0 ? (
-            <>
-              {coutCacheItems.length === 0 ? (
-                <div className="bg-green-50 border border-green-300 rounded-xl p-4 text-center">
-                  <p className="text-green-700 font-semibold text-sm">✓ Toutes les pratiques sont appliquées — aucun coût caché détecté.</p>
-                </div>
-              ) : (
-                <>
-                  {coutCacheItems.map(item => {
-                    const cost = Math.round(item.calcul(vah, nbEtp));
-                    return (
-                      <div key={item.key} className="bg-white border border-[#E0E0E0] border-l-4 border-l-orange-400 rounded-lg shadow-sm p-4">
-                        <div className="flex items-start justify-between gap-3 mb-2">
-                          <p className="font-semibold text-sm text-[#1A1A1A]">{item.label}</p>
-                          <span className="text-sm font-black text-[#B91C1C] flex-shrink-0 whitespace-nowrap">
-                            ~{cost.toLocaleString('fr-FR')} €/an
-                          </span>
-                        </div>
-                        <p className="text-xs text-[#6B7280] italic leading-relaxed">{item.action}</p>
-                      </div>
-                    );
-                  })}
-
-                  <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-xl p-5">
-                    <div className="text-xl font-black text-[#1A1A1A] mb-1">
-                      📊 Total coût caché annuel estimé :{' '}
-                      <span className="text-[#B91C1C]">{totalCoutCache.toLocaleString('fr-FR')} €/an</span>
-                    </div>
-                    <div className="text-sm text-[#6B7280]">
-                      {nbCochees} pratique{nbCochees > 1 ? 's' : ''} sur {totalPratiques} sont actuellement appliquée{nbCochees > 1 ? 's' : ''} dans votre magasin.
-                    </div>
-                  </div>
-                </>
-              )}
-            </>
-          ) : (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
-              Saisissez votre valeur ajoutée horaire dans le Dashboard (champ <strong>VAH €/h</strong>) pour chiffrer le coût caché de ces dysfonctionnements.
-              {nbCochees < totalPratiques && (
-                <span className="block mt-1 text-xs">
-                  {totalPratiques - nbCochees} pratique{totalPratiques - nbCochees > 1 ? 's' : ''} non appliquée{totalPratiques - nbCochees > 1 ? 's' : ''} sur {totalPratiques}.
-                </span>
-              )}
+          {coutCacheItems.length === 0 ? (
+            <div className="bg-green-50 border border-green-300 rounded-xl p-4 text-center">
+              <p className="text-green-700 font-semibold text-sm">✓ Toutes les pratiques sont appliquées — aucun dysfonctionnement détecté.</p>
             </div>
+          ) : (
+            <>
+              {coutCacheItems.map(item => (
+                <div key={item.key} className="bg-white border border-[#E0E0E0] border-l-4 border-l-orange-400 rounded-lg shadow-sm p-4">
+                  <p className="font-semibold text-sm text-[#1A1A1A] mb-1">{item.label}</p>
+                  <p className="text-xs text-[#6B7280] italic leading-relaxed">{item.action}</p>
+                </div>
+              ))}
+              <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-xl p-4">
+                <p className="text-sm text-[#6B7280]">
+                  {nbCochees}/{totalPratiques} pratiques appliquées —{' '}
+                  <strong className="text-[#1A1A1A]">
+                    {totalPratiques - nbCochees} point{totalPratiques - nbCochees > 1 ? 's' : ''} d&apos;amélioration
+                  </strong>{' '}
+                  identifié{totalPratiques - nbCochees > 1 ? 's' : ''}.
+                </p>
+              </div>
+            </>
           )}
         </div>
       )}

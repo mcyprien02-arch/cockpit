@@ -13,32 +13,40 @@ const FREQ_DEFAULTS: Record<FreqKey, number> = { quotidien: 5, '3x': 3, '1x': 1 
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
+// Blocs GPA (Gamme / Prix / Animation) — methodology kept in code, not displayed to franchisee
+// Autodetermination theory (Deci & Ryan, 2000) — referenced internally only
 const BLOCS: BlocDef[] = [
-  { icon: '🛒', title: 'Gamme — méthode GPA', routines: [
+  { icon: '🛒', title: 'Gamme', routines: [
     { id: 'g1', label: 'Checker gamme référence et identifier manquants (Athéna)', freq: 'quotidien' },
     { id: 'g2', label: 'Éditer appel de stock pour les produits manquants', freq: 'quotidien' },
     { id: 'g3', label: 'Vérifier prix de reprise sur EasyPrice', freq: 'quotidien' },
   ]},
-  { icon: '💰', title: 'Prix — méthode GPA', routines: [
+  { icon: '💰', title: 'Prix', routines: [
     { id: 'p1', label: 'Mise à jour prix par famille (Athéna → cote EasyPrice)', freq: '3x' },
     { id: 'p2', label: 'Identifier produits vieux stock et ajuster prix', freq: '3x' },
     { id: 'p3', label: "Lancer accélérations sur produits à risque (côtes d'alerte)", freq: '3x' },
   ]},
-  { icon: '🎨', title: 'Animation — méthode GPA', routines: [
+  { icon: '🎨', title: 'Animation', routines: [
     { id: 'a1', label: 'Mettre en avant les bonnes affaires (prix barrés, étiquettes jaunes)', freq: 'quotidien' },
     { id: 'a2', label: 'Faire la rotation des nouveautés en tête de vitrine', freq: '3x' },
     { id: 'a3', label: 'Vérifier les arguments de réassurance (garantie, paiement plusieurs fois)', freq: '1x' },
     { id: 'a4', label: "Consulter Plateforme Marketing pour idées d'animations", freq: '1x' },
   ]},
+  { icon: '🤝', title: 'Prise en charge client', routines: [
+    { id: 'cl1', label: "Prise en charge d'un SAV client", freq: '1x' },
+  ]},
   { icon: '👥', title: 'Équipe', routines: [
     { id: 'e1', label: 'Briefing matinal 5 min avant ouverture', freq: 'quotidien' },
-    { id: 'e2', label: "Coaching individuel d'un vendeur (15 min)", freq: '3x' },
     { id: 'e3', label: 'Vérifier suivi EasyTraining de chaque collaborateur', freq: '1x' },
   ]},
   { icon: '📊', title: 'Pilotage', routines: [
     { id: 'pi1', label: 'Consulter Intranet (CA, marge, stock âgé)', freq: 'quotidien' },
-    { id: 'pi2', label: 'Vérifier Dashboard web (commandes, annulations)', freq: 'quotidien' },
     { id: 'pi3', label: 'Traiter Top 20 vieux stock une fois par semaine', freq: '1x' },
+  ]},
+  { icon: '🌐', title: 'Web & Digital', routines: [
+    { id: 'w1', label: 'Avis Google récoltés', freq: 'quotidien' },
+    { id: 'w2', label: 'Commandes web traitées en moins de 48h', freq: '1x' },
+    { id: 'w3', label: 'Rattachement EasyBiz à jour', freq: '1x' },
   ]},
 ];
 
@@ -291,7 +299,7 @@ export default function Routines({ magasinNom }: Props) {
         <h2 className="text-lg font-bold text-[#1A1A1A]">
           🔁 Routines hebdomadaires{magasinNom ? ` — ${magasinNom}` : ''}
         </h2>
-        <p className="text-sm text-[#6B7280] mt-0.5">Méthode GPA · Autodétermination (Deci &amp; Ryan, 2000)</p>
+        <p className="text-sm text-[#6B7280] mt-0.5">Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
       </div>
 
       <div className="bg-[#FFF5F5] border border-[#E30613]/20 rounded-xl px-4 py-3 text-sm text-[#1A1A1A] leading-relaxed">

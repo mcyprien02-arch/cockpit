@@ -164,6 +164,12 @@ export default function Competences({ magasinNom }: Props) {
   const [newPrenom, setNewPrenom] = useState('');
   const [newPoste, setNewPoste] = useState('');
 
+  const [vah] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    try { return parseFloat(localStorage.getItem(`vah_resultat_${magasinNom}`) ?? '0') || 0; }
+    catch { return 0; }
+  });
+
   function save(rows: Collaborateur[]) {
     setCollab(rows);
     localStorage.setItem(storageKey, JSON.stringify(rows));
@@ -286,6 +292,64 @@ export default function Competences({ magasinNom }: Props) {
               );
             })}
           </div>
+
+          {/* Coût caché des compétences */}
+          {(dependencyAlerts.length > 0 || noMasteryAlerts.length > 0) && (
+            <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 bg-[#FFF5F5] border-b border-[#E0E0E0]">
+                <h3 className="font-bold text-sm text-[#E30613]">🔍 Coût caché des compétences</h3>
+              </div>
+              <div className="p-4 space-y-3">
+                {vah > 0 ? (
+                  <>
+                    {dependencyAlerts.map(a => {
+                      const cost = Math.round(vah * 35);
+                      return (
+                        <div key={`cost-dep-${a.comp}`} className="border-l-4 border-l-orange-400 bg-orange-50 rounded-r-lg px-4 py-3">
+                          <p className="text-sm font-semibold text-[#1A1A1A] mb-1">
+                            ⚠ <strong>{a.comp}</strong> repose sur <strong>{a.prenom}</strong> seul.
+                          </p>
+                          <p className="text-xs text-[#6B7280] leading-relaxed">
+                            Coût caché estimé : si <strong>{a.prenom}</strong> est absent ne serait-ce qu&apos;une semaine, votre magasin perd l&apos;équivalent de{' '}
+                            <strong className="text-[#B91C1C]">{cost.toLocaleString('fr-FR')} €</strong> en performance non produite sur cette opération.
+                          </p>
+                        </div>
+                      );
+                    })}
+                    {noMasteryAlerts.map(c => {
+                      const cost = Math.round(vah * 0.3 * 1607);
+                      return (
+                        <div key={`cost-nm-${c.id}`} className="border-l-4 border-l-red-400 bg-red-50 rounded-r-lg px-4 py-3">
+                          <p className="text-sm font-semibold text-[#1A1A1A] mb-1">
+                            ⚠ <strong>{c.prenom}</strong> : aucune compétence maîtrisée (niveau 2).
+                          </p>
+                          <p className="text-xs text-[#6B7280] leading-relaxed">
+                            Coût caché estimé : un collaborateur insuffisamment formé produit environ 30% de valeur en moins. Sur 1 an, c&apos;est environ{' '}
+                            <strong className="text-[#B91C1C]">{cost.toLocaleString('fr-FR')} €</strong> de potentiel non exploité.
+                          </p>
+                        </div>
+                      );
+                    })}
+                    <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-xl p-4">
+                      <p className="text-sm font-bold text-[#1A1A1A] mb-1">
+                        💡 Total coût caché annuel estimé des fragilités de compétences :{' '}
+                        <span className="text-[#B91C1C]">
+                          {Math.round(dependencyAlerts.length * vah * 35 + noMasteryAlerts.length * vah * 0.3 * 1607).toLocaleString('fr-FR')} €/an
+                        </span>
+                      </p>
+                      <p className="text-xs text-[#6B7280] leading-relaxed">
+                        Ce montant représente le risque chiffré lié aux dépendances et aux manques de formation détectés dans votre équipe. Il sert d&apos;aide à la décision pour prioriser les formations et la polyvalence.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-4 py-3">
+                    Saisissez votre VAH dans le Dashboard pour chiffrer le coût caché des fragilités de votre équipe.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Grids by domain */}
           {DOMAINES.map(domaine => (
