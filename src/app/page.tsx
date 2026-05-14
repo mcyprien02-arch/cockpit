@@ -13,12 +13,14 @@ import Competences from '@/components/Competences';
 import Comparatif from '@/components/Comparatif';
 import VisiteCR from '@/components/VisiteCR';
 import AssistantIA from '@/components/AssistantIA';
+import Routines from '@/components/Routines';
 import { detectSpiral } from '@/lib/spiral';
 
 const TABS = [
   { id: 'dashboard',   label: 'Dashboard' },
   { id: 'diagnostic',  label: 'Diagnostic' },
   { id: 'plan',        label: "Plan d'Action" },
+  { id: 'routines',    label: '🔁 Routines' },
   { id: 'objectifs',   label: '🎯 Objectifs' },
   { id: 'couverture',  label: '🎯 Couverture de gamme' },
   { id: 'simulateur',  label: 'Simulateur' },
@@ -156,6 +158,7 @@ export default function App() {
         {tab === 'dashboard'   && <Dashboard   data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
         {tab === 'diagnostic'  && <Diagnostic  data={data} />}
         {tab === 'plan'        && <PlanAction   data={data} actions={actions} onSave={saveActions} />}
+        {tab === 'routines'    && <Routines        magasinNom={currentNom} />}
         {tab === 'objectifs'   && <Objectifs       magasinNom={currentNom} />}
         {tab === 'couverture'  && <CouvertureGamme magasinNom={currentNom} />}
         {tab === 'simulateur'  && <Simulateur      magasinNom={currentNom} isCriticalSpiral={isCritical} />}
