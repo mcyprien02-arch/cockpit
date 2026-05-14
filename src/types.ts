@@ -6,6 +6,8 @@ export type DisplayStatut = StoredStatut | 'Retard';
 export interface MagasinData {
   nom: string;
   phase: Phase;
+  // Contexte
+  vah: number;
   // Rentabilité
   caAnnuel: number;
   tauxMargeNette: number;
@@ -46,6 +48,7 @@ export interface MagasinData {
 
 export const DEFAULT_DATA: MagasinData = {
   nom: '', phase: 'Croissance',
+  vah: 0,
   caAnnuel: 0, tauxMargeNette: 0, tauxDemarque: 0, chvacv: 0,
   stockTotal: 0, stockAge: 0, gmroi: 0, top20Traite: false,
   delaiTel: 0, delaiConsole: 0, delaiJV: 0, delaiTablette: 0, delaiPC: 0,

@@ -6,19 +6,119 @@ import { SEUIL_DEFAULTS } from '@/lib/seuils';
 import type { KpiStatus } from '@/lib/kpis';
 
 interface Props { data: MagasinData; }
-interface ProcessState { piceasoft: boolean; formation: boolean; briefing: boolean; }
 
-// ── Catégories ─────────────────────────────────────────────────────────────
-type DiagCat = 'rentabilite' | 'stock' | 'commerce' | 'gamme';
+// ── Catégories (gamme supprimée — tauxAchatExterne déplacé en commerce) ──────
+type DiagCat = 'rentabilite' | 'stock' | 'commerce';
 
 const CAT_LABELS: Record<DiagCat, string> = {
-  rentabilite: 'Rentabilité', stock: 'Stock', commerce: 'Commerce', gamme: 'Gamme',
+  rentabilite: 'Rentabilité', stock: 'Stock', commerce: 'Commerce',
 };
 const CAT_COLOR: Record<DiagCat, string> = {
-  rentabilite: '#10b981', stock: '#3b82f6', commerce: '#f59e0b', gamme: '#8b5cf6',
+  rentabilite: '#10b981', stock: '#3b82f6', commerce: '#f59e0b',
 };
 
-// ── KPIs affichés dans le Diagnostic ──────────────────────────────────────
+// ── Pratiques (23 items, même structure que Dashboard) ──────────────────────
+interface PratiquesState {
+  decouverteBesoins: boolean; accessoires: boolean; avisGoogle: boolean; estalyPratique: boolean; caissePics: boolean;
+  testProduit: boolean; vpdAppliquee: boolean; negociationRachat: boolean; piceasoft: boolean; deuxAcheteurs: boolean;
+  briefingQuotidien: boolean; entretiensMenusuels: boolean; easyTraining: boolean; polyvalence: boolean; coachingVente: boolean;
+  top20Hebdo: boolean; accelerationsAnticipees: boolean; inventairesTournants: boolean; rebutsDestock: boolean; rattachementF3: boolean;
+  dashboardWeb: boolean; expeditions48h: boolean; moduleAcceleration: boolean;
+}
+const DEFAULT_PRATIQUES: PratiquesState = {
+  decouverteBesoins: false, accessoires: false, avisGoogle: false, estalyPratique: false, caissePics: false,
+  testProduit: false, vpdAppliquee: false, negociationRachat: false, piceasoft: false, deuxAcheteurs: false,
+  briefingQuotidien: false, entretiensMenusuels: false, easyTraining: false, polyvalence: false, coachingVente: false,
+  top20Hebdo: false, accelerationsAnticipees: false, inventairesTournants: false, rebutsDestock: false, rattachementF3: false,
+  dashboardWeb: false, expeditions48h: false, moduleAcceleration: false,
+};
+
+// ── Coûts cachés ────────────────────────────────────────────────────────────
+interface CoutCacheItem {
+  key: keyof PratiquesState;
+  label: string;
+  calcul: (vah: number, nbEtp: number) => number;
+  action: string;
+}
+
+const COUT_CACHE_ITEMS: CoutCacheItem[] = [
+  // Bloc 1
+  { key: 'decouverteBesoins', label: 'Découverte des besoins non systématique',
+    calcul: (vah) => vah * 0.5 * 250,
+    action: "Formez l'équipe au questionnement client. 1 min de qualification = panier plus juste." },
+  { key: 'accessoires', label: "Pas de proposition d'accessoire",
+    calcul: (vah) => vah * 0.25 * 250,
+    action: "Briefez vos vendeurs : 1 accessoire proposé à chaque vente principale." },
+  { key: 'avisGoogle', label: 'Pas de relance avis Google',
+    calcul: (vah) => vah * 0.1 * 250,
+    action: "Mettez en place une relance systématique en caisse. 5 avis positifs/semaine = note qui monte." },
+  { key: 'estalyPratique', label: 'Pas de proposition Estaly systématique',
+    calcul: (vah) => vah * 0.2 * 250,
+    action: "Brief équipe sur les primes Estaly. 1 contrat/jour = +1 100 €/an pour le vendeur." },
+  { key: 'caissePics', label: "Caisse mal organisée aux pics d'affluence",
+    calcul: (vah) => vah * 0.5 * 100,
+    action: "Anticipez les pics : doublez la caisse les samedis et veilles de fête." },
+  // Bloc 2
+  { key: 'testProduit', label: 'Test produit bâclé au rachat',
+    calcul: (vah) => vah * 2 * 10 * 12,
+    action: "Durcir les tests au rachat. Le SAV se joue à l'entrée du produit." },
+  { key: 'vpdAppliquee', label: 'VPD non appliquée',
+    calcul: (vah) => vah * 0.5 * 250,
+    action: "Réafficher les 5 questions VPD au comptoir. La marge se fait à l'achat." },
+  { key: 'negociationRachat', label: 'Pas de négociation systématique au rachat',
+    calcul: (vah) => vah * 0.25 * 250,
+    action: "Coachez vos acheteurs. Chaque euro négocié = marge directe." },
+  { key: 'piceasoft', label: 'Piceasoft non utilisé sur les mobiles',
+    calcul: (vah) => vah * 2 * 10 * 12,
+    action: "Test systématique sur tous les mobiles rachetés. SAV divisé par 2." },
+  { key: 'deuxAcheteurs', label: 'Acheteur seul au comptoir',
+    calcul: (vah) => vah * 1 * 250,
+    action: "Formez un 2e acheteur. La fluidité au comptoir = ventes en plus." },
+  // Bloc 3
+  { key: 'briefingQuotidien', label: 'Pas de briefing quotidien',
+    calcul: (vah, nbEtp) => vah * 0.25 * nbEtp * 250,
+    action: "5 min chaque matin avant ouverture. Routine simple, impact durable." },
+  { key: 'entretiensMenusuels', label: "Pas d'entretien mensuel par collaborateur",
+    calcul: (vah) => vah * 80,
+    action: "1h par mois par collaborateur. Investissement humain garanti." },
+  { key: 'easyTraining', label: 'Plan EasyTraining non suivi',
+    calcul: (vah) => vah * 80,
+    action: "Bloquez 1h/semaine pour les modules EasyTraining manquants." },
+  { key: 'polyvalence', label: 'Vendeur unique sur rayon majeur',
+    calcul: (vah) => vah * 200,
+    action: "Formez un suppléant sur chaque rayon majeur." },
+  { key: 'coachingVente', label: 'Pas de coaching vente en magasin',
+    calcul: (vah, nbEtp) => vah * 0.5 * nbEtp * 50,
+    action: "30 min de coaching individuel/semaine par collaborateur." },
+  // Bloc 4
+  { key: 'top20Hebdo', label: 'Top 20 vieux stock non traité chaque semaine',
+    calcul: (vah) => vah * 2 * 52,
+    action: "Extraire TOP 20 chaque lundi. Levier d'urgence cash immédiat." },
+  { key: 'accelerationsAnticipees', label: 'Accélérations traitées tardivement',
+    calcul: (vah) => vah * 1 * 52,
+    action: "Anticipez : -10%/semaine plutôt que -30%/mois." },
+  { key: 'inventairesTournants', label: 'Inventaires tournants non respectés',
+    calcul: (vah) => vah * 100,
+    action: "Planning IT respecté = vision stock réelle." },
+  { key: 'rebutsDestock', label: 'Rebuts non destockés via module Démarque',
+    calcul: (vah) => vah * 0.5 * 50,
+    action: "Module Démarque hebdomadaire. Faux stock = faux pilotage." },
+  { key: 'rattachementF3', label: 'Produits techniques non rattachés via F3',
+    calcul: (vah) => vah * 0.5 * 100,
+    action: "Scanner systématique produits techniques. Données = ventes." },
+  // Bloc 5
+  { key: 'dashboardWeb', label: 'Dashboard web non consulté quotidiennement',
+    calcul: (vah) => vah * 0.5 * 250,
+    action: "Dashboard ouvert en permanence. Le web = votre 2e magasin." },
+  { key: 'expeditions48h', label: 'Délai expédition supérieur à 48h',
+    calcul: (vah) => vah * 100,
+    action: "Process expé quotidien. Service postal collecte chez vous." },
+  { key: 'moduleAcceleration', label: 'Module Accélération web non utilisé',
+    calcul: (vah) => vah * 50,
+    action: "Accélérez sur le web AVANT que ça pourrisse." },
+];
+
+// ── KPIs du Diagnostic ──────────────────────────────────────────────────────
 interface DiagKpi {
   key: keyof MagasinData;
   label: string;
@@ -77,23 +177,12 @@ const DIAG_KPIS: DiagKpi[] = [
   },
   {
     key: 'tauxAchatExterne', label: 'Achat externe', unit: '%',
-    cat: 'gamme', dir: 'lower',
+    cat: 'commerce', dir: 'lower',
     actionText: "💡 Action prioritaire : analysez vos sources externes. Sont-elles justifiées par la marge ? Travaillez votre VPD pour récupérer plus d'achats clients.",
   },
 ];
 
 const TOP20_ACTION = "🚨 Action critique : c'est LE levier n°1 pour libérer du cash immédiatement. À traiter aujourd'hui.";
-
-const PROCESS_LABELS: Record<keyof ProcessState, string> = {
-  piceasoft: 'Piceasoft utilisé sur tous les mobiles',
-  formation: "Formation EasyTraining à jour pour toute l'équipe",
-  briefing: 'Briefing quotidien tenu',
-};
-const PROCESS_ACTIONS: Record<keyof ProcessState, string> = {
-  piceasoft: "💡 Mettez en place dès demain le test Piceasoft systématique sur tous les mobiles rachetés. Réduction SAV immédiate.",
-  formation: "💡 Bloquez 1h chaque mardi matin pour les modules EasyTraining manquants. Routine simple, impact durable.",
-  briefing: "💡 5 minutes chaque matin avant ouverture. Objectifs du jour + un point d'attention. Routine d'équipe gagnante.",
-};
 
 // ── Statuts ────────────────────────────────────────────────────────────────
 function phaseStatus(key: string, val: number, phase: Phase): KpiStatus | null {
@@ -186,7 +275,7 @@ function RadarChart({ scores }: { scores: Partial<Record<DiagCat, number>> }) {
 // ── Composant principal ────────────────────────────────────────────────────
 export default function Diagnostic({ data }: Props) {
   const phase = (data.phase ?? 'Maturité') as Phase;
-  const [openCat, setOpenCat] = useState<DiagCat | null>(null);
+  const [openCat, setOpenCat] = useState<string | null>(null);
 
   const [customSeuils] = useState<Record<string, number>>(() => {
     if (typeof window === 'undefined') return { ...SEUIL_DEFAULTS };
@@ -194,14 +283,30 @@ export default function Diagnostic({ data }: Props) {
     catch { return { ...SEUIL_DEFAULTS }; }
   });
 
-  const [process] = useState<ProcessState>(() => {
-    if (typeof window === 'undefined') return { piceasoft: false, formation: false, briefing: false };
-    try { const p = localStorage.getItem(`process_${data.nom}`); return p ? JSON.parse(p) as ProcessState : { piceasoft: false, formation: false, briefing: false }; }
-    catch { return { piceasoft: false, formation: false, briefing: false }; }
+  const [pratiques] = useState<PratiquesState>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PRATIQUES;
+    try {
+      const p = localStorage.getItem(`pratiques_${data.nom}`);
+      return p ? { ...DEFAULT_PRATIQUES, ...JSON.parse(p) as Partial<PratiquesState> } : DEFAULT_PRATIQUES;
+    } catch { return DEFAULT_PRATIQUES; }
+  });
+
+  const [nbEtp] = useState<number>(() => {
+    if (typeof window === 'undefined') return 3;
+    try {
+      const s = localStorage.getItem(`equipe_${data.nom}`);
+      if (!s) return 3;
+      const store = JSON.parse(s) as unknown;
+      const rows: Array<{ heures: number }> = Array.isArray(store)
+        ? store as Array<{ heures: number }>
+        : ((store as { rows?: Array<{ heures: number }> }).rows ?? []);
+      const total = rows.reduce((sum, r) => sum + (r.heures || 0), 0);
+      return total > 0 ? Math.max(1, Math.round(total / 151.67)) : 3;
+    } catch { return 3; }
   });
 
   // ── Scores par catégorie ──
-  const allCats: DiagCat[] = ['rentabilite', 'stock', 'commerce', 'gamme'];
+  const allCats: DiagCat[] = ['rentabilite', 'stock', 'commerce'];
 
   function catScore(cat: DiagCat): number {
     const kpis = DIAG_KPIS.filter(k => k.cat === cat);
@@ -222,7 +327,7 @@ export default function Diagnostic({ data }: Props) {
   for (const cat of allCats) scores[cat] = catScore(cat);
   const overall = Math.round(Object.values(scores).reduce((s, v) => s + v, 0) / allCats.length);
 
-  // ── Alertes (warn/danger) ──
+  // ── Alertes KPI (warn/danger) ──
   const alerts: Array<{ kpi: DiagKpi; val: number; status: KpiStatus; seuilLabel: string }> = [];
   for (const kpi of DIAG_KPIS) {
     const val = data[kpi.key] as number;
@@ -232,9 +337,14 @@ export default function Diagnostic({ data }: Props) {
       alerts.push({ kpi, val, status: st, seuilLabel: resolveSeuilLabel(kpi, seuil, phase) });
     }
   }
-
   const top20Alert = data.nom && data.top20Traite === false;
-  const processAlerts = (Object.keys(process) as Array<keyof ProcessState>).filter(k => !process[k]);
+
+  // ── Coûts cachés ──
+  const vah = data.vah ?? 0;
+  const coutCacheItems = COUT_CACHE_ITEMS.filter(item => !pratiques[item.key]);
+  const totalCoutCache = coutCacheItems.reduce((sum, item) => sum + Math.round(item.calcul(vah, nbEtp)), 0);
+  const nbCochees = Object.values(pratiques).filter(Boolean).length;
+  const totalPratiques = Object.keys(DEFAULT_PRATIQUES).length;
 
   return (
     <div className="space-y-6">
@@ -285,14 +395,13 @@ export default function Diagnostic({ data }: Props) {
         </div>
       </div>
 
-      {/* Alertes */}
-      {(alerts.length > 0 || top20Alert || processAlerts.length > 0) && (
+      {/* Alertes KPI */}
+      {(alerts.length > 0 || top20Alert) && (
         <div className="space-y-3">
           <h3 className="text-sm font-bold text-[#1A1A1A]">
-            Points d&apos;attention ({alerts.length + (top20Alert ? 1 : 0) + processAlerts.length})
+            Points d&apos;attention ({alerts.length + (top20Alert ? 1 : 0)})
           </h3>
 
-          {/* Top 20 */}
           {top20Alert && (
             <div className="bg-white border-l-4 border-l-red-500 rounded-lg shadow-sm p-4">
               <p className="font-bold text-sm text-[#1A1A1A] mb-1">Top 20 vieux stock non traité</p>
@@ -301,7 +410,6 @@ export default function Diagnostic({ data }: Props) {
             </div>
           )}
 
-          {/* KPI alerts */}
           {alerts.map(({ kpi, val, status, seuilLabel }) => (
             <div key={String(kpi.key)} className={`bg-white shadow-sm rounded-lg p-4 border-l-4 ${status === 'danger' ? 'border-l-red-500' : 'border-l-orange-400'}`}>
               <div className="flex items-start justify-between gap-3 mb-1">
@@ -315,22 +423,65 @@ export default function Diagnostic({ data }: Props) {
               <p className="text-sm text-[#1A1A1A] leading-relaxed">{kpi.actionText}</p>
             </div>
           ))}
-
-          {/* Process alerts */}
-          {processAlerts.map(key => (
-            <div key={key} className="bg-white border-l-4 border-l-orange-400 rounded-lg shadow-sm p-4">
-              <p className="font-bold text-sm text-[#1A1A1A] mb-1">{PROCESS_LABELS[key]}</p>
-              <p className="text-xs text-[#6B7280] mb-3">Statut : non appliqué</p>
-              <p className="text-sm text-[#1A1A1A] leading-relaxed">{PROCESS_ACTIONS[key]}</p>
-            </div>
-          ))}
         </div>
       )}
 
-      {/* Aucune alerte */}
-      {alerts.length === 0 && !top20Alert && processAlerts.length === 0 && data.nom && (
+      {alerts.length === 0 && !top20Alert && data.nom && (
         <div className="bg-green-50 border border-green-300 rounded-xl p-4 text-center">
           <p className="text-green-700 font-semibold text-sm">✓ Aucun point d&apos;attention — tous vos indicateurs sont dans les seuils.</p>
+        </div>
+      )}
+
+      {/* Coût caché des dysfonctionnements */}
+      {data.nom && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold text-[#1A1A1A]">🔍 Coût caché des dysfonctionnements</h3>
+
+          {vah > 0 ? (
+            <>
+              {coutCacheItems.length === 0 ? (
+                <div className="bg-green-50 border border-green-300 rounded-xl p-4 text-center">
+                  <p className="text-green-700 font-semibold text-sm">✓ Toutes les pratiques sont appliquées — aucun coût caché détecté.</p>
+                </div>
+              ) : (
+                <>
+                  {coutCacheItems.map(item => {
+                    const cost = Math.round(item.calcul(vah, nbEtp));
+                    return (
+                      <div key={item.key} className="bg-white border border-[#E0E0E0] border-l-4 border-l-orange-400 rounded-lg shadow-sm p-4">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <p className="font-semibold text-sm text-[#1A1A1A]">{item.label}</p>
+                          <span className="text-sm font-black text-[#B91C1C] flex-shrink-0 whitespace-nowrap">
+                            ~{cost.toLocaleString('fr-FR')} €/an
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#6B7280] italic leading-relaxed">{item.action}</p>
+                      </div>
+                    );
+                  })}
+
+                  <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-xl p-5">
+                    <div className="text-xl font-black text-[#1A1A1A] mb-1">
+                      📊 Total coût caché annuel estimé :{' '}
+                      <span className="text-[#B91C1C]">{totalCoutCache.toLocaleString('fr-FR')} €/an</span>
+                    </div>
+                    <div className="text-sm text-[#6B7280]">
+                      {nbCochees} pratique{nbCochees > 1 ? 's' : ''} sur {totalPratiques} sont actuellement appliquée{nbCochees > 1 ? 's' : ''} dans votre magasin.
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
+              Saisissez votre valeur ajoutée horaire dans le Dashboard (champ <strong>VAH €/h</strong>) pour chiffrer le coût caché de ces dysfonctionnements.
+              {nbCochees < totalPratiques && (
+                <span className="block mt-1 text-xs">
+                  {totalPratiques - nbCochees} pratique{totalPratiques - nbCochees > 1 ? 's' : ''} non appliquée{totalPratiques - nbCochees > 1 ? 's' : ''} sur {totalPratiques}.
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -359,7 +510,6 @@ export default function Diagnostic({ data }: Props) {
 
               {isOpen && (
                 <div className="border-t border-[#E0E0E0] divide-y divide-[#E0E0E0]">
-                  {/* Top 20 dans la section Stock */}
                   {cat === 'stock' && data.nom && (
                     <div className={`px-4 py-3 flex items-center justify-between ${!data.top20Traite ? 'bg-red-50 border-l-4 border-l-red-500' : 'border-l-2 border-l-green-500'}`}>
                       <div>
@@ -406,39 +556,6 @@ export default function Diagnostic({ data }: Props) {
             </div>
           );
         })}
-
-        {/* Process */}
-        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
-          <button
-            onClick={() => setOpenCat(openCat === ('process' as DiagCat) ? null : ('process' as DiagCat))}
-            className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F5F5F5] transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#6B7280]" />
-              <span className="font-semibold text-sm text-[#1A1A1A]">Process</span>
-              {processAlerts.length > 0 && (
-                <span className="text-xs bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded-full">{processAlerts.length} non appliqué{processAlerts.length > 1 ? 's' : ''}</span>
-              )}
-            </div>
-            <span className="text-[#6B7280] text-xs">{openCat === ('process' as DiagCat) ? '▲' : '▼'}</span>
-          </button>
-
-          {openCat === ('process' as DiagCat) && (
-            <div className="border-t border-[#E0E0E0] divide-y divide-[#E0E0E0]">
-              {(Object.keys(PROCESS_LABELS) as Array<keyof ProcessState>).map(key => (
-                <div key={key} className={`px-4 py-3 border-l-2 ${process[key] ? 'border-l-green-500' : 'border-l-orange-400'}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-[#1A1A1A]">{PROCESS_LABELS[key]}</span>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${process[key] ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                      {process[key] ? 'Appliqué ✓' : 'Non appliqué'}
-                    </span>
-                  </div>
-                  {!process[key] && <p className="text-xs text-[#6B7280] mt-1">(Modifiable dans le Dashboard → Modifier mes données)</p>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
