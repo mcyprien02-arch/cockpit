@@ -202,6 +202,11 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   });
   const [pratiques, setPratiques] = useState<PratiquesState>(DEFAULT_PRATIQUES);
   const [openBloc, setOpenBloc] = useState<number | null>(0);
+  const [vahHeures, setVahHeures] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    try { return parseFloat(localStorage.getItem(`vah_heures_${data.nom}`) ?? '0') || 0; }
+    catch { return 0; }
+  });
 
   useEffect(() => { setForm({ ...DEFAULT_DATA, ...data }); }, [data]);
 
@@ -212,6 +217,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       const p = localStorage.getItem(`pratiques_${data.nom}`);
       setPratiques(p ? { ...DEFAULT_PRATIQUES, ...JSON.parse(p) as Partial<PratiquesState> } : DEFAULT_PRATIQUES);
     } catch { setPratiques(DEFAULT_PRATIQUES); }
+    try {
+      const h = localStorage.getItem(`vah_heures_${data.nom}`);
+      setVahHeures(h ? parseFloat(h) || 0 : 0);
+    } catch { setVahHeures(0); }
   }, [data.nom]);
 
   function setF(k: keyof MagasinData, v: number) { setForm(f => ({ ...f, [k]: v })); }
@@ -228,6 +237,11 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     const next = { ...pratiques, [key]: !pratiques[key] };
     setPratiques(next);
     if (data.nom) localStorage.setItem(`pratiques_${data.nom}`, JSON.stringify(next));
+  }
+
+  function updateVahHeures(h: number) {
+    setVahHeures(h);
+    if (form.nom) localStorage.setItem(`vah_heures_${form.nom}`, String(h));
   }
 
   function handlePaste() {
@@ -271,6 +285,14 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     onSave(form);
     localStorage.setItem(`seuils_${form.nom}`, JSON.stringify(customSeuils));
     if (form.nom) localStorage.setItem(`pratiques_${form.nom}`, JSON.stringify(pratiques));
+    if (form.nom) {
+      const vahResult = vahHeures > 0 && form.caAnnuel > 0 && form.tauxMargeNette > 0
+        ? (form.caAnnuel * form.tauxMargeNette / 100) / vahHeures : 0;
+      localStorage.setItem(`vah_ca_${form.nom}`, String(form.caAnnuel));
+      localStorage.setItem(`vah_marge_${form.nom}`, String(form.tauxMargeNette));
+      localStorage.setItem(`vah_heures_${form.nom}`, String(vahHeures));
+      localStorage.setItem(`vah_resultat_${form.nom}`, String(vahResult));
+    }
     setShowModal(false);
     setHighlightedFields(new Set());
     setPasteCount(0);
@@ -556,9 +578,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                   <KpiRow label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€"
                     seuil={customSeuils['caAnnuel']} onSeuil={v => setCustomSeuil('caAnnuel', v)} />
                 </div>
-                <div className={hl('vah')}>
-                  <KpiRow label="Valeur ajoutée horaire (VAH)" field="vah" form={form} setF={setF} unit="€/h" placeholder="Ex : 30" />
-                </div>
                 <div className={hl('tauxMargeNette')}>
                   <KpiRow label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%"
                     seuil={customSeuils['tauxMargeNette']} onSeuil={v => setCustomSeuil('tauxMargeNette', v)} />
@@ -599,15 +618,73 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                 </div>
                 <KpiRow label="Ventes additionnelles" field="ventesAdditionnelles" form={form} setF={setF} unit="€"
                   seuil={customSeuils['ventesAdditionnelles']} onSeuil={v => setCustomSeuil('ventesAdditionnelles', v)} />
-                <div className={hl('poidsDigital')}>
-                  <KpiRow label="Poids digital" field="poidsDigital" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['poidsDigital']} onSeuil={v => setCustomSeuil('poidsDigital', v)} />
-                </div>
                 <div className={hl('tauxAchatExterne')}>
                   <KpiRow label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%"
                     seuil={customSeuils['tauxAchatExterne']} onSeuil={v => setCustomSeuil('tauxAchatExterne', v)} />
                 </div>
               </FormSection>
+
+              {/* Section Web */}
+              <FormSection title="🌐 Web">
+                <div className={hl('poidsDigital')}>
+                  <KpiRow label="Poids digital" field="poidsDigital" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['poidsDigital']} onSeuil={v => setCustomSeuil('poidsDigital', v)} />
+                </div>
+              </FormSection>
+
+              {/* Section VAH */}
+              {(() => {
+                const vahResult = vahHeures > 0 && form.caAnnuel > 0 && form.tauxMargeNette > 0
+                  ? (form.caAnnuel * form.tauxMargeNette / 100) / vahHeures : 0;
+                return (
+                  <div className="bg-white border border-[#E0E0E0] rounded-lg shadow-sm p-6">
+                    <h3 className="font-bold text-sm text-[#1A1A1A] mb-1">⏱ Ma valeur ajoutée horaire</h3>
+                    <p className="text-xs text-[#6B7280] italic mb-4">
+                      Cet indicateur est inspiré de la CHVACV de la méthodologie ISEOR (Savall &amp; Zardet, 1992). Il permet de chiffrer le coût caché des dysfonctionnements organisationnels.
+                    </p>
+                    <div className="space-y-3 mb-4">
+                      <div className="flex items-center gap-3 py-2 border-b border-[#F0F0F0]">
+                        <span className="flex-1 text-sm text-[#1A1A1A] font-medium">CA annuel <span className="text-[#9CA3AF] text-xs font-normal">(€)</span></span>
+                        <span className="text-sm font-semibold text-[#6B7280]">
+                          {form.caAnnuel > 0 ? form.caAnnuel.toLocaleString('fr-FR') + ' €' : <span className="text-[#9CA3AF] italic">non saisi</span>}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 py-2 border-b border-[#F0F0F0]">
+                        <span className="flex-1 text-sm text-[#1A1A1A] font-medium">Taux de marge nette <span className="text-[#9CA3AF] text-xs font-normal">(%)</span></span>
+                        <span className="text-sm font-semibold text-[#6B7280]">
+                          {form.tauxMargeNette > 0 ? form.tauxMargeNette + ' %' : <span className="text-[#9CA3AF] italic">non saisi</span>}
+                        </span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 py-2">
+                        <span className="flex-1 text-sm text-[#1A1A1A] font-medium">
+                          Heures travaillées/an (total équipe)
+                          <span className="text-[#9CA3AF] ml-1 text-xs font-normal">(h)</span>
+                        </span>
+                        <input
+                          type="number"
+                          className="w-full sm:w-40 bg-white border border-[#E0E0E0] rounded-lg px-2 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
+                          value={vahHeures || ''}
+                          onChange={e => updateVahHeures(parseFloat(e.target.value) || 0)}
+                          placeholder="Ex : 8035 (5 ETP × 1607h)"
+                        />
+                      </div>
+                    </div>
+                    {vahResult > 0 ? (
+                      <div className="bg-[#FFF5F5] border border-[#E30613]/20 rounded-xl p-4">
+                        <div className="text-2xl font-black text-[#E30613] mb-1">{vahResult.toFixed(1)} €/h</div>
+                        <p className="text-sm text-[#1A1A1A] font-medium">
+                          Votre magasin produit en moyenne <strong>{vahResult.toFixed(1)} €</strong> de valeur ajoutée par heure de travail.
+                          Chaque heure perdue prive votre magasin de cette valeur.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-[#F5F5F5] rounded-xl p-3 text-xs text-[#6B7280] italic">
+                        Renseignez les 3 champs pour obtenir votre valeur ajoutée horaire.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Section 2 — Pratiques magasin */}
               <div className="bg-white border border-[#E0E0E0] rounded-lg shadow-sm p-6">

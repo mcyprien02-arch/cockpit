@@ -7,14 +7,14 @@ import type { KpiStatus } from '@/lib/kpis';
 
 interface Props { data: MagasinData; }
 
-// ── Catégories (gamme supprimée — tauxAchatExterne déplacé en commerce) ──────
-type DiagCat = 'rentabilite' | 'stock' | 'commerce';
+// ── Catégories ───────────────────────────────────────────────────────────────
+type DiagCat = 'rentabilite' | 'stock' | 'commerce' | 'web';
 
 const CAT_LABELS: Record<DiagCat, string> = {
-  rentabilite: 'Rentabilité', stock: 'Stock', commerce: 'Commerce',
+  rentabilite: 'Rentabilité', stock: 'Stock', commerce: 'Commerce', web: 'Web',
 };
 const CAT_COLOR: Record<DiagCat, string> = {
-  rentabilite: '#10b981', stock: '#3b82f6', commerce: '#f59e0b',
+  rentabilite: '#10b981', stock: '#3b82f6', commerce: '#f59e0b', web: '#8b5cf6',
 };
 
 // ── Pratiques (23 items, même structure que Dashboard) ──────────────────────
@@ -167,7 +167,7 @@ const DIAG_KPIS: DiagKpi[] = [
   },
   {
     key: 'poidsDigital', label: 'Poids digital', unit: '%',
-    cat: 'commerce', dir: 'higher',
+    cat: 'web', dir: 'higher',
     actionText: "💡 Action prioritaire : auditez votre référencement EC.fr. Combien de vos produits sont en ligne avec photos correctes et description complète ?",
   },
   {
@@ -291,6 +291,17 @@ export default function Diagnostic({ data }: Props) {
     } catch { return DEFAULT_PRATIQUES; }
   });
 
+  const [vah] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    try {
+      const stored = parseFloat(localStorage.getItem(`vah_resultat_${data.nom}`) ?? '0');
+      if (stored > 0) return stored;
+      const heures = parseFloat(localStorage.getItem(`vah_heures_${data.nom}`) ?? '0');
+      if (!heures || !data.caAnnuel || !data.tauxMargeNette) return 0;
+      return (data.caAnnuel * data.tauxMargeNette / 100) / heures;
+    } catch { return 0; }
+  });
+
   const [nbEtp] = useState<number>(() => {
     if (typeof window === 'undefined') return 3;
     try {
@@ -306,7 +317,7 @@ export default function Diagnostic({ data }: Props) {
   });
 
   // ── Scores par catégorie ──
-  const allCats: DiagCat[] = ['rentabilite', 'stock', 'commerce'];
+  const allCats: DiagCat[] = ['rentabilite', 'stock', 'commerce', 'web'];
 
   function catScore(cat: DiagCat): number {
     const kpis = DIAG_KPIS.filter(k => k.cat === cat);
@@ -340,7 +351,6 @@ export default function Diagnostic({ data }: Props) {
   const top20Alert = data.nom && data.top20Traite === false;
 
   // ── Coûts cachés ──
-  const vah = data.vah ?? 0;
   const coutCacheItems = COUT_CACHE_ITEMS.filter(item => !pratiques[item.key]);
   const totalCoutCache = coutCacheItems.reduce((sum, item) => sum + Math.round(item.calcul(vah, nbEtp)), 0);
   const nbCochees = Object.values(pratiques).filter(Boolean).length;
