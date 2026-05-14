@@ -207,6 +207,11 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     try { return parseFloat(localStorage.getItem(`vah_heures_${data.nom}`) ?? '0') || 0; }
     catch { return 0; }
   });
+  const [vision, setVision] = useState<{ vision3ans: string; valeur1: string; valeur2: string; valeur3: string } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try { const s = localStorage.getItem(`vision_${data.nom}`); return s ? JSON.parse(s) : null; }
+    catch { return null; }
+  });
 
   useEffect(() => { setForm({ ...DEFAULT_DATA, ...data }); }, [data]);
 
@@ -221,6 +226,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       const h = localStorage.getItem(`vah_heures_${data.nom}`);
       setVahHeures(h ? parseFloat(h) || 0 : 0);
     } catch { setVahHeures(0); }
+    try {
+      const v = localStorage.getItem(`vision_${data.nom}`);
+      setVision(v ? JSON.parse(v) : null);
+    } catch { setVision(null); }
   }, [data.nom]);
 
   function setF(k: keyof MagasinData, v: number) { setForm(f => ({ ...f, [k]: v })); }
@@ -396,6 +405,21 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
           ✏ Modifier mes données
         </button>
       </div>
+
+      {data.nom && (
+        <button onClick={() => onNavigate('concept')} className="w-full bg-white border border-[#E0E0E0] rounded-xl px-4 py-3 text-left hover:bg-[#FAFAFA] transition-colors group">
+          {vision?.vision3ans ? (
+            <>
+              <p className="text-sm text-[#1A1A1A] font-medium truncate">🌟 {vision.vision3ans}</p>
+              {(vision.valeur1 || vision.valeur2 || vision.valeur3) && (
+                <p className="text-xs text-[#6B7280] mt-0.5">💎 {[vision.valeur1, vision.valeur2, vision.valeur3].filter(Boolean).join(' · ')}</p>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-[#6B7280] italic group-hover:text-[#E30613]">Définissez votre vision pour personnaliser votre outil. →</p>
+          )}
+        </button>
+      )}
 
       {!data.nom && !showModal && (
         <div className="text-center py-16">
