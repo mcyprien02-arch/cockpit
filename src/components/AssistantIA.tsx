@@ -9,6 +9,29 @@ interface Props {
   actions: PAPAction[];
 }
 
+const SYSTEM_PROMPT = `Tu es un expert franchise EasyCash spécialiste de la seconde main en France. Tu connais :
+
+INDICATEURS SUIVIS DANS L'OUTIL (4 catégories) :
+- Rentabilité : CA annuel, Taux de marge nette, Taux de démarque
+- Stock : Stock total, Stock âgé %, Top 20 vieux stock traité
+- Commerce : Taux transformation, Estaly/mois, Taux SAV, Ventes additionnelles, Achat externe
+- Web : Poids digital, Note Google, Taux d'annulation commande, Satisfaction client web
+
+MÉTHODOLOGIE GPA (routines hebdomadaires) :
+- Gamme : inventaires tournants, ajustement assortiment, pilotage achat externe
+- Prix : côtes d'accélération réseau, pricing concurrentiel, décotes accélératrices
+- Animation : contrats Estaly, ventes additionnelles, animation vitrine, demandes d'avis Google
+
+BENCHMARKS RÉSEAU EASYCASH :
+- Taux de marge nette : ≥ 40% (Lancement), ≥ 42% (Croissance), ≥ 44% (Maturité)
+- Stock âgé : ≤ 20% (Lancement), ≤ 15% (Croissance), ≤ 10% (Maturité)
+- Note Google : ≥ 4,2/5 — Taux annulation web : ≤ 5%
+- Taux transformation : ≥ 25% — Estaly : ≥ 3/mois (Lancement), ≥ 5 (Croissance), ≥ 8 (Maturité)
+
+OUTILS ISEOR : VAH = (CA × Taux Marge) / Heures annuelles. Coût d'un dysfonctionnement = VAH × temps perdu × fréquence.
+
+RÈGLES DE RÉPONSE : Réponds en 5 phrases maximum. Direct, chiffré, actionnable. Utilise les benchmarks réseau. Priorise les actions à impact financier immédiat. Termine par une action à faire dans les 48h.`;
+
 const PROMPT_TEMPLATES = [
   {
     id: 'diagnostic',
@@ -17,11 +40,20 @@ const PROMPT_TEMPLATES = [
     build: (data: MagasinData, actions: PAPAction[]) => {
       const alerts = getAlerts(data);
       const scores = getCategoryScores(data);
-      const cats = ['rentabilite', 'stock', 'commerce', 'rh'] as const;
-      const scoreStr = cats.map(c => `${c}: ${Math.round(scores[c])}/100`).join(', ');
+      const scoreStr = [
+        `Rentabilité: ${Math.round(scores.rentabilite)}/100`,
+        `Stock: ${Math.round(scores.stock)}/100`,
+        `Commerce: ${Math.round(scores.commerce)}/100`,
+      ].join(', ');
+      const webKpis = [
+        data.poidsDigital ? `Poids digital: ${data.poidsDigital}%` : null,
+        data.noteGoogle ? `Note Google: ${data.noteGoogle}/5` : null,
+        data.tauxAnnulationWeb ? `Annulation web: ${data.tauxAnnulationWeb}%` : null,
+        data.satisfactionWeb ? `Satisfaction web: ${data.satisfactionWeb}/5` : null,
+      ].filter(Boolean).join(', ');
       const alertStr = alerts.map(a => `- ${a.label}: ${a.value}${a.unit} (cible: ${a.seuilOk}, statut: ${a.status})`).join('\n');
       const actionStr = actions.filter(a => a.statut !== 'Fait').slice(0, 5).map(a => `- [P${a.priorite}] ${a.titre} (${a.statut})`).join('\n');
-      return `Tu es expert en franchise retail et gestion de magasin EasyCash.\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nSCORES: ${scoreStr}\n\nALERTES KPI:\n${alertStr || 'Aucune alerte'}\n\nACTIONS EN COURS:\n${actionStr || 'Aucune action'}\n\nFais un diagnostic structuré avec:\n1. Analyse des points forts\n2. Problèmes prioritaires et leurs causes\n3. Plan d'action concret (5 actions max, priorisées)\n4. Indicateurs à surveiller chaque semaine`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nSCORES: ${scoreStr}\nWeb: ${webKpis || 'Non renseigné'}\n\nALERTES KPI:\n${alertStr || 'Aucune alerte'}\n\nACTIONS EN COURS:\n${actionStr || 'Aucune action'}\n\nFais un diagnostic structuré avec:\n1. Analyse des points forts (Rentabilité, Stock, Commerce, Web)\n2. Problèmes prioritaires et leurs causes probables\n3. Plan d'action concret (5 actions max, priorisées P1/P2/P3)\n4. Indicateurs à surveiller chaque semaine`;
     },
   },
   {
@@ -32,14 +64,14 @@ const PROMPT_TEMPLATES = [
       const stockKpis = [
         `Stock total: ${data.stockTotal ? data.stockTotal.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
         `Stock âgé: ${data.stockAge ? data.stockAge + '%' : 'N/R'}`,
-        `GMROI: ${data.gmroi || 'N/R'}`,
-        `Délai vente téléphonie: ${data.delaiTel ? data.delaiTel + 'j' : 'N/R'}`,
-        `Délai vente consoles: ${data.delaiConsole ? data.delaiConsole + 'j' : 'N/R'}`,
-        `Délai vente PC: ${data.delaiPC ? data.delaiPC + 'j' : 'N/R'}`,
-        `Gamme téléphonie: ${data.gammeTel ? data.gammeTel + '%' : 'N/R'}`,
+        `Top 20 vieux stock traité: ${data.top20Traite ? 'Oui' : 'Non'}`,
         `Taux achat externe: ${data.tauxAchatExterne ? data.tauxAchatExterne + '%' : 'N/R'}`,
+        `Taux Piceasoft: ${data.tauxPiceasoft ? data.tauxPiceasoft + '%' : 'N/R'}`,
+        `Gamme téléphonie: ${data.gammeTel ? data.gammeTel + ' réfs' : 'N/R'}`,
+        `Gamme jeux vidéo: ${data.gammeJV ? data.gammeJV + ' réfs' : 'N/R'}`,
+        `Gamme consoles: ${data.gammeConsole ? data.gammeConsole + ' réfs' : 'N/R'}`,
       ].join('\n');
-      return `Expert EasyCash, aide-moi à optimiser mon stock.\n\nMAGASIN: ${data.nom || 'Non renseigné'} (CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'})\n\nDONNÉES STOCK:\n${stockKpis}\n\nDonne-moi:\n1. Les familles à déstocker en priorité\n2. Les actions concrètes pour améliorer le GMROI\n3. Une stratégie de pricing pour accélérer les ventes\n4. Comment ajuster mes achats la semaine prochaine`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} (CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'} — Phase: ${data.phase})\n\nDONNÉES STOCK:\n${stockKpis}\n\nDonne-moi:\n1. Les familles à déstocker en priorité avec côtes d'accélération réseau\n2. Les actions concrètes pour traiter le stock âgé cette semaine\n3. Une stratégie d'inventaire tournant (méthode GPA Gamme)\n4. Comment ajuster les achats externes la semaine prochaine`;
     },
   },
   {
@@ -49,15 +81,28 @@ const PROMPT_TEMPLATES = [
     build: (data: MagasinData) => {
       const commerceKpis = [
         `Taux transformation: ${data.tauxTransformation ? data.tauxTransformation + '%' : 'N/R'}`,
-        `Panier moyen: ${data.panierMoyen ? data.panierMoyen + ' €' : 'N/R'}`,
         `Ventes additionnelles: ${data.ventesAdditionnelles || 'N/R'}`,
-        `Estaly/semaine: ${data.estalyParSemaine || 'N/R'}`,
-        `Note Google: ${data.noteGoogle ? data.noteGoogle + '/5' : 'N/R'}`,
-        `Poids digital: ${data.poidsDigital ? data.poidsDigital + '%' : 'N/R'}`,
-        `Taux annulation web: ${data.tauxAnnulationWeb ? data.tauxAnnulationWeb + '%' : 'N/R'}`,
+        `Estaly/mois: ${data.estalyParSemaine ? (data.estalyParSemaine * 4).toFixed(0) + ' (soit ' + data.estalyParSemaine + '/sem)' : 'N/R'}`,
         `Taux SAV: ${data.tauxSAV ? data.tauxSAV + '%' : 'N/R'}`,
+        `Achat externe: ${data.tauxAchatExterne ? data.tauxAchatExterne + '%' : 'N/R'}`,
+        `CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
       ].join('\n');
-      return `Expert vente retail EasyCash, aide-moi à booster mon commerce.\n\nMAGASIN: ${data.nom || 'Non renseigné'} — CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}\n\nDONNÉES COMMERCE:\n${commerceKpis}\n\nDonne-moi:\n1. Les leviers prioritaires pour augmenter le CA\n2. Script de vente additionnelle adapté à EasyCash\n3. Plan d'animation semaine type\n4. Actions spécifiques pour améliorer la note Google`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nDONNÉES COMMERCE:\n${commerceKpis}\n\nDonne-moi:\n1. Les leviers prioritaires pour augmenter le CA dès cette semaine\n2. Script de vente additionnelle adapté à EasyCash (Estaly + accessoires)\n3. Plan d'animation GPA pour la semaine type\n4. Actions pour améliorer le taux de transformation en caisse`;
+    },
+  },
+  {
+    id: 'web',
+    label: 'Performance web',
+    icon: '🌐',
+    build: (data: MagasinData) => {
+      const webKpis = [
+        `Poids digital (CA web): ${data.poidsDigital ? data.poidsDigital + '%' : 'N/R'}`,
+        `Note Google: ${data.noteGoogle ? data.noteGoogle + '/5' : 'N/R'}`,
+        `Taux d'annulation commande: ${data.tauxAnnulationWeb ? data.tauxAnnulationWeb + '%' : 'N/R'}`,
+        `Satisfaction client web: ${data.satisfactionWeb ? data.satisfactionWeb + '/5' : 'N/R'}`,
+        `CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
+      ].join('\n');
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nDONNÉES WEB:\n${webKpis}\n\nDonne-moi:\n1. Plan d'action pour améliorer la note Google (objectif ≥ 4,2/5)\n2. Actions pour réduire le taux d'annulation commande (≤ 5%)\n3. Leviers pour augmenter le poids digital (objectif ≥ 30%)\n4. Script de demande d'avis Google en magasin, à utiliser dès aujourd'hui`;
     },
   },
   {
@@ -69,10 +114,10 @@ const PROMPT_TEMPLATES = [
         `Nb ETP: ${data.nbEtp || 'N/R'}`,
         `Masse salariale: ${data.masseSalarialePct ? data.masseSalarialePct + '%' : 'N/R'}`,
         `Taux turnover: ${data.tauxTurnover ? data.tauxTurnover + '%' : 'N/R'}`,
-        `Formation: ${data.tauxFormation ? data.tauxFormation + '%' : 'N/R'}`,
+        `CA par ETP: ${data.caAnnuel && data.nbEtp ? Math.round(data.caAnnuel / data.nbEtp).toLocaleString('fr-FR') + ' €' : 'N/R'}`,
         `CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
       ].join('\n');
-      return `Expert management franchise, aide-moi sur la gestion de mon équipe EasyCash.\n\nMAGASIN: ${data.nom || 'Non renseigné'}\n\nDONNÉES RH:\n${rhKpis}\n\nDonne-moi:\n1. Analyse de mon ratio ETP/CA vs benchmark EasyCash\n2. Actions pour réduire le turnover\n3. Plan de montée en compétences\n4. Outils de motivation et suivi au quotidien`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nDONNÉES RH:\n${rhKpis}\n\nDonne-moi:\n1. Analyse de mon ratio CA/ETP vs benchmark EasyCash\n2. Actions concrètes pour réduire le turnover\n3. Plan de montée en compétences GPA pour l'équipe\n4. Rituels managériaux hebdomadaires pour ancrer les routines`;
     },
   },
   {
@@ -80,7 +125,7 @@ const PROMPT_TEMPLATES = [
     label: 'Question libre',
     icon: '✏️',
     build: (data: MagasinData) => {
-      return `Contexte magasin EasyCash:\n- Nom: ${data.nom || 'Non renseigné'}\n- Phase: ${data.phase}\n- CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}\n\n`;
+      return `${SYSTEM_PROMPT}\n\nContexte magasin EasyCash:\n- Nom: ${data.nom || 'Non renseigné'}\n- Phase: ${data.phase}\n- CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}\n\n`;
     },
   },
 ];

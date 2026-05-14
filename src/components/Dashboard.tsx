@@ -604,10 +604,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                   <KpiRow label="Estaly / mois" field="estalyParSemaine" form={form} setF={setF}
                     seuil={customSeuils['estalyParSemaine']} onSeuil={v => setCustomSeuil('estalyParSemaine', v)} />
                 </div>
-                <div className={hl('noteGoogle')}>
-                  <KpiRow label="Note Google" field="noteGoogle" form={form} setF={setF} placeholder="4.3"
-                    seuil={customSeuils['noteGoogle']} onSeuil={v => setCustomSeuil('noteGoogle', v)} />
-                </div>
                 <div className={hl('tauxSAV')}>
                   <KpiRow label="Taux SAV" field="tauxSAV" form={form} setF={setF} unit="%"
                     seuil={customSeuils['tauxSAV']} onSeuil={v => setCustomSeuil('tauxSAV', v)} />
@@ -629,6 +625,18 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                 <div className={hl('poidsDigital')}>
                   <KpiRow label="Poids digital" field="poidsDigital" form={form} setF={setF} unit="%"
                     seuil={customSeuils['poidsDigital']} onSeuil={v => setCustomSeuil('poidsDigital', v)} />
+                </div>
+                <div className={hl('noteGoogle')}>
+                  <KpiRow label="Note Google" field="noteGoogle" form={form} setF={setF} placeholder="4.3"
+                    seuil={customSeuils['noteGoogle']} onSeuil={v => setCustomSeuil('noteGoogle', v)} />
+                </div>
+                <div className={hl('tauxAnnulationWeb')}>
+                  <KpiRow label="Taux d'annulation commande" field="tauxAnnulationWeb" form={form} setF={setF} unit="%"
+                    seuil={customSeuils['tauxAnnulationWeb']} onSeuil={v => setCustomSeuil('tauxAnnulationWeb', v)} />
+                </div>
+                <div className={hl('satisfactionWeb')}>
+                  <KpiRow label="Satisfaction client web" field="satisfactionWeb" form={form} setF={setF} unit="/5" placeholder="4.0"
+                    seuil={customSeuils['satisfactionWeb']} onSeuil={v => setCustomSeuil('satisfactionWeb', v)} />
                 </div>
               </FormSection>
 

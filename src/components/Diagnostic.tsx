@@ -157,8 +157,18 @@ const DIAG_KPIS: DiagKpi[] = [
   },
   {
     key: 'noteGoogle', label: 'Note Google', unit: '/5',
-    cat: 'commerce', dir: 'higher', phaseAware: true,
-    actionText: "💡 Action prioritaire : mettez en place une relance avis systématique en caisse. Objectif : 5 avis positifs / semaine pour faire remonter la moyenne.",
+    cat: 'web', dir: 'higher', phaseAware: true,
+    actionText: "💡 Relance avis systématique en caisse. Objectif : 5 avis positifs par semaine.",
+  },
+  {
+    key: 'tauxAnnulationWeb', label: "Taux d'annulation commande", unit: '%',
+    cat: 'web', dir: 'lower',
+    actionText: "💡 Audit du suivi de commandes. Vérifiez le délai d'expédition (<48h) et la qualité du référencement produit.",
+  },
+  {
+    key: 'satisfactionWeb', label: 'Satisfaction client web', unit: '/5',
+    cat: 'web', dir: 'higher',
+    actionText: "💡 Analysez les retours négatifs. Améliorez la description produit et les photos pour réduire l'écart attente/réalité.",
   },
   {
     key: 'tauxSAV', label: 'Taux SAV', unit: '%',

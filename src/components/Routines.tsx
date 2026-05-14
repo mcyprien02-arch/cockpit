@@ -9,8 +9,9 @@ interface RoutineDef { id: string; label: string; freq: FreqKey; }
 interface BlocDef { icon: string; title: string; routines: RoutineDef[]; }
 type WeekData = Record<string, boolean[]>;
 
-const FREQ_TARGETS: Record<FreqKey, number> = { quotidien: 5, '3x': 3, '1x': 1 };
-const FREQ_LABELS: Record<FreqKey, string> = { quotidien: 'Quotidien', '3x': '3×/sem', '1x': '1×/sem' };
+// Cibles par défaut (utilisées si l'utilisateur n'a pas saisi de cible)
+const FREQ_DEFAULTS: Record<FreqKey, number> = { quotidien: 5, '3x': 3, '1x': 1 };
+
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 const BLOCS: BlocDef[] = [
@@ -81,10 +82,12 @@ function loadWeek(nom: string, off: number): WeekData {
   } catch { return {}; }
 }
 
-function computeScore(data: WeekData): number {
-  const met = ALL_ROUTINES.filter(r =>
-    (data[r.id] ?? []).filter(Boolean).length >= FREQ_TARGETS[r.freq]
-  ).length;
+function computeScore(data: WeekData, cibles: Record<string, number>): number {
+  const met = ALL_ROUTINES.filter(r => {
+    const target = cibles[r.id] ?? FREQ_DEFAULTS[r.freq];
+    if (target === 0) return false;
+    return (data[r.id] ?? []).filter(Boolean).length >= target;
+  }).length;
   return Math.round(met / ALL_ROUTINES.length * 100);
 }
 
@@ -92,6 +95,14 @@ function computeScore(data: WeekData): number {
 export default function Routines({ magasinNom }: Props) {
   const [offset, setOffset] = useState(0);
   const [weekData, setWeekData] = useState<WeekData>(() => loadWeek(magasinNom, 0));
+
+  const [cibles, setCibles] = useState<Record<string, number>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const s = localStorage.getItem(`cibles_routines_${magasinNom}`);
+      return s ? JSON.parse(s) as Record<string, number> : {};
+    } catch { return {}; }
+  });
 
   function goWeek(delta: number) {
     if (delta > 0 && offset >= 0) return;
@@ -109,21 +120,40 @@ export default function Routines({ magasinNom }: Props) {
     localStorage.setItem(`routines_${magasinNom}_${getWeekKey(offset)}`, JSON.stringify(newData));
   }
 
-  const pct = computeScore(weekData);
-  const metCount = ALL_ROUTINES.filter(r =>
-    (weekData[r.id] ?? []).filter(Boolean).length >= FREQ_TARGETS[r.freq]
-  ).length;
+  function updateCible(routineId: string, value: number) {
+    const next = { ...cibles, [routineId]: Math.min(7, Math.max(0, value)) };
+    setCibles(next);
+    localStorage.setItem(`cibles_routines_${magasinNom}`, JSON.stringify(next));
+  }
 
-  // Historique 12 semaines — weekData en dép. pour mettre à jour la barre courante en live
+  function getTarget(routine: RoutineDef): number {
+    return cibles[routine.id] ?? FREQ_DEFAULTS[routine.freq];
+  }
+
+  function getStatus(routine: RoutineDef, days: boolean[]): 'done' | 'partial' | 'none' {
+    const target = getTarget(routine);
+    const checked = days.filter(Boolean).length;
+    if (target === 0) return 'none';
+    if (checked >= target) return 'done';
+    if (checked * 2 >= target) return 'partial'; // >= 50% of target
+    return 'none';
+  }
+
+  const pct = computeScore(weekData, cibles);
+  const metCount = ALL_ROUTINES.filter(r => {
+    const target = getTarget(r);
+    return target > 0 && (weekData[r.id] ?? []).filter(Boolean).length >= target;
+  }).length;
+
   const history = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => {
       const off = i - 11;
       const d = loadWeek(magasinNom, off);
       const hasData = Object.keys(d).length > 0;
-      return { off, pct: computeScore(d), hasData };
+      return { off, pct: computeScore(d, cibles), hasData };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [magasinNom, weekData]);
+  }, [magasinNom, weekData, cibles]);
 
   const withData = history.filter(h => h.hasData);
   let progressMsg = '';
@@ -136,7 +166,6 @@ export default function Routines({ magasinNom }: Props) {
 
   return (
     <div className="space-y-5">
-      {/* En-tête */}
       <div>
         <h2 className="text-lg font-bold text-[#1A1A1A]">
           🔁 Routines hebdomadaires{magasinNom ? ` — ${magasinNom}` : ''}
@@ -144,9 +173,8 @@ export default function Routines({ magasinNom }: Props) {
         <p className="text-sm text-[#6B7280] mt-0.5">Méthode GPA · Autodétermination (Deci &amp; Ryan, 2000)</p>
       </div>
 
-      {/* Intro */}
       <div className="bg-[#FFF5F5] border border-[#E30613]/20 rounded-xl px-4 py-3 text-sm text-[#1A1A1A] leading-relaxed">
-        Les outils ne suffisent pas. La performance vient de la régularité du suivi. Cochez chaque jour les routines accomplies pour installer des automatismes durables dans votre magasin.
+        Les outils ne suffisent pas. La performance vient de la régularité du suivi. Cochez chaque jour les routines accomplies et ajustez la cible hebdomadaire selon votre magasin.
       </div>
 
       {/* Navigation semaine */}
@@ -190,16 +218,15 @@ export default function Routines({ magasinNom }: Props) {
                   {DAYS.map(d => (
                     <th key={d} className="text-center px-1 py-2 text-[#6B7280] font-semibold w-10">{d}</th>
                   ))}
-                  <th className="text-center px-3 py-2 text-[#6B7280] font-semibold w-20 whitespace-nowrap">Cible</th>
+                  <th className="text-center px-3 py-2 text-[#6B7280] font-semibold w-24 whitespace-nowrap">Cible/sem</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0F0F0]">
                 {bloc.routines.map(routine => {
                   const days = Array.from({ length: 7 }, (_, i) => !!(weekData[routine.id]?.[i]));
+                  const status = getStatus(routine, days);
+                  const target = getTarget(routine);
                   const checked = days.filter(Boolean).length;
-                  const target = FREQ_TARGETS[routine.freq];
-                  const status: 'done' | 'partial' | 'none' =
-                    checked >= target ? 'done' : checked > 0 ? 'partial' : 'none';
                   return (
                     <tr key={routine.id} className={status === 'done' ? 'bg-green-50/40' : ''}>
                       <td className="px-4 py-3">
@@ -227,13 +254,23 @@ export default function Routines({ magasinNom }: Props) {
                         </td>
                       ))}
                       <td className="text-center px-3 py-2">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
-                          status === 'done' ? 'bg-green-100 text-green-700' :
-                          status === 'partial' ? 'bg-orange-100 text-orange-600' :
-                          'bg-[#F5F5F5] text-[#9CA3AF]'
-                        }`}>
-                          {FREQ_LABELS[routine.freq]}
-                        </span>
+                        <div className="flex items-center justify-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="7"
+                            value={target}
+                            onChange={e => updateCible(routine.id, parseInt(e.target.value) || 0)}
+                            className={`w-10 text-center border rounded px-1 py-1 text-xs font-bold focus:outline-none focus:border-[#E30613] ${
+                              status === 'done' ? 'border-green-300 bg-green-50 text-green-700' :
+                              status === 'partial' ? 'border-orange-300 bg-orange-50 text-orange-600' :
+                              'border-[#E0E0E0] bg-white text-[#6B7280]'
+                            }`}
+                          />
+                          <span className="text-[10px] text-[#9CA3AF] leading-none">
+                            {checked > 0 ? `${checked}/` : ''}{target}j
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   );

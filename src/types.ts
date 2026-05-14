@@ -31,6 +31,7 @@ export interface MagasinData {
   noteGoogle: number;
   poidsDigital: number;
   tauxAnnulationWeb: number;
+  satisfactionWeb: number;
   tauxSAV: number;
   // Gamme
   gammeTel: number;
@@ -53,7 +54,7 @@ export const DEFAULT_DATA: MagasinData = {
   stockTotal: 0, stockAge: 0, gmroi: 0, top20Traite: false,
   delaiTel: 0, delaiConsole: 0, delaiJV: 0, delaiTablette: 0, delaiPC: 0,
   tauxTransformation: 0, panierMoyen: 0, ventesAdditionnelles: 0, estalyParSemaine: 0,
-  noteGoogle: 0, poidsDigital: 0, tauxAnnulationWeb: 0, tauxSAV: 0,
+  noteGoogle: 0, poidsDigital: 0, tauxAnnulationWeb: 0, satisfactionWeb: 0, tauxSAV: 0,
   gammeTel: 0, gammeJV: 0, gammeConsole: 0, gammeTablette: 0, tauxAchatExterne: 0, tauxPiceasoft: 0,
   nbEtp: 0, masseSalarialePct: 0, tauxTurnover: 0, tauxFormation: 0,
 };
