@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface Props { magasinNom: string; }
 
@@ -21,6 +21,13 @@ const DEFAULT_FAMILLES: Array<Omit<Famille, 'id'>> = [
   { famille: 'ITAB', stockCible: 6000,  couverture: 0, poidsCA: 5,    tauxMarge: 40, delaiVente: 30 },
   { famille: 'JPOR', stockCible: 4000,  couverture: 0, poidsCA: 3,    tauxMarge: 47, delaiVente: 45 },
 ];
+
+const BUSINESS_IMPACT: Record<string, { pct: number; type: string; label: string }> = {
+  TLCE: { pct: 60, type: 'volume de ventes', label: 'en téléphonie' },
+  JCON: { pct: 70, type: 'marge',            label: 'en jeux vidéo consoles' },
+  JCDR: { pct: 30, type: 'marge',            label: 'en CD Rom / JV' },
+  IPOR: { pct: 55, type: 'marge',            label: 'en informatique portables (100–500€)' },
+};
 
 function uid() { return Math.random().toString(36).slice(2); }
 function defaultRows(): Famille[] {
@@ -121,7 +128,7 @@ export default function CouvertureGamme({ magasinNom }: Props) {
                 <th className="px-2 py-2.5"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E0E0E0]">
+            <tbody>
               {rows.map(f => {
                 const rang = rankMap.get(f.id) ?? '—';
                 const rangNum = rankMap.get(f.id);
@@ -129,8 +136,13 @@ export default function CouvertureGamme({ magasinNom }: Props) {
                   : rangNum === 2 ? 'text-orange-500 font-bold'
                   : rangNum === 3 ? 'text-yellow-600 font-bold'
                   : 'text-[#6B7280]';
+                const impact = BUSINESS_IMPACT[(f.famille ?? '').toUpperCase()];
+                const missed = impact && f.couverture > 0 && f.couverture < 100
+                  ? Math.round((100 - f.couverture) / 100 * impact.pct)
+                  : 0;
                 return (
-                  <tr key={f.id} className="hover:bg-[#FAFAFA]">
+                  <React.Fragment key={f.id}>
+                  <tr className="hover:bg-[#FAFAFA] border-t border-[#E0E0E0]">
                     <td className="px-3 py-2">
                       <input value={f.famille} onChange={e => update(f.id, 'famille', e.target.value)} className={`${ic} w-20`} placeholder="Famille" />
                     </td>
@@ -164,6 +176,19 @@ export default function CouvertureGamme({ magasinNom }: Props) {
                       <button onClick={() => del(f.id)} className="text-[#9CA3AF] hover:text-red-600 transition-colors">🗑</button>
                     </td>
                   </tr>
+                  {impact && (
+                    <tr className="bg-[#FAFAFA] border-t border-[#E8E8E8]">
+                      <td colSpan={10} className="px-5 py-1.5">
+                        <span className={`text-[11px] italic ${f.couverture > 0 && f.couverture < 100 ? 'text-orange-500' : 'text-[#9CA3AF]'}`}>
+                          {f.couverture > 0 && f.couverture < 100
+                            ? `Vous êtes à ${f.couverture}% de couverture en ${f.famille}. Vous loupez environ ${missed}% de votre potentiel de ${impact.type} ${impact.label}.`
+                            : `100% de couverture en ${f.famille} représente ${impact.pct}% du ${impact.type} ${impact.label}.`
+                          }
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

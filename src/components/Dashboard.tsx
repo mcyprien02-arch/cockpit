@@ -14,18 +14,18 @@ interface Props {
 }
 
 interface PratiquesState {
-  decouverteBesoins: boolean; accessoires: boolean; avisGoogle: boolean; estalyPratique: boolean; caissePics: boolean;
+  decouverteBesoins: boolean; accessoires: boolean; avisGoogle: boolean; estalyPratique: boolean; caissePics: boolean; embasage: boolean;
   testProduit: boolean; vpdAppliquee: boolean; negociationRachat: boolean; piceasoft: boolean; deuxAcheteurs: boolean;
   briefingQuotidien: boolean; entretiensMenusuels: boolean; easyTraining: boolean; polyvalence: boolean; coachingVente: boolean;
-  top20Hebdo: boolean; accelerationsAnticipees: boolean; inventairesTournants: boolean; rebutsDestock: boolean; rattachementF3: boolean;
-  dashboardWeb: boolean; expeditions48h: boolean; moduleAcceleration: boolean;
+  top20Hebdo: boolean; accelerationsAnticipees: boolean; inventairesTournants: boolean; rebutsDestock: boolean; rattachementF3: boolean; suiviEasyBiz: boolean;
+  suiviSAV: boolean; gooday: boolean; reponsesAvisGoogle: boolean; suiviAnnulations: boolean;
 }
 const DEFAULT_PRATIQUES: PratiquesState = {
-  decouverteBesoins: false, accessoires: false, avisGoogle: false, estalyPratique: false, caissePics: false,
+  decouverteBesoins: false, accessoires: false, avisGoogle: false, estalyPratique: false, caissePics: false, embasage: false,
   testProduit: false, vpdAppliquee: false, negociationRachat: false, piceasoft: false, deuxAcheteurs: false,
   briefingQuotidien: false, entretiensMenusuels: false, easyTraining: false, polyvalence: false, coachingVente: false,
-  top20Hebdo: false, accelerationsAnticipees: false, inventairesTournants: false, rebutsDestock: false, rattachementF3: false,
-  dashboardWeb: false, expeditions48h: false, moduleAcceleration: false,
+  top20Hebdo: false, accelerationsAnticipees: false, inventairesTournants: false, rebutsDestock: false, rattachementF3: false, suiviEasyBiz: false,
+  suiviSAV: false, gooday: false, reponsesAvisGoogle: false, suiviAnnulations: false,
 };
 const PRATIQUES_BLOCS: Array<{ icon: string; title: string; items: Array<{ key: keyof PratiquesState; label: string }> }> = [
   { icon: '🛒', title: 'BLOC 1 — Prise en charge client', items: [
@@ -34,11 +34,12 @@ const PRATIQUES_BLOCS: Array<{ icon: string; title: string; items: Array<{ key: 
     { key: 'avisGoogle', label: 'Relance avis Google en caisse' },
     { key: 'estalyPratique', label: 'Proposition Estaly systématique' },
     { key: 'caissePics', label: "Organisation caisse adaptée aux pics d'affluence" },
+    { key: 'embasage', label: 'Embasage systématique en caisse' },
   ]},
   { icon: '🤝', title: 'BLOC 2 — Achat au comptoir', items: [
     { key: 'testProduit', label: 'Test produit approfondi avant rachat' },
     { key: 'vpdAppliquee', label: 'VPD appliquée — les 5 questions' },
-    { key: 'negociationRachat', label: 'Négociation au rachat systématique' },
+    { key: 'negociationRachat', label: 'Négociation au comptoir' },
     { key: 'piceasoft', label: 'Piceasoft utilisé sur tous les mobiles' },
     { key: 'deuxAcheteurs', label: 'Au moins 2 acheteurs polyvalents' },
   ]},
@@ -55,11 +56,13 @@ const PRATIQUES_BLOCS: Array<{ icon: string; title: string; items: Array<{ key: 
     { key: 'inventairesTournants', label: 'Inventaires tournants à fréquence préconisée' },
     { key: 'rebutsDestock', label: 'Rebuts destockés via module Démarque' },
     { key: 'rattachementF3', label: 'Produits techniques rattachés via F3' },
+    { key: 'suiviEasyBiz', label: 'Suivi du rattachement EasyBiz' },
   ]},
   { icon: '🌐', title: 'BLOC 5 — Digital & web', items: [
-    { key: 'dashboardWeb', label: 'Dashboard web consulté quotidiennement' },
-    { key: 'expeditions48h', label: 'Commandes expédiées en moins de 48h' },
-    { key: 'moduleAcceleration', label: 'Module Accélération web utilisé' },
+    { key: 'suiviSAV', label: "Checker l'avancement des SAV" },
+    { key: 'gooday', label: 'Checker Gooday (notation et avis quotidiens)' },
+    { key: 'reponsesAvisGoogle', label: 'Répondre aux avis Google' },
+    { key: 'suiviAnnulations', label: 'Suivre les annulations de commandes et comprendre les raisons' },
   ]},
 ];
 

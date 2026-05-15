@@ -32,9 +32,6 @@ const BLOCS: BlocDef[] = [
     { id: 'a3', label: 'Vérifier les arguments de réassurance (garantie, paiement plusieurs fois)', freq: '1x' },
     { id: 'a4', label: "Consulter Plateforme Marketing pour idées d'animations", freq: '1x' },
   ]},
-  { icon: '🤝', title: 'Prise en charge client', routines: [
-    { id: 'cl1', label: "Prise en charge d'un SAV client", freq: '1x' },
-  ]},
   { icon: '👥', title: 'Équipe', routines: [
     { id: 'e1', label: 'Briefing matinal 5 min avant ouverture', freq: 'quotidien' },
     { id: 'e3', label: 'Vérifier suivi EasyTraining de chaque collaborateur', freq: '1x' },
@@ -44,9 +41,10 @@ const BLOCS: BlocDef[] = [
     { id: 'pi3', label: 'Traiter Top 20 vieux stock une fois par semaine', freq: '1x' },
   ]},
   { icon: '🌐', title: 'Web & Digital', routines: [
-    { id: 'w1', label: 'Avis Google récoltés', freq: 'quotidien' },
-    { id: 'w2', label: 'Commandes web traitées en moins de 48h', freq: '1x' },
-    { id: 'w3', label: 'Rattachement EasyBiz à jour', freq: '1x' },
+    { id: 'w1', label: "Checker l'avancement des SAV", freq: 'quotidien' },
+    { id: 'w2', label: 'Checker Gooday (notation et avis quotidiens)', freq: 'quotidien' },
+    { id: 'w3', label: 'Répondre aux avis Google', freq: 'quotidien' },
+    { id: 'w4', label: 'Suivre les annulations de commandes et comprendre les raisons', freq: '1x' },
   ]},
 ];
 

@@ -13,20 +13,55 @@ interface Collaborateur {
 
 const DOMAINES = [
   {
-    titre: 'Achat / Estimation',
-    competences: ['Téléphonie', 'Consoles & JV', 'PC & Tablettes', 'Piceasoft', 'Négociation achat'],
+    titre: '🤝 Achat au comptoir',
+    competences: [
+      'Application de la VPD (5 questions)',
+      'Test produit technique (Piceasoft, contrôle visuel, accessoires)',
+      "Évaluation et rachat de l'or (test, pesée, négociation)",
+      'Évaluation bijouterie hors-or (estimation valeur)',
+      'Évaluation produits techniques (téléphonie, console, informatique)',
+      'Négociation au comptoir',
+      "Édition d'un appel de stock",
+    ],
   },
   {
-    titre: 'Vente & Commerce',
-    competences: ['Accueil client', 'Méthode VPD', 'Ventes additionnelles', 'Estaly', 'Tenue caisse'],
+    titre: '🛒 Vente en magasin',
+    competences: [
+      'Découverte client et qualification du besoin',
+      'Argumentation produit avec réassurance (garantie, paiement, test)',
+      'Vente d\'accessoires complémentaires (proposition systématique)',
+      'Vente d\'assurance / extension de garantie Estaly',
+      "Gestion d'objection client",
+      'Encaissement et embasage',
+    ],
   },
   {
-    titre: 'Digital & Web',
-    competences: ['Annonces EC.fr', 'Photos produit', 'Gestion commandes web', 'Avis Google', 'Réseaux sociaux'],
+    titre: '🌐 Web & Digital',
+    competences: [
+      'Mise en ligne produit via EasyBiz (photos, description)',
+      'Gestion des commandes web (préparation, expédition)',
+      'Réponse aux avis Google',
+      'Suivi du Dashboard web (annulations, satisfaction)',
+    ],
   },
   {
-    titre: 'Gestion & Process',
-    competences: ['Intranet EC', 'EasyTraining', 'Inventaire', 'Démarque', 'Ouverture/Fermeture'],
+    titre: '📦 Stock & Pilotage',
+    competences: [
+      "Lecture des côtes d'accélération (anticipation, accélération, alerte)",
+      'Mise à jour des prix via cote EasyPrice',
+      'Réalisation d\'un inventaire tournant',
+      'Traitement du TOP 20 vieux stock',
+      'Gestion d\'un SAV client (process complet)',
+    ],
+  },
+  {
+    titre: '👥 Management',
+    competences: [
+      "Briefing matinal d'équipe",
+      'Coaching individuel en vente',
+      'Conduite d\'entretien individuel mensuel',
+      'Utilisation de l\'Intranet réseau (stats, suivi)',
+    ],
   },
 ];
 

@@ -17,20 +17,20 @@ const CAT_COLOR: Record<DiagCat, string> = {
   rentabilite: '#10b981', stock: '#3b82f6', commerce: '#f59e0b', web: '#8b5cf6',
 };
 
-// ── Pratiques (23 items, même structure que Dashboard) ──────────────────────
+// ── Pratiques (même structure que Dashboard) ─────────────────────────────────
 interface PratiquesState {
-  decouverteBesoins: boolean; accessoires: boolean; avisGoogle: boolean; estalyPratique: boolean; caissePics: boolean;
+  decouverteBesoins: boolean; accessoires: boolean; avisGoogle: boolean; estalyPratique: boolean; caissePics: boolean; embasage: boolean;
   testProduit: boolean; vpdAppliquee: boolean; negociationRachat: boolean; piceasoft: boolean; deuxAcheteurs: boolean;
   briefingQuotidien: boolean; entretiensMenusuels: boolean; easyTraining: boolean; polyvalence: boolean; coachingVente: boolean;
-  top20Hebdo: boolean; accelerationsAnticipees: boolean; inventairesTournants: boolean; rebutsDestock: boolean; rattachementF3: boolean;
-  dashboardWeb: boolean; expeditions48h: boolean; moduleAcceleration: boolean;
+  top20Hebdo: boolean; accelerationsAnticipees: boolean; inventairesTournants: boolean; rebutsDestock: boolean; rattachementF3: boolean; suiviEasyBiz: boolean;
+  suiviSAV: boolean; gooday: boolean; reponsesAvisGoogle: boolean; suiviAnnulations: boolean;
 }
 const DEFAULT_PRATIQUES: PratiquesState = {
-  decouverteBesoins: false, accessoires: false, avisGoogle: false, estalyPratique: false, caissePics: false,
+  decouverteBesoins: false, accessoires: false, avisGoogle: false, estalyPratique: false, caissePics: false, embasage: false,
   testProduit: false, vpdAppliquee: false, negociationRachat: false, piceasoft: false, deuxAcheteurs: false,
   briefingQuotidien: false, entretiensMenusuels: false, easyTraining: false, polyvalence: false, coachingVente: false,
-  top20Hebdo: false, accelerationsAnticipees: false, inventairesTournants: false, rebutsDestock: false, rattachementF3: false,
-  dashboardWeb: false, expeditions48h: false, moduleAcceleration: false,
+  top20Hebdo: false, accelerationsAnticipees: false, inventairesTournants: false, rebutsDestock: false, rattachementF3: false, suiviEasyBiz: false,
+  suiviSAV: false, gooday: false, reponsesAvisGoogle: false, suiviAnnulations: false,
 };
 
 // ── Pratiques opérationnelles ────────────────────────────────────────────────
@@ -81,12 +81,18 @@ const COUT_CACHE_ITEMS: CoutCacheItem[] = [
     action: "Passez le module Démarque chaque semaine. Un faux stock en Intranet entraîne un faux pilotage." },
   { key: 'rattachementF3', label: 'Produits techniques non rattachés via F3',
     action: "Scanner systématiquement les produits techniques. Les données de cotation sont votre boussole achat." },
-  { key: 'dashboardWeb', label: 'Dashboard web non consulté quotidiennement',
-    action: "Ouvrez le dashboard web à l'ouverture du magasin. Le canal web est votre deuxième magasin." },
-  { key: 'expeditions48h', label: 'Délai expédition supérieur à 48h',
-    action: "Mettez en place un process expédition quotidien. La réactivité web impacte la satisfaction et la note Google." },
-  { key: 'moduleAcceleration', label: 'Module Accélération web non utilisé',
-    action: "Activez les accélérations sur le web avant que le produit vieillisse. L'anticipation est clé." },
+  { key: 'embasage', label: 'Embasage non systématique en caisse',
+    action: "L'embasage en caisse renforce la relation client et crée une opportunité de fidélisation à chaque passage." },
+  { key: 'suiviEasyBiz', label: 'Rattachement EasyBiz non suivi',
+    action: "Vérifiez le rattachement EasyBiz chaque semaine. Les produits non rattachés n'apparaissent pas sur le web." },
+  { key: 'suiviSAV', label: "Avancement des SAV non suivi quotidiennement",
+    action: "Checker Gooday et les SAV chaque matin. Un SAV non traité = client mécontent + risque avis négatif." },
+  { key: 'gooday', label: "Gooday non consulté quotidiennement",
+    action: "Ouvrez Gooday à l'ouverture chaque jour. La notation quotidienne impacte votre réputation digitale." },
+  { key: 'reponsesAvisGoogle', label: "Avis Google sans réponse systématique",
+    action: "Répondez à chaque avis Google sous 48h. Chaque réponse est visible par tous les futurs clients." },
+  { key: 'suiviAnnulations', label: "Annulations de commandes non analysées",
+    action: "Identifiez les raisons d'annulation chaque semaine. C'est la clé pour améliorer la préparation et la satisfaction web." },
 ];
 
 // ── KPIs du Diagnostic ──────────────────────────────────────────────────────

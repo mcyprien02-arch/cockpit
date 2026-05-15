@@ -17,7 +17,28 @@ INDICATEURS SUIVIS DANS L'OUTIL (4 catégories) :
 - Commerce : Taux transformation, Estaly/mois, Taux SAV, Ventes additionnelles, Achat externe
 - Web : Poids digital, Note Google, Taux d'annulation commande, Satisfaction client web
 
-MÉTHODOLOGIE GPA (routines hebdomadaires) :
+IMPACT BUSINESS PAR FAMILLE (couverture de gamme) :
+- TLCE (téléphonie) : 100% couverture gamme modèle = 60% du volume de ventes en TLCE
+- JCON (consoles) : 100% couverture gamme référence = 70% de la marge en JCON
+- JCDR (CD Rom / JV) : 100% couverture gamme référence = 30% de la marge en JCDR
+- IPOR (informatique portables 100–500€) : 100% couverture cœur de gamme = 55% de la marge en IPOR
+
+COMPÉTENCES MÉTIER EASYCASH (26 compétences spécifiques) :
+- Achat au comptoir (7) : Application VPD, Test produit Piceasoft/contrôle visuel, Rachat or (pesée/négociation), Bijouterie hors-or, Produits techniques (tél/console/info), Négociation au comptoir, Édition appel de stock
+- Vente en magasin (6) : Découverte client et qualification, Argumentation avec réassurance, Vente d'accessoires, Vente Estaly/extension garantie, Gestion d'objection, Encaissement et embasage
+- Web & Digital (4) : Mise en ligne EasyBiz (photos/description), Gestion commandes web, Réponse aux avis Google, Suivi Dashboard web (annulations/satisfaction)
+- Stock & Pilotage (5) : Lecture côtes d'accélération, Mise à jour prix EasyPrice, Inventaire tournant, TOP 20 vieux stock, SAV client process complet
+- Management (4, responsables) : Briefing matinal équipe, Coaching individuel vente, Entretien individuel mensuel, Utilisation Intranet réseau
+
+ROUTINES HEBDOMADAIRES (7 blocs) :
+- Gamme (quotidien) : Checker gamme référence Athéna, Éditer appel de stock, Vérifier prix EasyPrice
+- Prix (3x/sem) : Mise à jour prix familles, Identifier vieux stock à ajuster, Lancer accélérations côtes alerte
+- Animation (quotidien/hebdo) : Mettre en avant bonnes affaires, Rotation vitrine nouveautés, Vérifier arguments réassurance, Consulter Plateforme Marketing
+- Équipe : Briefing matinal 5 min, Suivi EasyTraining
+- Pilotage : Intranet quotidien (CA/marge/stock âgé), Top 20 vieux stock 1x/sem, Suivi rattachement EasyBiz
+- Web & Digital : Checker avancement SAV (quotidien), Checker Gooday notation/avis (quotidien), Répondre aux avis Google (quotidien), Suivre annulations commandes (1x/sem)
+
+MÉTHODOLOGIE GPA (structure de pilotage) :
 - Gamme : inventaires tournants, ajustement assortiment, pilotage achat externe
 - Prix : côtes d'accélération réseau, pricing concurrentiel, décotes accélératrices
 - Animation : contrats Estaly, ventes additionnelles, animation vitrine, demandes d'avis Google
