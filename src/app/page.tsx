@@ -166,7 +166,7 @@ export default function App() {
         {tab === 'concept'     && <ConceptDuJour  magasinNom={currentNom} onNavigate={(t) => setTab(t as TabId)} />}
         {tab === 'objectifs'   && <Objectifs       magasinNom={currentNom} />}
         {tab === 'couverture'  && <CouvertureGamme  magasinNom={currentNom} />}
-        {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} />}
+        {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'simulateur'  && <Simulateur       magasinNom={currentNom} isCriticalSpiral={isCritical} />}
         {tab === 'competences' && <Competences  magasinNom={currentNom} />}
         {tab === 'comparatif'  && <Comparatif   magasins={magasins} />}
