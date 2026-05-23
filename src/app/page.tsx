@@ -15,6 +15,7 @@ import VisiteCR from '@/components/VisiteCR';
 import AssistantIA from '@/components/AssistantIA';
 import Routines from '@/components/Routines';
 import ConceptDuJour from '@/components/ConceptDuJour';
+import JournalAchatVente from '@/components/JournalAchatVente';
 import { detectSpiral } from '@/lib/spiral';
 
 const TABS = [
@@ -25,6 +26,7 @@ const TABS = [
   { id: 'concept',     label: '💡 Concept' },
   { id: 'objectifs',   label: '🎯 Objectifs' },
   { id: 'couverture',  label: '🎯 Couverture de gamme' },
+  { id: 'journal',     label: '📊 Journal achat-vente' },
   { id: 'simulateur',  label: 'Simulateur' },
   { id: 'competences', label: 'Compétences' },
   { id: 'comparatif',  label: 'Comparatif' },
@@ -163,12 +165,13 @@ export default function App() {
         {tab === 'routines'    && <Routines        magasinNom={currentNom} />}
         {tab === 'concept'     && <ConceptDuJour  magasinNom={currentNom} onNavigate={(t) => setTab(t as TabId)} />}
         {tab === 'objectifs'   && <Objectifs       magasinNom={currentNom} />}
-        {tab === 'couverture'  && <CouvertureGamme magasinNom={currentNom} />}
-        {tab === 'simulateur'  && <Simulateur      magasinNom={currentNom} isCriticalSpiral={isCritical} />}
+        {tab === 'couverture'  && <CouvertureGamme  magasinNom={currentNom} />}
+        {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} />}
+        {tab === 'simulateur'  && <Simulateur       magasinNom={currentNom} isCriticalSpiral={isCritical} />}
         {tab === 'competences' && <Competences  magasinNom={currentNom} />}
         {tab === 'comparatif'  && <Comparatif   magasins={magasins} />}
         {tab === 'visite'      && <VisiteCR      data={data} actions={actions} />}
-        {tab === 'assistant'   && <AssistantIA   data={data} actions={actions} />}
+        {tab === 'assistant'   && <AssistantIA   data={data} actions={actions} magasinNom={currentNom} />}
       </main>
     </div>
   );

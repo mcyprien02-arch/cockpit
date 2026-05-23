@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import type { MagasinData, PAPAction } from '@/types';
 import { getAlerts, getCategoryScores } from '@/lib/kpis';
+import { getJournalContext } from '@/components/JournalAchatVente';
 
 interface Props {
   data: MagasinData;
   actions: PAPAction[];
+  magasinNom?: string;
 }
 
 const SYSTEM_PROMPT = `Tu es un expert franchise EasyCash spécialiste de la seconde main en France. Tu connais :
@@ -151,7 +153,7 @@ const PROMPT_TEMPLATES = [
   },
 ];
 
-export default function AssistantIA({ data, actions }: Props) {
+export default function AssistantIA({ data, actions, magasinNom }: Props) {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [copied, setCopied] = useState(false);
@@ -160,7 +162,9 @@ export default function AssistantIA({ data, actions }: Props) {
     const tpl = PROMPT_TEMPLATES.find(t => t.id === id);
     if (!tpl) return;
     setSelectedTemplate(id);
-    setPrompt(tpl.build(data, actions));
+    const base = tpl.build(data, actions);
+    const journalCtx = magasinNom ? getJournalContext(magasinNom) : '';
+    setPrompt(journalCtx ? `${base}\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}` : base);
     setCopied(false);
   }
 
