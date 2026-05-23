@@ -13,59 +13,6 @@ interface Props {
   onNavigate: (tab: string) => void;
 }
 
-interface PratiquesState {
-  decouverteBesoins: boolean; accessoires: boolean; avisGoogle: boolean; estalyPratique: boolean; caissePics: boolean; embasage: boolean;
-  testProduit: boolean; vpdAppliquee: boolean; negociationRachat: boolean; piceasoft: boolean; deuxAcheteurs: boolean;
-  briefingQuotidien: boolean; entretiensMenusuels: boolean; easyTraining: boolean; polyvalence: boolean; coachingVente: boolean;
-  top20Hebdo: boolean; accelerationsAnticipees: boolean; inventairesTournants: boolean; rebutsDestock: boolean; rattachementF3: boolean; suiviEasyBiz: boolean;
-  suiviSAV: boolean; gooday: boolean; reponsesAvisGoogle: boolean; suiviAnnulations: boolean;
-}
-const DEFAULT_PRATIQUES: PratiquesState = {
-  decouverteBesoins: false, accessoires: false, avisGoogle: false, estalyPratique: false, caissePics: false, embasage: false,
-  testProduit: false, vpdAppliquee: false, negociationRachat: false, piceasoft: false, deuxAcheteurs: false,
-  briefingQuotidien: false, entretiensMenusuels: false, easyTraining: false, polyvalence: false, coachingVente: false,
-  top20Hebdo: false, accelerationsAnticipees: false, inventairesTournants: false, rebutsDestock: false, rattachementF3: false, suiviEasyBiz: false,
-  suiviSAV: false, gooday: false, reponsesAvisGoogle: false, suiviAnnulations: false,
-};
-const PRATIQUES_BLOCS: Array<{ icon: string; title: string; items: Array<{ key: keyof PratiquesState; label: string }> }> = [
-  { icon: '🛒', title: 'BLOC 1 — Prise en charge client', items: [
-    { key: 'decouverteBesoins', label: 'Découverte des besoins systématique' },
-    { key: 'accessoires', label: "Proposition d'accessoires à chaque vente" },
-    { key: 'avisGoogle', label: 'Relance avis Google en caisse' },
-    { key: 'estalyPratique', label: 'Proposition Estaly systématique' },
-    { key: 'caissePics', label: "Organisation caisse adaptée aux pics d'affluence" },
-    { key: 'embasage', label: 'Embasage systématique en caisse' },
-  ]},
-  { icon: '🤝', title: 'BLOC 2 — Achat au comptoir', items: [
-    { key: 'testProduit', label: 'Test produit approfondi avant rachat' },
-    { key: 'vpdAppliquee', label: 'VPD appliquée — les 5 questions' },
-    { key: 'negociationRachat', label: 'Négociation au comptoir' },
-    { key: 'piceasoft', label: 'Piceasoft utilisé sur tous les mobiles' },
-    { key: 'deuxAcheteurs', label: 'Au moins 2 acheteurs polyvalents' },
-  ]},
-  { icon: '👥', title: 'BLOC 3 — Management & équipe', items: [
-    { key: 'briefingQuotidien', label: 'Briefing quotidien tenu' },
-    { key: 'entretiensMenusuels', label: 'Entretiens individuels mensuels' },
-    { key: 'easyTraining', label: "Plan EasyTraining suivi par toute l'équipe" },
-    { key: 'polyvalence', label: 'Polyvalence : aucun vendeur seul sur 2 rayons majeurs' },
-    { key: 'coachingVente', label: 'Coaching vente en magasin régulier' },
-  ]},
-  { icon: '📦', title: 'BLOC 4 — Pilotage stock', items: [
-    { key: 'top20Hebdo', label: 'Top 20 vieux stock traité chaque semaine' },
-    { key: 'accelerationsAnticipees', label: "Accélérations anticipées (sans attendre l'alerte)" },
-    { key: 'inventairesTournants', label: 'Inventaires tournants à fréquence préconisée' },
-    { key: 'rebutsDestock', label: 'Rebuts destockés via module Démarque' },
-    { key: 'rattachementF3', label: 'Produits techniques rattachés via F3' },
-    { key: 'suiviEasyBiz', label: 'Suivi du rattachement EasyBiz' },
-  ]},
-  { icon: '🌐', title: 'BLOC 5 — Digital & web', items: [
-    { key: 'suiviSAV', label: "Checker l'avancement des SAV" },
-    { key: 'gooday', label: 'Checker Gooday (notation et avis quotidiens)' },
-    { key: 'reponsesAvisGoogle', label: 'Répondre aux avis Google' },
-    { key: 'suiviAnnulations', label: 'Suivre les annulations de commandes et comprendre les raisons' },
-  ]},
-];
-
 // ── Cercle du Cash SVG ─────────────────────────────────────────────────────
 function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
   acheter: number; stocker: number; vendre: number; encaisser: number;
@@ -203,8 +150,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     try { const s = localStorage.getItem(`seuils_${data.nom}`); return s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }; }
     catch { return { ...SEUIL_DEFAULTS }; }
   });
-  const [pratiques, setPratiques] = useState<PratiquesState>(DEFAULT_PRATIQUES);
-  const [openBloc, setOpenBloc] = useState<number | null>(0);
   const [vahHeures, setVahHeures] = useState<number>(() => {
     if (typeof window === 'undefined') return 0;
     try { return parseFloat(localStorage.getItem(`vah_heures_${data.nom}`) ?? '0') || 0; }
@@ -221,10 +166,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
   useEffect(() => {
     try { const s = localStorage.getItem(`seuils_${data.nom}`); setCustomSeuils(s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }); }
     catch { setCustomSeuils({ ...SEUIL_DEFAULTS }); }
-    try {
-      const p = localStorage.getItem(`pratiques_${data.nom}`);
-      setPratiques(p ? { ...DEFAULT_PRATIQUES, ...JSON.parse(p) as Partial<PratiquesState> } : DEFAULT_PRATIQUES);
-    } catch { setPratiques(DEFAULT_PRATIQUES); }
     try {
       const h = localStorage.getItem(`vah_heures_${data.nom}`);
       setVahHeures(h ? parseFloat(h) || 0 : 0);
@@ -243,12 +184,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       if (v === 0) delete next[key]; else next[key] = v;
       return next;
     });
-  }
-
-  function togglePratique(key: keyof PratiquesState) {
-    const next = { ...pratiques, [key]: !pratiques[key] };
-    setPratiques(next);
-    if (data.nom) localStorage.setItem(`pratiques_${data.nom}`, JSON.stringify(next));
   }
 
   function updateVahHeures(h: number) {
@@ -296,7 +231,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     if (!form.nom.trim()) return;
     onSave(form);
     localStorage.setItem(`seuils_${form.nom}`, JSON.stringify(customSeuils));
-    if (form.nom) localStorage.setItem(`pratiques_${form.nom}`, JSON.stringify(pratiques));
     if (form.nom) {
       const vahResult = vahHeures > 0 && form.caAnnuel > 0 && form.tauxMargeNette > 0
         ? (form.caAnnuel * form.tauxMargeNette / 100) / vahHeures : 0;
@@ -720,52 +654,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                   </div>
                 );
               })()}
-
-              {/* Section 2 — Pratiques magasin */}
-              <div className="bg-white border border-[#E0E0E0] rounded-lg shadow-sm p-6">
-                <h3 className="font-bold text-sm text-[#1A1A1A] mb-1">🎯 Mes pratiques magasin</h3>
-                <p className="text-xs text-[#6B7280] italic mb-4">
-                  Cochez les pratiques effectivement appliquées dans votre magasin. Chaque pratique non appliquée représente un coût caché qui sera chiffré dans le Diagnostic.
-                </p>
-                <div className="space-y-2">
-                  {PRATIQUES_BLOCS.map((bloc, idx) => {
-                    const checked = bloc.items.filter(it => pratiques[it.key]).length;
-                    return (
-                      <div key={idx} className="border border-[#E0E0E0] rounded-lg overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => setOpenBloc(openBloc === idx ? null : idx)}
-                          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#F5F5F5] transition-colors"
-                        >
-                          <span className="text-sm font-semibold text-[#1A1A1A]">{bloc.icon} {bloc.title}</span>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${checked === bloc.items.length ? 'bg-green-100 text-green-700' : checked === 0 ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>
-                              {checked}/{bloc.items.length}
-                            </span>
-                            <span className="text-xs text-[#9CA3AF]">{openBloc === idx ? '▲' : '▼'}</span>
-                          </div>
-                        </button>
-                        {openBloc === idx && (
-                          <div className="border-t border-[#E0E0E0] px-4 bg-[#FAFAFA]">
-                            {bloc.items.map(item => (
-                              <div key={item.key} className="flex items-center gap-3 py-3 border-b border-[#F0F0F0] last:border-0">
-                                <span className="flex-1 text-sm text-[#1A1A1A]">{item.label}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => togglePratique(item.key)}
-                                  className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${pratiques[item.key] ? 'bg-green-500' : 'bg-[#D1D5DB]'}`}
-                                >
-                                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow ${pratiques[item.key] ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
               <button
                 onClick={handleSave}

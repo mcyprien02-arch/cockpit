@@ -304,6 +304,33 @@ export default function Routines({ magasinNom }: Props) {
         Les outils ne suffisent pas. La performance vient de la régularité du suivi. Cochez chaque jour les routines accomplies et ajustez la cible hebdomadaire selon votre magasin.
       </div>
 
+      {/* Geste métier hebdomadaire */}
+      <div className="bg-white border-l-4 border-[#E0E0E0] border-l-[#E30613] rounded-r-xl p-5 shadow-sm">
+        <h3 className="font-bold text-sm text-[#1A1A1A] mb-1">🎯 Le geste métier qui pilote tout</h3>
+        <p className="text-xs text-[#6B7280] italic mb-4">
+          Les routines ci-dessous soutiennent l&apos;exécution de ces fondamentaux. À garder en tête chaque semaine.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div>
+            <p className="font-semibold text-sm text-[#1A1A1A] mb-2">1️⃣ Chaque semaine — les responsables rayons</p>
+            <ul className="space-y-1.5 text-sm text-[#6B7280]">
+              <li>• Remontent les trous de gamme aux acheteurs</li>
+              <li>• Éditent les appels de stock</li>
+              <li>• Vérifient les prix vieux stock vs cote EasyPrice</li>
+              <li>• Activent bonne affaire / nouveauté / réassurance si décalage</li>
+            </ul>
+          </div>
+          <div>
+            <p className="font-semibold text-sm text-[#1A1A1A] mb-2">2️⃣ Gamme magasin</p>
+            <ul className="space-y-1.5 text-sm text-[#6B7280]">
+              <li>• Gamme référence réseau (priorisée par le module Couverture de gamme)</li>
+              <li>• + 5 à 10 références locales tirées du journal des ventes</li>
+              <li>• Actualisation tous les 2 mois</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       {/* Navigation semaine */}
       <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm px-4 py-3 flex items-center justify-between gap-3">
         <button

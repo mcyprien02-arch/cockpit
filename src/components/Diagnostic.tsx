@@ -17,81 +17,56 @@ const CAT_COLOR: Record<DiagCat, string> = {
   rentabilite: '#10b981', stock: '#3b82f6', commerce: '#f59e0b', web: '#8b5cf6',
 };
 
-// ── Pratiques (même structure que Dashboard) ─────────────────────────────────
-interface PratiquesState {
-  decouverteBesoins: boolean; accessoires: boolean; avisGoogle: boolean; estalyPratique: boolean; caissePics: boolean; embasage: boolean;
-  testProduit: boolean; vpdAppliquee: boolean; negociationRachat: boolean; piceasoft: boolean; deuxAcheteurs: boolean;
-  briefingQuotidien: boolean; entretiensMenusuels: boolean; easyTraining: boolean; polyvalence: boolean; coachingVente: boolean;
-  top20Hebdo: boolean; accelerationsAnticipees: boolean; inventairesTournants: boolean; rebutsDestock: boolean; rattachementF3: boolean; suiviEasyBiz: boolean;
-  suiviSAV: boolean; gooday: boolean; reponsesAvisGoogle: boolean; suiviAnnulations: boolean;
-}
-const DEFAULT_PRATIQUES: PratiquesState = {
-  decouverteBesoins: false, accessoires: false, avisGoogle: false, estalyPratique: false, caissePics: false, embasage: false,
-  testProduit: false, vpdAppliquee: false, negociationRachat: false, piceasoft: false, deuxAcheteurs: false,
-  briefingQuotidien: false, entretiensMenusuels: false, easyTraining: false, polyvalence: false, coachingVente: false,
-  top20Hebdo: false, accelerationsAnticipees: false, inventairesTournants: false, rebutsDestock: false, rattachementF3: false, suiviEasyBiz: false,
-  suiviSAV: false, gooday: false, reponsesAvisGoogle: false, suiviAnnulations: false,
-};
-
 // ── Pratiques opérationnelles ────────────────────────────────────────────────
 interface CoutCacheItem {
-  key: keyof PratiquesState;
   label: string;
   action: string;
 }
 
 const COUT_CACHE_ITEMS: CoutCacheItem[] = [
-  { key: 'decouverteBesoins', label: 'Découverte des besoins non systématique',
+  { label: 'Découverte des besoins non systématique',
     action: "Formez l'équipe au questionnement client. 1 min de qualification = panier plus juste et client mieux servi." },
-  { key: 'accessoires', label: "Pas de proposition d'accessoire systématique",
+  { label: "Pas de proposition d'accessoire systématique",
     action: "Briefez vos vendeurs : 1 accessoire proposé à chaque vente principale, sans exception." },
-  { key: 'avisGoogle', label: 'Pas de relance avis Google systématique',
+  { label: 'Pas de relance avis Google systématique',
     action: "Mettez en place une relance en caisse après chaque transaction. Objectif : 5 avis positifs par semaine." },
-  { key: 'estalyPratique', label: 'Estaly non proposé systématiquement',
+  { label: 'Estaly non proposé systématiquement',
     action: "Brief équipe sur les primes Estaly. 1 contrat/jour crée de la valeur pour le vendeur et fidélise le client." },
-  { key: 'caissePics', label: "Caisse mal organisée aux pics d'affluence",
-    action: "Anticipez les pics : doublez la caisse les samedis et veilles de fête." },
-  { key: 'testProduit', label: 'Test produit bâclé au rachat',
+  { label: 'Test produit bâclé au rachat',
     action: "Durcissez les tests au rachat. Le SAV se joue à l'entrée du produit, pas après la vente." },
-  { key: 'vpdAppliquee', label: 'VPD non appliquée',
+  { label: 'VPD non appliquée',
     action: "Réafficher les 5 questions VPD au comptoir. La marge se fait à l'achat." },
-  { key: 'negociationRachat', label: 'Pas de négociation systématique au rachat',
+  { label: 'Pas de négociation systématique au comptoir',
     action: "Coachez vos acheteurs. Chaque euro négocié se retrouve directement en marge nette." },
-  { key: 'piceasoft', label: 'Piceasoft non utilisé sur les mobiles',
+  { label: 'Piceasoft non utilisé sur les mobiles',
     action: "Mettez en place le test Piceasoft systématique sur tous les mobiles rachetés. Réduction directe du SAV." },
-  { key: 'deuxAcheteurs', label: 'Acheteur seul au comptoir',
+  { label: 'Acheteur seul au comptoir',
     action: "Formez un 2e acheteur. La fluidité au comptoir libère du temps vendeur et améliore l'accueil client." },
-  { key: 'briefingQuotidien', label: 'Pas de briefing quotidien',
+  { label: 'Pas de briefing quotidien',
     action: "5 min chaque matin avant ouverture. La clarté des objectifs améliore l'efficacité collective." },
-  { key: 'entretiensMenusuels', label: "Pas d'entretien mensuel par collaborateur",
+  { label: "Pas d'entretien mensuel par collaborateur",
     action: "1h par mois par collaborateur. L'investissement humain préserve la motivation et réduit le turnover." },
-  { key: 'easyTraining', label: 'Plan EasyTraining non suivi',
+  { label: 'Plan EasyTraining non suivi',
     action: "Bloquez 1h/semaine pour les modules EasyTraining manquants. La montée en compétences est un levier direct." },
-  { key: 'polyvalence', label: 'Vendeur unique sur rayon majeur',
+  { label: 'Vendeur unique sur rayon majeur',
     action: "Formez un suppléant sur chaque rayon majeur. La dépendance crée un risque opérationnel." },
-  { key: 'coachingVente', label: 'Pas de coaching vente en magasin',
-    action: "30 min de coaching terrain par collaborateur par semaine. La formation en situation réelle est la plus efficace." },
-  { key: 'top20Hebdo', label: 'Top 20 vieux stock non traité chaque semaine',
+  { label: 'Top 20 vieux stock non traité chaque semaine',
     action: "Extraire le TOP 20 chaque lundi matin. C'est le levier n°1 pour libérer du cash et améliorer la rotation." },
-  { key: 'accelerationsAnticipees', label: 'Accélérations traitées tardivement',
+  { label: 'Accélérations traitées tardivement',
     action: "Anticipez : -10%/semaine plutôt que -30%/mois. L'anticipation préserve la valeur du stock." },
-  { key: 'inventairesTournants', label: 'Inventaires tournants non respectés',
+  { label: 'Inventaires tournants non respectés',
     action: "Respectez le planning inventaires réseau. Un inventaire à jour = vision stock fiable = pilotage précis." },
-  { key: 'rebutsDestock', label: 'Rebuts non destockés via module Démarque',
+  { label: 'Rebuts non destockés via module Démarque',
     action: "Passez le module Démarque chaque semaine. Un faux stock en Intranet entraîne un faux pilotage." },
-  { key: 'rattachementF3', label: 'Produits techniques non rattachés via F3',
-    action: "Scanner systématiquement les produits techniques. Les données de cotation sont votre boussole achat." },
-  { key: 'embasage', label: 'Embasage non systématique en caisse',
-    action: "L'embasage en caisse renforce la relation client et crée une opportunité de fidélisation à chaque passage." },
-  { key: 'suiviEasyBiz', label: 'Rattachement EasyBiz non suivi',
+  { label: 'Rattachement EasyBiz non suivi',
     action: "Vérifiez le rattachement EasyBiz chaque semaine. Les produits non rattachés n'apparaissent pas sur le web." },
-  { key: 'suiviSAV', label: "Avancement des SAV non suivi quotidiennement",
+  { label: "Avancement des SAV non suivi quotidiennement",
     action: "Checker Gooday et les SAV chaque matin. Un SAV non traité = client mécontent + risque avis négatif." },
-  { key: 'gooday', label: "Gooday non consulté quotidiennement",
+  { label: "Gooday non consulté quotidiennement",
     action: "Ouvrez Gooday à l'ouverture chaque jour. La notation quotidienne impacte votre réputation digitale." },
-  { key: 'reponsesAvisGoogle', label: "Avis Google sans réponse systématique",
+  { label: "Avis Google sans réponse systématique",
     action: "Répondez à chaque avis Google sous 48h. Chaque réponse est visible par tous les futurs clients." },
-  { key: 'suiviAnnulations', label: "Annulations de commandes non analysées",
+  { label: "Annulations de commandes non analysées",
     action: "Identifiez les raisons d'annulation chaque semaine. C'est la clé pour améliorer la préparation et la satisfaction web." },
 ];
 
@@ -270,15 +245,6 @@ export default function Diagnostic({ data }: Props) {
     catch { return { ...SEUIL_DEFAULTS }; }
   });
 
-  const [pratiques] = useState<PratiquesState>(() => {
-    if (typeof window === 'undefined') return DEFAULT_PRATIQUES;
-    try {
-      const p = localStorage.getItem(`pratiques_${data.nom}`);
-      return p ? { ...DEFAULT_PRATIQUES, ...JSON.parse(p) as Partial<PratiquesState> } : DEFAULT_PRATIQUES;
-    } catch { return DEFAULT_PRATIQUES; }
-  });
-
-
   // ── Scores par catégorie ──
   const allCats: DiagCat[] = ['rentabilite', 'stock', 'commerce', 'web'];
 
@@ -314,9 +280,6 @@ export default function Diagnostic({ data }: Props) {
   const top20Alert = data.nom && data.top20Traite === false;
 
   // ── Coûts cachés ──
-  const coutCacheItems = COUT_CACHE_ITEMS.filter(item => !pratiques[item.key]);
-  const nbCochees = Object.values(pratiques).filter(Boolean).length;
-  const totalPratiques = Object.keys(DEFAULT_PRATIQUES).length;
 
   return (
     <div className="space-y-6">
@@ -408,30 +371,13 @@ export default function Diagnostic({ data }: Props) {
       {data.nom && (
         <div className="space-y-3">
           <h3 className="text-sm font-bold text-[#1A1A1A]">🔍 Coût caché des dysfonctionnements</h3>
-
-          {coutCacheItems.length === 0 ? (
-            <div className="bg-green-50 border border-green-300 rounded-xl p-4 text-center">
-              <p className="text-green-700 font-semibold text-sm">✓ Toutes les pratiques sont appliquées — aucun dysfonctionnement détecté.</p>
+          <p className="text-xs text-[#6B7280] italic">Points d&apos;amélioration opérationnels à adresser pour éliminer les coûts cachés de votre magasin.</p>
+          {COUT_CACHE_ITEMS.map((item, i) => (
+            <div key={i} className="bg-white border border-[#E0E0E0] border-l-4 border-l-orange-400 rounded-lg shadow-sm p-4">
+              <p className="font-semibold text-sm text-[#1A1A1A] mb-1">{item.label}</p>
+              <p className="text-xs text-[#6B7280] italic leading-relaxed">{item.action}</p>
             </div>
-          ) : (
-            <>
-              {coutCacheItems.map(item => (
-                <div key={item.key} className="bg-white border border-[#E0E0E0] border-l-4 border-l-orange-400 rounded-lg shadow-sm p-4">
-                  <p className="font-semibold text-sm text-[#1A1A1A] mb-1">{item.label}</p>
-                  <p className="text-xs text-[#6B7280] italic leading-relaxed">{item.action}</p>
-                </div>
-              ))}
-              <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-xl p-4">
-                <p className="text-sm text-[#6B7280]">
-                  {nbCochees}/{totalPratiques} pratiques appliquées —{' '}
-                  <strong className="text-[#1A1A1A]">
-                    {totalPratiques - nbCochees} point{totalPratiques - nbCochees > 1 ? 's' : ''} d&apos;amélioration
-                  </strong>{' '}
-                  identifié{totalPratiques - nbCochees > 1 ? 's' : ''}.
-                </p>
-              </div>
-            </>
-          )}
+          ))}
         </div>
       )}
 
