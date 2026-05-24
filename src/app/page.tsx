@@ -1,196 +1,165 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabase";
-import { Navigation, TabId } from "@/components/layout/Navigation";
-import { HomeScreen } from "@/components/screens/HomeScreen";
-import { DiagnosticScreen } from "@/components/screens/DiagnosticScreen";
-import { SaisieScreen } from "@/components/screens/SaisieScreen";
-import { PlanActionScreen } from "@/components/screens/PlanActionScreen";
-import { VisiteScreen } from "@/components/screens/VisiteScreen";
-import { SimulateurScreen } from "@/components/screens/SimulateurScreen";
-import { AssistantScreen } from "@/components/screens/AssistantScreen";
-import { CompetencesScreen } from "@/components/screens/CompetencesScreen";
-import { ParametrageScreen } from "@/components/screens/ParametrageScreen";
-import type { Magasin } from "@/types";
+import { useState, useEffect } from 'react';
+import type { MagasinData, PAPAction } from '@/types';
+import { DEFAULT_DATA } from '@/types';
+import Dashboard from '@/components/Dashboard';
+import PlanAction from '@/components/PlanAction';
+import Objectifs from '@/components/Objectifs';
+import CouvertureGamme from '@/components/CouvertureGamme';
+import Simulateur from '@/components/Simulateur';
+import Competences from '@/components/Competences';
+import AssistantIA from '@/components/AssistantIA';
+import Routines from '@/components/Routines';
+import JournalAchatVente from '@/components/JournalAchatVente';
+import { detectSpiral } from '@/lib/spiral';
 
-function StoreSelector({
-  magasins, selectedId, onChange,
-}: {
-  magasins: Magasin[];
-  selectedId: string;
-  onChange: (id: string) => void;
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={selectedId}
-        onChange={(e) => onChange(e.target.value)}
-        className="appearance-none rounded-xl px-4 py-2.5 pr-10 text-[13px] font-semibold border cursor-pointer"
-        style={{
-          background: "var(--surface)",
-          borderColor: "var(--border)",
-          color: "var(--text)",
-          fontFamily: "inherit",
-        }}
-      >
-        {magasins.map((m) => (
-          <option key={m.id} value={m.id} style={{ background: "var(--surface)" }}>
-            {m.nom}
-          </option>
-        ))}
-      </select>
-      <span
-        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px]"
-        style={{ color: "var(--textDim)" }}
-      >
-        ▼
-      </span>
-    </div>
-  );
+const TABS = [
+  { id: 'dashboard',   label: 'Dashboard' },
+  { id: 'objectifs',   label: '🎯 Objectifs' },
+  { id: 'plan',        label: "📋 Plan d'Action" },
+  { id: 'journal',     label: '📊 Journal' },
+  { id: 'couverture',  label: '🗂 Gamme' },
+  { id: 'routines',    label: '🔁 Routines' },
+  { id: 'competences', label: '🎓 Compétences' },
+  { id: 'simulateur',  label: '💰 Simulateur' },
+  { id: 'assistant',   label: '🤖 Assistant IA' },
+] as const;
+type TabId = typeof TABS[number]['id'];
+
+function getMagasinsKey() { return 'ec_magasins'; }
+function getDataKey(nom: string) { return `ec_data_${nom}`; }
+function getActionsKey(nom: string) { return `ec_actions_${nom}`; }
+
+function loadMagasins(): string[] {
+  try { const s = localStorage.getItem(getMagasinsKey()); return s ? JSON.parse(s) : []; }
+  catch { return []; }
 }
-
-function AppHeader({
-  magasins, selectedId, onSelect,
-}: {
-  magasins: Magasin[];
-  selectedId: string;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
-      <div className="flex items-center justify-between px-6 py-3 max-w-[1600px] mx-auto">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-[14px] font-bold"
-            style={{ background: "linear-gradient(135deg, #ff4d6a, #c0392b)", color: "#fff" }}
-          >
-            E
-          </div>
-          <div>
-            <div className="text-[14px] font-bold" style={{ color: "var(--text)" }}>EasyCash Cockpit</div>
-            <div className="text-[10px]" style={{ color: "var(--textDim)" }}>Outil de pilotage franchise</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {magasins.length > 0 && (
-            <StoreSelector magasins={magasins} selectedId={selectedId} onChange={onSelect} />
-          )}
-        </div>
-      </div>
-    </header>
-  );
+function loadData(nom: string): MagasinData {
+  try { const s = localStorage.getItem(getDataKey(nom)); return s ? { ...DEFAULT_DATA, ...JSON.parse(s) as Partial<MagasinData> } : DEFAULT_DATA; }
+  catch { return DEFAULT_DATA; }
+}
+function loadActions(nom: string): PAPAction[] {
+  try { const s = localStorage.getItem(getActionsKey(nom)); return s ? JSON.parse(s) as PAPAction[] : []; }
+  catch { return []; }
 }
 
 export default function App() {
-  const [magasins, setMagasins] = useState<Magasin[]>([]);
-  const [selectedId, setSelectedId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<TabId>("cockpit");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabId>('dashboard');
+  const [magasins, setMagasins] = useState<string[]>([]);
+  const [currentNom, setCurrentNom] = useState<string>('');
+  const [data, setData] = useState<MagasinData>(DEFAULT_DATA);
+  const [actions, setActions] = useState<PAPAction[]>([]);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    async function loadMagasins() {
-      const { data, error } = await supabase
-        .from("magasins")
-        .select("id, nom, ville, franchise")
-        .order("nom");
-      if (error) {
-        setError("Impossible de charger les magasins : " + error.message);
-        setLoading(false);
-        return;
-      }
-      const rows = (data ?? []) as Magasin[];
-      setMagasins(rows);
-      if (rows.length > 0) setSelectedId(rows[0].id);
-      setLoading(false);
-    }
-    loadMagasins();
+    const mags = loadMagasins();
+    setMagasins(mags);
+    const saved = localStorage.getItem('ec_current') ?? (mags[0] ?? '');
+    setCurrentNom(saved);
+    if (saved) { setData(loadData(saved)); setActions(loadActions(saved)); }
+    setMounted(true);
   }, []);
 
-  const selectedMagasin = magasins.find((m) => m.id === selectedId) ?? null;
+  if (!mounted) return (
+    <div className="min-h-screen bg-[#F5F5F5] flex items-center justify-center text-[#6B7280] text-sm">
+      Chargement...
+    </div>
+  );
 
-  if (loading) {
-    return (
-      <div className="min-h-screen" style={{ background: "var(--bg)" }}>
-        <div className="h-14 border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }} />
-        <div className="h-12 border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }} />
-        <div className="px-6 py-6 max-w-[1600px] mx-auto space-y-4">
-          <div className="grid grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-28 rounded-2xl animate-pulse" style={{ background: "var(--surfaceAlt)" }} />
-            ))}
-          </div>
-          <div className="h-64 rounded-2xl animate-pulse" style={{ background: "var(--surfaceAlt)" }} />
-        </div>
-      </div>
-    );
+  function switchMagasin(nom: string) {
+    setCurrentNom(nom);
+    setData(loadData(nom));
+    setActions(loadActions(nom));
+    localStorage.setItem('ec_current', nom);
   }
 
-  const noStore = !selectedId && activeTab !== "config";
+  function saveData(d: MagasinData) {
+    setData(d);
+    localStorage.setItem(getDataKey(d.nom), JSON.stringify(d));
+    if (d.nom && d.nom !== currentNom) {
+      const newMags = magasins.includes(d.nom) ? magasins : [...magasins, d.nom];
+      setMagasins(newMags);
+      localStorage.setItem(getMagasinsKey(), JSON.stringify(newMags));
+      setCurrentNom(d.nom);
+      localStorage.setItem('ec_current', d.nom);
+    }
+  }
+
+  function saveActions(a: PAPAction[]) {
+    setActions(a);
+    if (currentNom) localStorage.setItem(getActionsKey(currentNom), JSON.stringify(a));
+  }
+
+  const spiral = data.nom ? detectSpiral(data) : 'none';
+  const isCritical = spiral === 'critical';
+  const showSpiralBanner = spiral === 'critical' || spiral === 'risk';
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
-      <AppHeader
-        magasins={magasins}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-      />
-      <Navigation activeTab={activeTab} onTabChange={setActiveTab} mode="consultant" />
-
-      <main className="px-6 py-5 max-w-[1600px] mx-auto">
-        {error && (
-          <div
-            className="rounded-xl p-4 mb-4 text-[13px] font-medium"
-            style={{ background: "#ff4d6a12", color: "var(--danger)", border: "1px solid #ff4d6a30" }}
-          >
-            ⚠ {error}
+    <div className="min-h-screen bg-[#F5F5F5] text-[#1A1A1A]">
+      {/* Header */}
+      <div className="bg-[#E30613] sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex items-center justify-between py-2.5">
+            <span className="text-xl font-black tracking-widest text-white select-none">EASYCASH</span>
+            <div className="flex items-center gap-3">
+              {magasins.length > 1 && (
+                <select
+                  value={currentNom}
+                  onChange={e => switchMagasin(e.target.value)}
+                  className="bg-white/20 border border-white/30 rounded-md px-3 py-1 text-sm text-white focus:outline-none"
+                >
+                  {magasins.map(m => <option key={m} value={m} className="text-[#1A1A1A]">{m}</option>)}
+                </select>
+              )}
+              {currentNom
+                ? <span className="text-white/80 text-sm font-medium hidden md:block">{currentNom} · {data.phase}</span>
+                : <span className="text-white/60 text-sm italic hidden md:block">Cockpit consultant</span>
+              }
+            </div>
           </div>
-        )}
 
-        {noStore ? (
-          <div className="text-center py-16" style={{ color: "var(--textMuted)" }}>
-            <div className="text-[40px] mb-3">🏪</div>
-            <div className="text-[14px]">Aucun magasin trouvé. Ajoutez-en un dans Paramétrage.</div>
+          {/* Tabs */}
+          <div className="flex overflow-x-auto -mb-px scrollbar-hide">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-3 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 flex-shrink-0 transition-colors ${
+                  tab === t.id
+                    ? 'text-white border-white'
+                    : 'text-white/60 border-transparent hover:text-white/90'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
-        ) : (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.18 }}
-            >
-              {activeTab === "cockpit" && selectedId && (
-                <HomeScreen magasinId={selectedId} onNavigate={(tab) => setActiveTab(tab as TabId)} />
-              )}
-              {activeTab === "diagnostic" && selectedId && (
-                <DiagnosticScreen magasinId={selectedId} />
-              )}
-              {activeTab === "kpis" && selectedId && (
-                <SaisieScreen magasinId={selectedId} />
-              )}
-              {activeTab === "plan" && selectedId && (
-                <PlanActionScreen magasinId={selectedId} />
-              )}
-              {activeTab === "visite" && selectedId && (
-                <VisiteScreen magasin={selectedMagasin} magasinId={selectedId} />
-              )}
-              {activeTab === "simulateur" && selectedId && (
-                <SimulateurScreen magasinId={selectedId} />
-              )}
-              {activeTab === "assistant" && selectedId && (
-                <AssistantScreen magasinId={selectedId} />
-              )}
-              {activeTab === "competences" && selectedId && (
-                <CompetencesScreen magasinId={selectedId} />
-              )}
-              {activeTab === "config" && <ParametrageScreen />}
-            </motion.div>
-          </AnimatePresence>
-        )}
+        </div>
+      </div>
+
+      {/* Spiral banner */}
+      {showSpiralBanner && (
+        <div className={`${isCritical ? 'bg-[#E30613]' : 'bg-orange-600'} text-white px-4 py-2.5 text-center`}>
+          <span className="font-bold text-sm">
+            {isCritical
+              ? '⚠️ SPIRALE DÉTECTÉE — Déstockage prioritaire avant tout nouvel achat'
+              : '⚠ Vigilance spirale — Stock âgé élevé + marge sous pression'}
+          </span>
+        </div>
+      )}
+
+      {/* Content */}
+      <main className="max-w-7xl mx-auto px-4 py-5">
+        {tab === 'dashboard'   && <Dashboard        data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
+        {tab === 'objectifs'   && <Objectifs         magasinNom={currentNom} />}
+        {tab === 'plan'        && <PlanAction        data={data} actions={actions} onSave={saveActions} />}
+        {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} />}
+        {tab === 'routines'    && <Routines          magasinNom={currentNom} />}
+        {tab === 'competences' && <Competences       magasinNom={currentNom} />}
+        {tab === 'simulateur'  && <Simulateur        magasinNom={currentNom} isCriticalSpiral={isCritical} />}
+        {tab === 'assistant'   && <AssistantIA       data={data} actions={actions} magasinNom={currentNom} />}
       </main>
     </div>
   );

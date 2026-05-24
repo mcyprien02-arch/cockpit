@@ -5,83 +5,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-node_modules/.bin/next.cmd build   # build (use this, not npm run build — PATH issue on Windows)
-node_modules/.bin/next.cmd dev     # dev server
+npm run dev      # Start dev server (localhost:3000)
+npm run build    # Production build + type check (run before every push)
+npm run lint     # ESLint
 ```
 
-Always run the build before pushing. The build must pass with zero TypeScript errors.
+No test suite — verify changes with `npm run build`.
 
 ## Architecture
 
-**Stack**: Next.js 16 (App Router) · TypeScript · Tailwind CSS · Framer Motion · Supabase · Recharts · docx
+**Stack:** Next.js 14 (App Router) · TypeScript · Supabase (Postgres) · Tailwind · Framer Motion · Recharts
 
-**Data source**: Supabase. Key tables/views:
-- `magasins` — store list
-- `indicateurs` — KPI definitions (nom, direction up/down, seuil_ok, seuil_vigilance, poids, categorie)
-- `valeurs` — raw KPI entries (magasin_id, indicateur_id, valeur, date_saisie)
-- `v_dernieres_valeurs` — view: latest value per KPI per store, joined with indicator metadata
-- `plans_action` — action plan rows (priorite P1/P2/P3, statut, echeance, action, responsable)
-- `visites` — store visit records (consultant, constats, score_global)
-- `v_actions_ouvertes` — view: open actions joined with store name
+**Single-page app** — `src/app/page.tsx` renders all screens. Navigation state (`activeTab`, `mode`, `selectedId`) lives in that file. Each screen is a component in `src/components/screens/`.
 
-**Scoring** (`src/lib/scoring.ts`): `getStatus(valeur, direction, seuil_ok, seuil_vigilance)` → "ok" | "wn" | "dg" | null. `computeScore(valeurs)` → 0-100. `computeCategoryScores(valeurs)` → sorted array by score.
+### Navigation model
 
-**Hidden costs** (`src/lib/hiddenCosts.ts`): `computeHiddenCosts(valeurs)` maps KPI alerts to ISEOR cost categories with annual € estimates.
+Two modes: `consultant` (full access) vs `franchisé` (restricted to `journee_grp` + `actions` tab groups). `CONSULTANT_ONLY` list in `page.tsx` gates restricted tabs. Tab groups defined in `src/components/layout/Navigation.tsx`.
 
-## AI Agents
+### Data flow
 
-All Claude API calls go through **`/api/ai`** (server-side only). Never call Anthropic from client code.
+All Supabase reads use the singleton client from `src/lib/supabase.ts` (credentials hardcoded as fallback — no `.env` required). Key view: `v_dernieres_valeurs` joins `valeurs` + `indicateurs` and returns the latest value per KPI per store.
 
-```
-POST /api/ai
-Body: { agent: "diagnostiqueur" | "decideur" | "redacteur_cr" | "assistant", data: {...} }
-Response: { result: <parsed JSON or string> }
-```
+**Critical tables:**
+- `magasins` — stores, has `phase_vie` (`lancement` | `croissance` | `maturite`) used for adaptive KPI thresholds
+- `indicateurs` — KPI definitions with `seuil_ok`, `seuil_vigilance`, `direction` (up/down), `poids`, `action_defaut`
+- `valeurs` — time-series KPI values, unique on `(magasin_id, indicateur_id, date_saisie)`
+- `plans_action` — PAP actions with `priorite` (P1/P2/P3), `statut` (À faire/En cours/Fait/Abandonné), `kpi_cible`
+- `visites` — consultant visits; `plans_action.visite_id` references this table (may be nullable)
 
-Agent client helpers in `src/lib/agents/`:
-- `diagnostiqueur.ts` → `callDiagnostiqueur(valeurs, phase)` → `DiagResult`
-- `decideur.ts` → `callDecideur({ alertes, actions_existantes })` → `DecideurResult`
-- `redacteur.ts` → `callRedacteurCR(data)` → string CR, `callAssistant(data)` → string
+### Phase-aware thresholds
 
-**Manifeste Opérationnel** (hardcoded in the agent prompts):
-- Marge Net TTC cible : 38-39% · Masse Sal. : ≤15% · EBE : ≥8% · RC : ≥5%
-- Productivité : 1 ETP / 250k€ CA · Stock âgé > 30% = danger vital
-- GMROI réseau : 3.84 · Note Google cible : > 4.4
+`src/lib/phaseThresholds.ts` overrides DB seuils based on `magasin.phase_vie`. Call `applyPhaseThresholds(valeur, phase)` before computing status. Call `getContextualReco(nom, valeur, phase, ca)` to get €-quantified recommendations. Always use these instead of raw DB thresholds in diagnostic screens.
 
-## Navigation (7 tabs)
+### Scoring
 
-`cockpit` | `diagnostic` | `kpis` | `plan` | `visite` | `simulateur` | `assistant` + `config` (gear icon)
+`src/lib/scoring.ts` — `getStatus()` returns `ok|wn|dg|null`, `computeScore()` returns 0-100, `computeCategoryScores()` groups by `categorie`.
 
-Defined in `src/components/layout/Navigation.tsx`. TabId type exported from there.
+### AI (Anthropic)
 
-## Screen map
+`src/app/api/assistant/route.ts` — single POST endpoint, modes: `assistant` | `miroir` | `avis` | `synthese_visite`. Falls back to local analysis if `ANTHROPIC_API_KEY` not set. Model: `claude-haiku-4-5-20251001`.
 
-| Tab | Component | Key data |
-|-----|-----------|----------|
-| cockpit | HomeScreen | score gauge, GMROI, 5 non-negotiables, missions du mois, "Lancer diagnostic IA" |
-| diagnostic | DiagnosticScreen | radar chart, KPI cards, AI diagnostic panel (callDiagnostiqueur) |
-| kpis | SaisieScreen | manual KPI entry |
-| plan | PlanActionScreen | missions du mois, late actions, CRUD, "Générer actions IA" (callDecideur) |
-| visite | VisiteScreen | CR form, AI narrative (callRedacteurCR), Word export (docx) |
-| simulateur | SimulateurScreen | 4 slider sections, 100% local JS, no API calls |
-| assistant | AssistantScreen | simple Q&A, callAssistant |
-| config | ParametrageScreen | store/indicator management |
+### Seed / Demo data
 
-## Simulateur — local formulas
+`src/app/api/seed/route.ts` — POST `{ magasinId }` injects demo KPIs (2M€ CA, 40% marge, phase maturité) and 6 PAP actions. Called from Paramétrage screen via "🗃 Données démo" button. Original seed for Lyon Est: `src/lib/seed.ts`.
 
-```
-GMROI = (CA annuel × tauxMarge%) / stockMoyen
-MasseSal% = (nbEtp × 28000) / CA annuel × 100
-EBE = CA × tauxMarge% - CA × 0.13 - nbEtp × 28000
-TrésorerieLibérée = stockActuel - stockSimulé
-```
+### PAP / MaJournée integration
 
-Family margins: Téléphonie 34% · JV 47% · LS 76% · Bijouterie 65% · Informatique 28% · Autre 35%
+`PAPScreen` writes to Supabase `plans_action`. Extra display fields (`axeId`, `duree`, `avancement`, `impactFinancier`) are stored in localStorage under key `pap_ext_${magasinId}`. `MaJourneeScreen` reads directly from `plans_action` using `action` column as the display title.
 
-## Rules
+### Key patterns
 
-1. `scoring.ts`, `hiddenCosts.ts`, supabase client — never break these
-2. All Claude calls via `/api/ai` only, never from client components
-3. Simulateur = 100% local JS, zero API calls
-4. Model used: `claude-sonnet-4-6`
-5. Env var: `ANTHROPIC_API_KEY` (server-side only, never exposed to client)
+- `(supabase as any).from(...)` — used when TypeScript types don't match the actual DB schema
+- `localStorage` keys: `app_mode`, `active_tab`, `journee_streak`, `pap_axes_${id}`, `pap_ext_${id}`, `chvacv_${id}`, `treso_params_${id}`
+- Screens receive `magasinId: string` and optionally `magasin: Magasin | null` for phase-aware logic
+- Deploy target: Vercel (`cockpit-topaz.vercel.app`)
+
+## Branch
+
+Development branch: `claude/easycash-management-app-rBVQU`. Always push there, never to `main`.

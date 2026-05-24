@@ -9,17 +9,26 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: "#0f1117",
-        surface: "#1a1d27",
-        surfaceAlt: "#222632",
-        border: "#2a2e3a",
-        accent: "#00d4aa",
-        danger: "#ff4d6a",
-        warn: "#ffb347",
-        blue: "#4da6ff",
-        purple: "#a78bfa",
-        textMuted: "#8b8fa3",
-        textDim: "#555a6e",
+        // Easycash brand
+        ec: {
+          red:    "#E30613",
+          hover:  "#B8050F",
+          dark:   "#1A0A0C",
+          light:  "#FFF5F5",
+          border: "#FFCDD1",
+        },
+        // Light theme tokens
+        bg: "#FFFFFF",
+        surface: "#F5F5F5",
+        surfaceAlt: "#F0F0F0",
+        border: "#E0E0E0",
+        accent: "#E30613",
+        danger: "#DC2626",
+        warn: "#F59E0B",
+        blue: "#3B82F6",
+        purple: "#7C3AED",
+        textMuted: "#6B7280",
+        textDim: "#9CA3AF",
       },
       fontFamily: {
         sans: ["DM Sans", "system-ui", "sans-serif"],
