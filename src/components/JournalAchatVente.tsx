@@ -100,7 +100,7 @@ function supplierName(fn: string, fp: string): string {
 }
 
 // ── family detection ──────────────────────────────────────────────────────────
-function detectFamilyCode(s: string): FamilyCode {
+function detectFamilyCode(s: string, warn = false): FamilyCode {
   const raw = s.trim().toUpperCase();
   const u = raw.replace(/[\s\-_]/g,'');
   const EXACT: Record<string,FamilyCode> = {
@@ -108,16 +108,30 @@ function detectFamilyCode(s: string): FamilyCode {
     'BOR':'BOR','BOPI':'BOPI','BMAR':'BMAR','BMON':'BMON','IPOR':'IPOR','ITAB':'ITAB',
   };
   if (EXACT[u]) return EXACT[u];
+  // TLCE
   if (raw.includes('CELLULAIRE')||raw.startsWith('TÉLÉPHONIE')||raw.startsWith('TELEPHONIE')) return 'TLCE';
+  // JPOR (before JCDR to avoid "jeux portables" matching JCDR)
   if (raw.includes('JEU PORTABLE')||raw.includes('JEUX PORTABLES')) return 'JPOR';
-  if (raw.includes('JEU VIDÉO')||raw.includes('JEU VIDEO')||raw.includes('JEUX VIDÉO')||raw.includes('JEUX VIDEO')) return 'JCDR';
-  if (raw.includes('CONSOLE')&&!raw.includes('PORTABLE')) return 'JCON';
-  if (raw==='BIJOUTERIE OR'||u==='BIJOUTERIEOR') return 'BOR';
+  // JCDR — "CD ROM Jeu Vidéo" or plain "Jeu Vidéo"
+  if (raw.includes('JEU VIDÉO')||raw.includes('JEU VIDEO')||raw.includes('JEUX VIDÉO')||raw.includes('JEUX VIDEO')||raw.includes('CD ROM')) return 'JCDR';
+  // JCON — "Console" but NOT portable, NOT CD ROM
+  if (raw.includes('CONSOLE')&&!raw.includes('PORTABLE')&&!raw.includes('CD ROM')) return 'JCON';
+  // BOR
+  if (raw.includes('BIJOUTERIE OR')) return 'BOR';
+  // BOPI
   if (raw.includes('PLAQUÉ')||raw.includes('PLAQUE')||raw.includes('BOPI')) return 'BOPI';
+  // BMAR
   if (raw.includes('MAROQUINERIE')) return 'BMAR';
+  // BMON
   if (raw.includes('MONTRE')) return 'BMON';
+  // IPOR — laptop/portable computer
   if ((raw.includes('INFORMATIQUE')||raw.includes('ORDINATEUR'))&&raw.includes('PORTABLE')) return 'IPOR';
+  // ITAB
   if (raw.includes('TABLETTE')) return 'ITAB';
+  // Unrecognised
+  if (warn && raw.length >= 5) {
+    console.warn(`[JournalAchatVente] Sous-famille non reconnue → OTHER : "${s}"`);
+  }
   return 'OTHER';
 }
 
@@ -927,6 +941,57 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
     else localStorage.removeItem(`journal_cookson_${magasinNom}`);
   },[cookson,magasinNom]);
 
+  // PARTIE C — Diagnostic report in console after import
+  useEffect(()=>{
+    if (!stored||!stored.rows.length) return;
+    const familyCounts=new Map<string,number>();
+    const unknownFamilies=new Set<string>();
+    for (const r of stored.rows) {
+      const fc=detectFamilyCode(r.f, false);
+      const label=fc==='OTHER'?`OTHER (${r.f||'(vide)'})`:`${fc}`;
+      familyCounts.set(fc,(familyCounts.get(fc)??0)+1);
+      if (fc==='OTHER'&&r.f.trim().length>=5) unknownFamilies.add(r.f.trim());
+    }
+    const rows=stored.rows;
+    const statsAll=computeStats(rows);
+    const MIN3all=(s:ModelStats)=>s.qteVendue>=3;
+    const perteSall=statsAll.filter(s=>MIN3all(s)&&s.margeTotal<0);
+    const faibleAll=statsAll.filter(s=>MIN3all(s)&&s.tauxMarge<20&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.margeTotal>=0);
+    console.group(`[JournalAchatVente] Rapport diagnostic — ${magasinNom} — ${rows.length} lignes`);
+    console.log('=== Répartition par famille ===');
+    Array.from(familyCounts.entries()).sort((a,b)=>b[1]-a[1]).forEach(([fc,n])=>{
+      const pct=Math.round(n/rows.length*100);
+      console.log(`  ${fc.padEnd(6)} : ${n} lignes (${pct}%)`);
+    });
+    if (unknownFamilies.size>0) {
+      console.warn('=== Sous-familles non reconnues ===');
+      unknownFamilies.forEach(f=>console.warn(`  → "${f}"`));
+    }
+    console.log('=== Modèles à surveiller (toutes familles, min 3 ventes) ===');
+    console.log(`  🔴 Perte sèche : ${perteSall.length} modèle(s)`);
+    if (perteSall.length>0) perteSall.slice(0,5).forEach(s=>console.log(`     • ${s.modele} (marge totale ${s.margeTotal} €)`));
+    console.log(`  🟡 Faible rendement (taux marge < 20%, délai > 90j) : ${faibleAll.length} modèle(s)`);
+    if (faibleAll.length>0) faibleAll.slice(0,5).forEach(s=>console.log(`     • ${s.modele} (taux marge ${s.tauxMarge}%, délai ${s.delaiMoyen}j)`));
+    // Per-family non-catégorisé (for BOR and JCDR/JCON)
+    const borRows=rows.filter(r=>detectFamilyCode(r.f)==='BOR');
+    if (borRows.length>0) {
+      const borValid=borRows.filter(r=>isBORValid(r.m));
+      const nc=borValid.filter(r=>detectBORType(r.m)==='Non catégorisé').length;
+      console.log(`  BOR : ${borRows.length} brutes → ${borValid.length} valides → ${nc} Non catégorisé (${borValid.length>0?Math.round(nc/borValid.length*100):0}%)`);
+    }
+    const jcdrRows=rows.filter(r=>detectFamilyCode(r.f)==='JCDR');
+    if (jcdrRows.length>0) {
+      const nd=jcdrRows.filter(r=>detectPlatform(r.m)==='Plateforme non détectée').length;
+      console.log(`  JCDR : ${jcdrRows.length} lignes → ${nd} plateforme non détectée (${Math.round(nd/jcdrRows.length*100)}%)`);
+    }
+    const jconRows=rows.filter(r=>detectFamilyCode(r.f)==='JCON');
+    if (jconRows.length>0) {
+      const nd=jconRows.filter(r=>detectPlatform(r.m)==='Plateforme non détectée').length;
+      console.log(`  JCON : ${jconRows.length} lignes → ${nd} plateforme non détectée (${Math.round(nd/jconRows.length*100)}%)`);
+    }
+    console.groupEnd();
+  },[stored,magasinNom]);
+
   const processFile = useCallback(async (file: File)=>{
     setLoading(true); setError(null);
     try {
@@ -1008,7 +1073,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
   const topVolume=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.qteVendue-a.qteVendue).slice(0,15),[stats]);
   const coherenceEP=useMemo(()=>stats.filter(s=>MIN3(s)&&s.ecartEP!==null&&Math.abs(s.ecartEP)>10).sort((a,b)=>Math.abs(b.ecartEP!)-Math.abs(a.ecartEP!)),[stats]);
   const perteSeche=useMemo(()=>stats.filter(s=>MIN3(s)&&s.margeTotal<0).sort((a,b)=>a.margeTotal-b.margeTotal),[stats]);
-  const faibleRendement=useMemo(()=>stats.filter(s=>MIN3(s)&&s.margeUnitaire<30&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.margeTotal>=0).sort((a,b)=>a.margeUnitaire-b.margeUnitaire),[stats]);
+  const faibleRendement=useMemo(()=>stats.filter(s=>MIN3(s)&&s.tauxMarge<20&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.margeTotal>=0).sort((a,b)=>a.tauxMarge-b.tauxMarge),[stats]);
   const pepites=useMemo(()=>{
     const rotSet=new Set(topRotations.filter(r=>r.qteVendue>=5).map(r=>r.modele.toLowerCase()));
     return topMarge.filter(m=>rotSet.has(m.modele.toLowerCase())).slice(0,5);
@@ -1325,40 +1390,52 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
             </div>
           )}
 
-          {/* Perte sèche */}
-          {perteSeche.length>0&&(
-            <SectionTable
-              title="🔴 Perte sèche"
-              cnt={`${perteSeche.length} modèle${perteSeche.length!==1?'s':''} · min 3 ventes`}
-              alert="Ces modèles vous font perdre de l'argent sur la période. À investiguer en priorité : prix d'achat trop élevé, prix de vente cassé, ou problème de grading."
-              rows={perteSeche}
-              cols={[
-                {label:'Modèle',render:modeleCol},
-                {label:'Qté',right:true,render:s=>s.qteVendue},
-                {label:'PA moy.',right:true,render:s=>`${fmtK(s.paMoyen)} €`},
-                {label:'PV moy.',right:true,render:s=>`${fmtK(s.pvMoyen)} €`},
-                {label:'Marge unit.',right:true,render:s=><span className="text-red-600 font-semibold">{fmtK(s.margeUnitaire)} €</span>},
-                {label:'Marge totale',right:true,render:s=><span className="text-red-600 font-semibold">{fmtK(s.margeTotal)} €</span>},
-              ]}
-            />
-          )}
-
-          {/* Faible rendement */}
-          {faibleRendement.length>0&&(
-            <SectionTable
-              title="🟡 Faible rendement"
-              cnt={`${faibleRendement.length} modèle${faibleRendement.length!==1?'s':''} · min 3 ventes`}
-              alert="Ces modèles rapportent peu de marge unitaire (< 30 €) et mobilisent du cash longtemps (délai > 90j)."
-              rows={faibleRendement}
-              cols={[
-                {label:'Modèle',render:modeleCol},
-                {label:'Qté',right:true,render:s=>s.qteVendue},
-                {label:'Délai moyen',right:true,render:s=>s.delaiMoyen!==null?<span className="text-orange-500">{s.delaiMoyen} j</span>:'—'},
-                {label:'Marge unit.',right:true,render:s=><span className="text-orange-500">{fmtK(s.margeUnitaire)} €</span>},
-                {label:'Marge totale',right:true,render:s=>`${fmtK(s.margeTotal)} €`},
-              ]}
-            />
-          )}
+          {/* ⚠️ Modèles à surveiller */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-[#1A1A1A]">⚠️ Modèles à surveiller</h3>
+            {perteSeche.length===0&&faibleRendement.length===0?(
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
+                ✅ Aucun modèle à surveiller sur cette période. Bravo.
+              </div>
+            ):(
+              <div className="space-y-5">
+                {/* Perte sèche */}
+                {perteSeche.length>0&&(
+                  <SectionTable
+                    title="🔴 Perte sèche"
+                    cnt={`${perteSeche.length} modèle${perteSeche.length!==1?'s':''} · min 3 ventes`}
+                    alert="Ces modèles vous font perdre de l'argent sur la période. À investiguer en priorité : prix d'achat trop élevé, prix de vente cassé, ou problème de grading."
+                    rows={perteSeche}
+                    cols={[
+                      {label:'Modèle',render:modeleCol},
+                      {label:'Qté',right:true,render:s=>s.qteVendue},
+                      {label:'PA moy.',right:true,render:s=>`${fmtK(s.paMoyen)} €`},
+                      {label:'PV moy.',right:true,render:s=>`${fmtK(s.pvMoyen)} €`},
+                      {label:'Marge unit.',right:true,render:s=><span className="text-red-600 font-semibold">{fmtK(s.margeUnitaire)} €</span>},
+                      {label:'Marge totale',right:true,render:s=><span className="text-red-600 font-semibold">{fmtK(s.margeTotal)} €</span>},
+                    ]}
+                  />
+                )}
+                {/* Faible rendement */}
+                {faibleRendement.length>0&&(
+                  <SectionTable
+                    title="🟡 Faible rendement (lents et peu rentables)"
+                    cnt={`${faibleRendement.length} modèle${faibleRendement.length!==1?'s':''} · min 3 ventes`}
+                    alert="Ces modèles cumulent deux faiblesses : taux de marge sous les 20% ET rotation lente (plus de 90 jours). Ils mobilisent du cash sans rapporter beaucoup. À arbitrer : soit augmenter la marge (prix achat / prix vente), soit éviter d'en acheter au comptoir."
+                    rows={faibleRendement}
+                    cols={[
+                      {label:'Modèle',render:modeleCol},
+                      {label:'Qté',right:true,render:s=>s.qteVendue},
+                      {label:'Délai moyen',right:true,render:s=>s.delaiMoyen!==null?<span className="text-orange-500">{s.delaiMoyen} j</span>:'—'},
+                      {label:'Taux marge',right:true,render:s=><span className="text-orange-500">{s.tauxMarge} %</span>},
+                      {label:'Marge unit.',right:true,render:s=>`${fmtK(s.margeUnitaire)} €`},
+                      {label:'Marge totale',right:true,render:s=>`${fmtK(s.margeTotal)} €`},
+                    ]}
+                  />
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Cohérence EP — hidden for BOR/BOPI/BMAR/BMON */}
           {showEP&&hasEPVente&&(
