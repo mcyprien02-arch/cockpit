@@ -186,14 +186,19 @@ function detectBijouType(libelle: string): string {
 }
 
 function detectBORCanal(r: CRow): string {
-  const all = [r.fn??'',r.fp??'',r.an??'',r.ap??''].join(' ');
-  const u = norm(all);
-  if (u.includes('changevivienne')||u.includes('easycashagde')||u.includes('fonteor')) return 'Fonte';
+  // Only check buyer fields (an = acheteurNom, ap = acheteurPrenom)
+  const an = (r.an ?? '').toUpperCase();
+  const ap = (r.ap ?? '').toUpperCase();
+  const combined = norm(an + ' ' + ap);
+  if (combined.includes('changevivienne')) return 'Fonte';
+  if (combined.includes('easycashagde')) return 'Fonte';
+  if ((an.includes('EASYCASH') || ap.includes('EASYCASH')) && (an.includes('AGDE') || ap.includes('AGDE'))) return 'Fonte';
   return 'Vitrine';
 }
 
 function extractPoids(libelle: string): number|null {
-  const m = libelle.match(/(\d+[,.]?\d*)\s*[Gg]\b/);
+  // Match "X,XX G" or "X.XX G" or "X G" — requires space before G, G not followed by another letter
+  const m = libelle.match(/(\d+[,.]\d+|\d+)\s+[Gg](?=[^a-zA-Z]|$)/);
   if (!m) return null;
   const v = parseFloat(m[1].replace(',','.'));
   return isNaN(v)||v<=0 ? null : v;
@@ -213,11 +218,62 @@ function detectBMONBrand(libelle: string): string {
   return extractBrand(libelle);
 }
 
+// ── BOR validity filter ───────────────────────────────────────────────────────
+const BOR_EXCL = ['CHASSIS','IPHONE','DELL','ASUS','ACER','ACC. DE JEUX','ORDINATEUR'];
+function isBORValid(modele: string): boolean {
+  const u = modele.trim().toUpperCase();
+  if (!u.startsWith('OR')) return false;
+  for (const kw of BOR_EXCL) { if (u.includes(kw)) return false; }
+  if (/\bHP\b/.test(u)) return false;
+  return true;
+}
+
+// ── BOR type detection (replaces detectBijouType for BOR family) ─────────────
+function detectBORType(libelle: string): string {
+  // Normalize: uppercase, strip accents, keep spaces
+  const u = libelle.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+
+  // 1. Pièces or — most specific terms first
+  if (/NAPOLEON/.test(u)) return 'Pièces or';
+  if (/20\s*FR(?:ANCS?)?/.test(u)) return 'Pièces or';
+  if (/10\s*FR(?:ANCS?)?/.test(u)) return 'Pièces or';
+  if (/MARIANNE|GENIE|VICTORIA/.test(u)) return 'Pièces or';
+  if (/DOS\s*PESOS|\bPESOS\b/.test(u)) return 'Pièces or';
+  if (/LOUIS\s*D.?OR/.test(u)) return 'Pièces or';
+  if (/\bPIECE\b/.test(u)) return 'Pièces or';
+  if (/\bBRIDGE\b/.test(u) && !/DENT\s*BRIDGE/.test(u)) return 'Pièces or';
+
+  // 2. Bracelets — before bagues to handle "BRACELET JONC"
+  if (/GOURMETTE|MANCHETTE|BRACELET|JONC\s*OUVRABLE/.test(u)) return 'Bracelets';
+
+  // 3. Bagues — JONC only when not preceded by BRACELET
+  const hasJoncBague = /\bJONC\b/.test(u) && !/BRACELET\s*JONC/.test(u) && !/JONC\s*OUVRABLE/.test(u);
+  if (/CHEVALIERE|CHEVALIER\s|ALLIANCE|TRILOGIE|\bBAGUE\b/.test(u) || hasJoncBague || /\bT\.?\s*\d{2}\b/.test(u)) return 'Bagues';
+
+  // 4. Chaînes
+  if (/CHAINE|COLLIER|SAUTOIR|RAS\s*DE\s*COU/.test(u)) return 'Chaînes';
+
+  // 5. Boucles d'oreilles
+  if (/BOUCLES?\s*D[OA]REILLES?|B\.\s*O\.|B\.\s*O\s|BO\s|BO\.|CREOLES?|DORMEUSES?|CHARMEUSES?|\bPUCES?\b/.test(u)) return "Boucles d'oreilles";
+
+  // 6. Pendentifs / Médailles
+  if (/PENDENTIF|MEDAILLON?|MEDAILLE|\bCROIX\b|C[OO]EUR|\bCHARM\b|BRELOQUE|\bPIMENT\b|\bVIERGE\b|\bDAUPHIN\b|\bELEPHANT\b|ARBRE\s*DE\s*VIE|\bANGE\b|\bCANCER\b|\bPOISSONS\b|\bSCORPION\b|\bCAPRICORNE\b/.test(u)) return 'Pendentifs / Médailles';
+
+  // 7. Débris / À réparer (BRUT only if no other type keyword matched above)
+  if (/DEBRIS|A\s*REPARER|\bCASSE\b|\bCASSER\b|\bCASSEE\b|MANQUANT|BOUT\s*DE\b|MERCEAU|DENT\s*BRIDGE|OR\s*DENTAIRE/.test(u)) return 'Débris / À réparer';
+  if (/\bBRUT\b/.test(u)) return 'Débris / À réparer'; // "OR BRUT" without other specific keyword
+
+  // 8. Autres
+  if (/BROCHE|PINCE\s*A\s*BILLET|BOUTON\s*MANCHETTE|PEPITE/.test(u)) return 'Autres';
+
+  return 'Non catégorisé';
+}
+
 interface PriceRange { lo: number; hi: number; label: string; }
 const PRICE_RANGES: Record<string, PriceRange[]> = {
   STD:  [{lo:0,hi:100,label:'0-100€'},{lo:100,hi:300,label:'100-300€'},{lo:300,hi:700,label:'300-700€'},{lo:700,hi:Infinity,label:'+700€'}],
   ITAB: [{lo:0,hi:200,label:'0-200€'},{lo:200,hi:400,label:'200-400€'},{lo:400,hi:700,label:'400-700€'},{lo:700,hi:Infinity,label:'+700€'}],
-  BOR:  [{lo:0,hi:100,label:'0-100€'},{lo:100,hi:300,label:'100-300€'},{lo:300,hi:600,label:'300-600€'},{lo:600,hi:Infinity,label:'+600€'}],
+  BOR:  [{lo:0,hi:100,label:'0-100 €'},{lo:100,hi:300,label:'100-300 €'},{lo:300,hi:600,label:'300-600 €'},{lo:600,hi:Infinity,label:'+600 €'}],
 };
 function priceRangesFor(fc: FamilyCode): PriceRange[] {
   if (fc==='ITAB') return PRICE_RANGES['ITAB'];
@@ -435,15 +491,36 @@ export function getJournalContext(magasinNom: string): string {
     // Family-specific context
     const familyLines: string[] = [];
     const borRows=stored.rows.filter(r=>detectFamilyCode(r.f)==='BOR');
-    if (borRows.length>=5) {
-      const typeB=computeBreakdown(borRows,r=>detectBijouType(r.m));
-      familyLines.push(`BOR — Types dominants : ${typeB.slice(0,3).map(t=>`${t.label} (${t.qtyPct}%)`).join(', ')}.`);
-      const canalB=computeBORCanalBreakdown(borRows);
+    const borValidRows=borRows.filter(r=>isBORValid(r.m));
+    if (borValidRows.length>=5) {
+      const typeB=computeBreakdown(borValidRows,r=>detectBORType(r.m));
+      familyLines.push(`BOR — Types de produits dominants : ${typeB.slice(0,3).map(t=>`${t.label} (${t.qtyPct}%)`).join(', ')}.`);
+      const canalB=computeBORCanalBreakdown(borValidRows);
       const fonte=canalB.find(r=>r.label==='Fonte'), vitrine=canalB.find(r=>r.label==='Vitrine');
       const totalPoids=(fonte?.poidsTotal??0)+(vitrine?.poidsTotal??0);
       if (totalPoids>0&&fonte?.poidsTotal) {
-        const tauxFonte=Math.round((fonte.poidsTotal)/totalPoids*100);
-        familyLines.push(`BOR — Taux fonte sur poids racheté : ${tauxFonte}%. Différentiel marge vitrine vs fonte : ${(vitrine?.tauxMarge??0)-(fonte?.tauxMarge??0)} points.`);
+        const tauxFonte=Math.round(fonte.poidsTotal/totalPoids*100);
+        const diff=(vitrine?.tauxMarge??0)-(fonte?.tauxMarge??0);
+        familyLines.push(`BOR — Taux de fonte sur poids racheté : ${tauxFonte}%. Différentiel marge fonte vs vitrine : ${diff} points.`);
+      }
+      // Cookson comparison from persisted state
+      const cooksonStr=localStorage.getItem(`journal_cookson_${magasinNom}`);
+      if (cooksonStr) {
+        const cooksonNum=parseFloat(cooksonStr.replace(',','.'));
+        if (!isNaN(cooksonNum)&&cooksonNum>0) {
+          const rowsWithPoids=borValidRows.reduce((acc,r)=>{
+            const p=extractPoids(r.m);
+            if (p&&p>0) acc.push({pa:r.pa,poids:p});
+            return acc;
+          },[] as {pa:number;poids:number}[]);
+          if (rowsWithPoids.length>0) {
+            const totalPA=rowsWithPoids.reduce((s,r)=>s+r.pa,0);
+            const totalP=rowsWithPoids.reduce((s,r)=>s+r.poids,0);
+            const avgPaPerGram=Math.round(totalPA/totalP*100)/100;
+            const ecart=Math.round((avgPaPerGram-cooksonNum)/cooksonNum*100);
+            familyLines.push(`BOR — Prix d'achat moyen au gramme : ${avgPaPerGram} €/g vs cours Cookson ${cooksonNum} €/g (écart ${ecart>0?'+':''}${ecart}%).`);
+          }
+        }
       }
     }
     const iporRows=stored.rows.filter(r=>detectFamilyCode(r.f)==='IPOR');
@@ -595,48 +672,58 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
 }) {
   const fmtK=(n:number)=>n.toLocaleString('fr-FR');
 
+  // For BOR: filter valid rows and track how many were excluded
+  const effectiveRows = useMemo(()=>{
+    if (family!=='BOR') return rows;
+    return rows.filter(r=>isBORValid(r.m));
+  },[rows,family]);
+  const borFilteredCount = family==='BOR' ? rows.length - effectiveRows.length : 0;
+
   const priceRanges = useMemo(()=>priceRangesFor(family),[family]);
 
-  const breakdown1 = useMemo(()=>computeBreakdown(rows, r=>{
+  const breakdown1 = useMemo(()=>computeBreakdown(effectiveRows, r=>{
     if (family==='TLCE'||family==='IPOR'||family==='ITAB') return extractBrand(r.m);
     if (family==='JCON'||family==='JCDR') return detectPlatform(r.m);
     if (family==='JPOR') return detectJPORBrand(r.m);
-    if (family==='BOR'||family==='BOPI') return detectBijouType(r.m);
+    if (family==='BOR') return detectBORType(r.m);
+    if (family==='BOPI') return detectBijouType(r.m);
     if (family==='BMAR') return detectBMARBrand(r.m);
     if (family==='BMON') return detectBMONBrand(r.m);
     return r.f||'Autre';
-  }),[rows,family]);
+  }),[effectiveRows,family]);
 
   const priceBreakdown = useMemo(()=>{
     if (family==='JCON'||family==='JCDR') return [];
-    return computeBreakdown(rows, r=>getPriceLabel(r.pv, priceRanges));
-  },[rows,family,priceRanges]);
+    return computeBreakdown(effectiveRows, r=>getPriceLabel(r.pv, priceRanges));
+  },[effectiveRows,family,priceRanges]);
 
   const usageBreakdown = useMemo(()=>{
     if (family!=='IPOR') return [];
-    return computeBreakdown(rows, r=>detectIPORUsage(r.m));
-  },[rows,family]);
+    return computeBreakdown(effectiveRows, r=>detectIPORUsage(r.m));
+  },[effectiveRows,family]);
 
   const canalBreakdown = useMemo(()=>{
     if (family!=='BOR') return [];
-    return computeBORCanalBreakdown(rows);
-  },[rows,family]);
+    return computeBORCanalBreakdown(effectiveRows);
+  },[effectiveRows,family]);
 
-  // BOR Cookson calculation
+  // BOR Cookson calculation: sum(pa) / sum(poids) — true weighted average
   const cooksonCalc = useMemo(()=>{
     if (family!=='BOR') return null;
     const cooksonNum=parseFloat(cookson.replace(',','.'));
     if (isNaN(cooksonNum)||cooksonNum<=0) return null;
-    const rowsWithPoids=rows.reduce((acc,r)=>{
+    const rowsWithPoids=effectiveRows.reduce((acc,r)=>{
       const p=extractPoids(r.m);
       if (p&&p>0) acc.push({pa:r.pa,poids:p});
       return acc;
     },[] as {pa:number;poids:number}[]);
     if (!rowsWithPoids.length) return null;
-    const avgPaPerGram=rowsWithPoids.reduce((s,r)=>s+r.pa/r.poids,0)/rowsWithPoids.length;
+    const totalPA=rowsWithPoids.reduce((s,r)=>s+r.pa,0);
+    const totalPoids=rowsWithPoids.reduce((s,r)=>s+r.poids,0);
+    const avgPaPerGram=totalPoids>0?totalPA/totalPoids:0;
     const ecart=Math.round((avgPaPerGram-cooksonNum)/cooksonNum*100);
-    return {avgPaPerGram:Math.round(avgPaPerGram*100)/100, cooksonNum, ecart};
-  },[rows,family,cookson]);
+    return {avgPaPerGram:Math.round(avgPaPerGram*100)/100, cooksonNum, ecart, nbLignes:rowsWithPoids.length};
+  },[effectiveRows,family,cookson]);
 
   // BOR fonte indicators
   const borIndicators = useMemo(()=>{
@@ -645,24 +732,38 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
     const vitrine=canalBreakdown.find(r=>r.label==='Vitrine');
     const totalPoids=(fonte?.poidsTotal??0)+(vitrine?.poidsTotal??0);
     const tauxFonte=totalPoids>0&&fonte?.poidsTotal?Math.round(fonte.poidsTotal/totalPoids*100):null;
-    const diff=vitrine&&fonte?vitrine.tauxMarge-fonte.tauxMarge:null;
+    const diff=vitrine!=null&&fonte!=null?vitrine.tauxMarge-fonte.tauxMarge:null;
     return {tauxFonte, diff, vitrine, fonte};
   },[family,canalBreakdown]);
 
-  if (rows.length<5) {
-    return (
-      <div className="bg-[#F5F5F5] rounded-xl p-5 text-center text-sm text-[#6B7280] italic border border-[#E0E0E0]">
-        Données insuffisantes pour une analyse approfondie sur cette famille (moins de 5 ventes).
-      </div>
-    );
-  }
+  // BOR: % of "Non catégorisé" lines
+  const borNonCatPct = useMemo(()=>{
+    if (family!=='BOR'||effectiveRows.length===0) return 0;
+    const nc=effectiveRows.filter(r=>detectBORType(r.m)==='Non catégorisé').length;
+    return Math.round(nc/effectiveRows.length*100);
+  },[effectiveRows,family]);
 
-  // JCDR: warn if >30% of libellés have no platform detected
+  // JCDR/JCON: % of undetected platforms
   const jcdrNonDetecte = useMemo(()=>{
     if (family!=='JCDR'&&family!=='JCON') return 0;
     const nd=rows.filter(r=>detectPlatform(r.m)==='Plateforme non détectée').length;
     return rows.length>0?Math.round(nd/rows.length*100):0;
   },[rows,family]);
+
+  if (effectiveRows.length<5) {
+    return (
+      <div className="bg-[#F5F5F5] rounded-xl p-5 space-y-2 border border-[#E0E0E0]">
+        {family==='BOR'&&borFilteredCount>0&&(
+          <p className="text-xs text-[#6B7280]">
+            {effectiveRows.length} lignes valides analysées sur {rows.length} lignes brutes ({borFilteredCount} filtrées — libellé ne commence pas par OR ou erreur de saisie).
+          </p>
+        )}
+        <p className="text-center text-sm text-[#6B7280] italic">
+          Données insuffisantes pour une analyse approfondie sur cette famille (moins de 5 ventes valides).
+        </p>
+      </div>
+    );
+  }
 
   const title=FAMILY_SECTION_TITLE[family];
   const hasTwoCols=['JPOR','ITAB','BOPI','BMAR','BMON'].includes(family);
@@ -672,19 +773,33 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
     <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-5">
       <h3 className="text-sm font-bold text-[#1A1A1A]">{title}</h3>
 
-      {/* BOR Cookson field */}
+      {/* BOR: filtration info + Cookson field */}
       {family==='BOR' && (
-        <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg p-3 flex flex-wrap items-center gap-3">
-          <label className="text-xs font-semibold text-[#1A1A1A] whitespace-nowrap">💰 Cours Cookson (€/g or 18 carats)</label>
-          <input
-            type="number"
-            value={cookson}
-            onChange={e=>onCooksonChange(e.target.value)}
-            placeholder="ex: 42.50"
-            className="w-28 bg-white border border-[#E0E0E0] rounded-md px-2 py-1 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
-          />
-          <span className="text-xs text-[#6B7280] italic">Optionnel — calcule l&apos;écart prix achat moyen au gramme</span>
-        </div>
+        <>
+          {/* Filtration stats */}
+          <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-3 py-2 text-xs text-[#6B7280]">
+            {effectiveRows.length} lignes valides analysées sur {rows.length} lignes brutes
+            {borFilteredCount>0&&<> ({borFilteredCount} filtrée{borFilteredCount>1?'s':''} : erreurs de saisie ou retours)</>}.
+          </div>
+          {/* 25% non catégorisé alert */}
+          {borNonCatPct>25&&(
+            <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-3 py-2 text-xs text-[#6B7280]">
+              ⚠️ {borNonCatPct}% des libellés BOR n&apos;ont pas pu être attribués à un type de produit. Vérifiez vos libellés Athéna pour améliorer la précision.
+            </div>
+          )}
+          {/* Cookson field */}
+          <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg p-3 flex flex-wrap items-center gap-3">
+            <label className="text-xs font-semibold text-[#1A1A1A] whitespace-nowrap">💰 Cours Cookson du jour (€/g pour or 18 carats / 750 millièmes)</label>
+            <input
+              type="number"
+              value={cookson}
+              onChange={e=>onCooksonChange(e.target.value)}
+              placeholder="ex: 42.50"
+              className="w-28 bg-white border border-[#E0E0E0] rounded-md px-2 py-1 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
+            />
+            <span className="text-xs text-[#6B7280] italic">Optionnel — calcule l&apos;écart prix achat moyen au gramme</span>
+          </div>
+        </>
       )}
 
       {/* JCDR/JCON: 30% undetected platform alert */}
@@ -722,10 +837,10 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
       {/* BOR three tables */}
       {family==='BOR' && (
         <div className="space-y-5">
-          <BreakdownTable title="Par type de produit" rows={breakdown1} />
-          <BreakdownTable title="Par tranche de prix" rows={priceBreakdown} showDelai={false} />
+          <BreakdownTable title="💍 Par type de produit" rows={breakdown1} segmentLabel="Type" />
+          <BreakdownTable title="💰 Par tranche de prix" rows={priceBreakdown} showDelai={false} />
           <div className="space-y-2">
-            <h4 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Par canal vitrine vs fonte</h4>
+            <h4 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">🏪 Par canal vitrine vs fonte</h4>
             <BORCanalTable rows={canalBreakdown} />
           </div>
 
@@ -757,12 +872,15 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
 
           {/* Cookson ecart */}
           {cooksonCalc && (
-            <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg p-3">
-              <p className="text-xs font-semibold text-[#E30613] mb-0.5">Écart prix achat moyen au gramme vs cours Cookson</p>
+            <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg p-3 space-y-1">
+              <p className="text-xs font-semibold text-[#E30613]">Analyse au gramme (sur {cooksonCalc.nbLignes} ligne{cooksonCalc.nbLignes>1?'s':''} avec poids extrait)</p>
               <p className="text-sm font-bold text-[#1A1A1A]">
-                {cooksonCalc.ecart>0?'+':''}{cooksonCalc.ecart}%
+                Prix d&apos;achat moyen au gramme : {fmtK(cooksonCalc.avgPaPerGram)} €/g
+              </p>
+              <p className={`text-sm font-bold ${cooksonCalc.ecart>0?'text-orange-600':cooksonCalc.ecart<0?'text-green-600':'text-[#1A1A1A]'}`}>
+                Écart vs cours Cookson : {cooksonCalc.ecart>0?'+':''}{cooksonCalc.ecart}%
                 <span className="text-xs text-[#6B7280] font-normal ml-2">
-                  (rachat à {fmtK(cooksonCalc.avgPaPerGram)} €/g vs cours {fmtK(cooksonCalc.cooksonNum)} €/g)
+                  ({fmtK(cooksonCalc.avgPaPerGram)} €/g vs {fmtK(cooksonCalc.cooksonNum)} €/g Cookson)
                 </span>
               </p>
             </div>
@@ -794,7 +912,20 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
       if (!Array.isArray(p.rows)) { localStorage.removeItem(`journal_analyse_${magasinNom}`); setStored(null); return; }
       setStored(p);
     } catch { setStored(null); }
+    // Load persisted cookson for this store
+    try {
+      const ck=localStorage.getItem(`journal_cookson_${magasinNom}`);
+      if (ck) setCookson(ck);
+      else setCookson('');
+    } catch { /* ignore */ }
   },[magasinNom]);
+
+  // Persist cookson whenever it changes
+  useEffect(()=>{
+    if (!magasinNom) return;
+    if (cookson) localStorage.setItem(`journal_cookson_${magasinNom}`,cookson);
+    else localStorage.removeItem(`journal_cookson_${magasinNom}`);
+  },[cookson,magasinNom]);
 
   const processFile = useCallback(async (file: File)=>{
     setLoading(true); setError(null);
