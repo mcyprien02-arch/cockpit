@@ -344,7 +344,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       </div>
 
       {data.nom && (
-        <button onClick={() => onNavigate('concept')} className="w-full bg-white border border-[#E0E0E0] rounded-xl px-4 py-3 text-left hover:bg-[#FAFAFA] transition-colors group">
+        <button onClick={() => onNavigate('objectifs')} className="w-full bg-white border border-[#E0E0E0] rounded-xl px-4 py-3 text-left hover:bg-[#FAFAFA] transition-colors group">
           {vision?.vision3ans ? (
             <>
               <p className="text-sm text-[#1A1A1A] font-medium truncate">🌟 {vision.vision3ans}</p>

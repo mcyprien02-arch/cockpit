@@ -123,30 +123,37 @@ function detectFamilyCode(s: string): FamilyCode {
 
 // ── platform detection (JCON / JCDR / JPOR) ──────────────────────────────────
 function detectPlatform(libelle: string): string {
-  const u = libelle.toUpperCase();
-  if (u.includes('PS5')) return 'PS5';
-  if (u.includes('PS4')) return 'PS4';
-  if (u.includes('PS3')) return 'PS3';
-  if (u.includes('PS2')) return 'PS2';
-  if (u.includes('PSX')||u.includes('PS1')||u.includes('PLAYSTATION 1')) return 'PS1';
-  if (u.includes('XBOX SERIES X')) return 'Xbox Series X';
-  if (u.includes('XBOX SERIES S')) return 'Xbox Series S';
+  const u = libelle.toUpperCase().replace(/[-_]/g, ' ');
+  // PlayStation — most specific first
+  if (u.includes('PLAYSTATION 5') || u.includes('PS5')) return 'PS5';
+  if (u.includes('PLAYSTATION 4') || u.includes('PS4')) return 'PS4';
+  if (u.includes('PLAYSTATION 3') || u.includes('PS3')) return 'PS3';
+  if (u.includes('PLAYSTATION 2') || u.includes('PS2')) return 'PS2';
+  if (/\bPSP\b/.test(u) || u.includes('PLAYSTATION PORTABLE')) return 'PSP';
+  if (u.includes('PS VITA') || u.includes('PSVITA')) return 'PS Vita';
+  if (u.includes('PLAYSTATION 1') || /\bPS1\b/.test(u) || /\bPSX\b/.test(u)) return 'PS1';
+  // Xbox — most specific first
+  if (u.includes('XBOX SERIES X') || u.includes('SERIES X')) return 'Xbox Series X';
+  if (u.includes('XBOX SERIES S') || u.includes('SERIES S')) return 'Xbox Series S';
   if (u.includes('XBOX ONE')) return 'Xbox One';
-  if (u.includes('XBOX 360')) return 'Xbox 360';
+  if (u.includes('XBOX 360') || /\bX360\b/.test(u)) return 'Xbox 360';
+  // Nintendo — most specific first
   if (u.includes('SWITCH OLED')) return 'Switch OLED';
   if (u.includes('SWITCH 2')) return 'Switch 2';
   if (/\bSWITCH\b/.test(u)) return 'Switch';
   if (u.includes('WII U')) return 'Wii U';
   if (/\bWII\b/.test(u)) return 'Wii';
-  if (u.includes('GAMECUBE')||u.includes('GAME CUBE')) return 'GameCube';
-  if (u.includes('NINTENDO 64')||u.includes('N64')) return 'Nintendo 64';
-  if (u.includes('SNES')) return 'SNES';
+  if (u.includes('GAMECUBE') || u.includes('GAME CUBE')) return 'GameCube';
+  if (u.includes('NINTENDO 64') || /\bN64\b/.test(u)) return 'Nintendo 64';
+  if (u.includes('SNES') || u.includes('SUPER NINTENDO')) return 'SNES';
   if (/\bNES\b/.test(u)) return 'NES';
+  if (/\b3DS\b/.test(u)) return '3DS';
+  if (u.includes('NINTENDO DS') || /\bDS\b/.test(u)) return 'DS';
+  if (u.includes('GAMEBOY ADVANCE') || /\bGBA\b/.test(u)) return 'GameBoy Advance';
+  if (u.includes('GAMEBOY') || u.includes('GAME BOY')) return 'GameBoy';
+  // Other
   if (u.includes('STEAM DECK')) return 'Steam Deck';
-  if (u.includes('3DS')) return '3DS';
-  if (/\bDS\b/.test(u)) return 'DS';
-  if (u.includes('GAMEBOY')||u.includes('GAME BOY')||/\bGBA\b/.test(u)||/\bGBC\b/.test(u)) return 'GameBoy';
-  return 'Autre';
+  return 'Plateforme non détectée';
 }
 
 function detectJPORBrand(libelle: string): string {
@@ -508,7 +515,7 @@ function SectionTable({ title, cnt, alert, rows, cols, emptyMsg, extra }: {
   );
 }
 
-function BreakdownTable({ title, rows, showDelai=true }: { title?: string; rows: BreakdownRow[]; showDelai?: boolean; }) {
+function BreakdownTable({ title, rows, showDelai=true, segmentLabel='Segment' }: { title?: string; rows: BreakdownRow[]; showDelai?: boolean; segmentLabel?: string; }) {
   const fmtK=(n:number)=>n.toLocaleString('fr-FR');
   if (rows.length===0) return <p className="text-xs text-[#9CA3AF] italic">Aucune donnée.</p>;
   return (
@@ -518,7 +525,7 @@ function BreakdownTable({ title, rows, showDelai=true }: { title?: string; rows:
         <table className="text-xs w-full border-collapse">
           <thead>
             <tr>
-              <th className={TH}>Segment</th>
+              <th className={TH}>{segmentLabel}</th>
               <th className={THR}>Qté</th><th className={THR}>Part (%)</th>
               <th className={THR}>Marge (€)</th><th className={THR}>Part marge (%)</th>
               <th className={THR}>Taux marge (%)</th>
@@ -650,6 +657,13 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
     );
   }
 
+  // JCDR: warn if >30% of libellés have no platform detected
+  const jcdrNonDetecte = useMemo(()=>{
+    if (family!=='JCDR'&&family!=='JCON') return 0;
+    const nd=rows.filter(r=>detectPlatform(r.m)==='Plateforme non détectée').length;
+    return rows.length>0?Math.round(nd/rows.length*100):0;
+  },[rows,family]);
+
   const title=FAMILY_SECTION_TITLE[family];
   const hasTwoCols=['JPOR','ITAB','BOPI','BMAR','BMON'].includes(family);
   const hasThreeCols=family==='IPOR';
@@ -673,9 +687,16 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
         </div>
       )}
 
+      {/* JCDR/JCON: 30% undetected platform alert */}
+      {(family==='JCDR'||family==='JCON') && jcdrNonDetecte>30 && (
+        <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-3 py-2 text-xs text-[#6B7280]">
+          ⚠️ Plus de 30% des libellés {family} n&apos;ont pas pu être attribués à une plateforme. Vérifiez vos libellés Athéna.
+        </div>
+      )}
+
       {/* Single table families (TLCE, JCON, JCDR) */}
       {!hasTwoCols && !hasThreeCols && family!=='BOR' && (
-        <BreakdownTable rows={breakdown1} />
+        <BreakdownTable rows={breakdown1} segmentLabel={(family==='JCON'||family==='JCDR')?'Plateforme':'Marque'} />
       )}
 
       {/* Two-column families (JPOR, ITAB, BOPI, BMAR, BMON) */}

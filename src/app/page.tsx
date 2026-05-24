@@ -14,7 +14,6 @@ import Comparatif from '@/components/Comparatif';
 import VisiteCR from '@/components/VisiteCR';
 import AssistantIA from '@/components/AssistantIA';
 import Routines from '@/components/Routines';
-import ConceptDuJour from '@/components/ConceptDuJour';
 import JournalAchatVente from '@/components/JournalAchatVente';
 import { detectSpiral } from '@/lib/spiral';
 
@@ -23,8 +22,7 @@ const TABS = [
   { id: 'diagnostic',  label: 'Diagnostic' },
   { id: 'plan',        label: "Plan d'Action" },
   { id: 'routines',    label: '🔁 Routines' },
-  { id: 'concept',     label: '💡 Concept' },
-  { id: 'objectifs',   label: '🎯 Objectifs' },
+  { id: 'objectifs',   label: '🎯 Ma vision' },
   { id: 'couverture',  label: '🎯 Couverture de gamme' },
   { id: 'journal',     label: '📊 Journal achat-vente' },
   { id: 'simulateur',  label: 'Simulateur' },
@@ -163,7 +161,6 @@ export default function App() {
         {tab === 'diagnostic'  && <Diagnostic  data={data} />}
         {tab === 'plan'        && <PlanAction   data={data} actions={actions} onSave={saveActions} />}
         {tab === 'routines'    && <Routines        magasinNom={currentNom} />}
-        {tab === 'concept'     && <ConceptDuJour  magasinNom={currentNom} onNavigate={(t) => setTab(t as TabId)} />}
         {tab === 'objectifs'   && <Objectifs       magasinNom={currentNom} />}
         {tab === 'couverture'  && <CouvertureGamme  magasinNom={currentNom} />}
         {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}

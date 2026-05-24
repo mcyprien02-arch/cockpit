@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { PAPAction } from '@/types';
+import type { PAPAction, ActionAxe, StoredStatut } from '@/types';
 
 interface Props { magasinNom: string; }
 
@@ -86,6 +86,27 @@ const DEFAULT_FAMILLES: Array<{ famille: string; tauxMarge: number }> = [
 
 function uid() { return Math.random().toString(36).slice(2); }
 
+// ── PAP inline creation ───────────────────────────────────────────────────────
+const PAP_AXES: ActionAxe[] = ['Stock', 'Commerce', 'Management', 'Web', 'Transverse'];
+const PAP_STATUTS: StoredStatut[] = ['À faire', 'En cours', 'Fait'];
+const EMPTY_PAP_FORM: Omit<PAPAction, 'id'> = {
+  titre: '', axe: 'Commerce', pilote: '', copilote: '',
+  description: '', lienvision: 'Cette action sert ma vision et mes valeurs en...',
+  echeance: '', priorite: 1, gain: 0, statut: 'À faire',
+};
+
+function loadPAPActions(magasinNom: string): PAPAction[] {
+  try {
+    const s = localStorage.getItem(`ec_actions_${magasinNom}`);
+    return s ? JSON.parse(s) as PAPAction[] : [];
+  } catch { return []; }
+}
+
+function savePAPActions(magasinNom: string, actions: PAPAction[]) {
+  if (!magasinNom) return;
+  localStorage.setItem(`ec_actions_${magasinNom}`, JSON.stringify(actions));
+}
+
 function defaultRows(): ObjFamille[] {
   return DEFAULT_FAMILLES.map(f => ({ id: uid(), famille: f.famille, tauxMarge: f.tauxMarge, margeCible: 0, margeRealisee: 0 }));
 }
@@ -96,6 +117,10 @@ export default function Objectifs({ magasinNom }: Props) {
 
   // Vision state
   const [vision, setVision] = useState<VisionData>(DEFAULT_VISION);
+
+  // PAP modal state
+  const [showPAPModal, setShowPAPModal] = useState(false);
+  const [papForm, setPapForm] = useState<Omit<PAPAction, 'id'>>(EMPTY_PAP_FORM);
 
   // Objectifs state
   const [month, setMonth] = useState(defaultMonth);
@@ -138,6 +163,22 @@ export default function Objectifs({ magasinNom }: Props) {
     const next = { ...vision, [field]: value };
     setVision(next);
     persistVision(magasinNom, next);
+  }
+
+  // PAP creation from vision
+  function openPAPModal() {
+    setPapForm({ ...EMPTY_PAP_FORM });
+    setShowPAPModal(true);
+  }
+
+  function createPAPAction() {
+    if (!papForm.titre.trim()) return;
+    const current = loadPAPActions(magasinNom);
+    const next = [...current, { ...papForm, id: uid() }];
+    savePAPActions(magasinNom, next);
+    setPapActions(next);
+    setShowPAPModal(false);
+    setPapForm(EMPTY_PAP_FORM);
   }
 
   // Objectifs handlers
@@ -425,36 +466,175 @@ export default function Objectifs({ magasinNom }: Props) {
       </div>
 
       {/* ── COHÉRENCE VISION-PAP ───────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5">
-        <h3 className="text-sm font-bold text-[#1A1A1A] mb-3">📋 Comment je traduis ma vision en actions</h3>
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Comment je traduis ma vision en actions concrètes</h3>
+          <button
+            onClick={openPAPModal}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#E30613] hover:bg-[#B8050F] text-white transition-colors"
+          >
+            + Créer une nouvelle action liée à ma vision
+          </button>
+        </div>
+
         {activeActions.length === 0 ? (
           <p className="text-sm text-[#6B7280] italic">
-            Aucune action active dans votre Plan d&apos;Action. Définissez vos premières actions pour traduire votre vision en réalité opérationnelle.
+            Aucune action active dans votre Plan d&apos;Action. Cliquez sur le bouton ci-dessus pour créer votre première action liée à votre vision.
           </p>
         ) : (
-          <div>
-            <p className="text-xs text-[#6B7280] mb-3">Vos actions en cours et comment elles servent votre vision :</p>
-            <div className="space-y-3">
-              {activeActions.map(a => (
-                <div key={a.id} className="border-l-2 border-[#E30613] pl-3 py-1">
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-medium text-[#1A1A1A]">{a.titre}</span>
-                    {a.echeance && (
-                      <span className="text-xs text-[#6B7280]">— {new Date(a.echeance).toLocaleDateString('fr-FR')}</span>
-                    )}
-                  </div>
-                  {a.lienvision?.trim() ? (
-                    <p className="text-xs italic text-[#6B7280] mt-0.5">🎯 {a.lienvision}</p>
-                  ) : (
-                    <p className="text-xs italic text-[#E30613] mt-0.5">🎯 Lien à votre vision non précisé — à compléter dans le PAP.</p>
+          <div className="space-y-3">
+            <p className="text-xs text-[#6B7280]">Vos actions en cours et comment elles servent votre vision :</p>
+            {activeActions.map(a => (
+              <div key={a.id} className="border-l-2 border-[#E30613] pl-3 py-1">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium text-[#1A1A1A]">{a.titre}</span>
+                  {a.echeance && (
+                    <span className="text-xs text-[#6B7280]">— {new Date(a.echeance).toLocaleDateString('fr-FR')}</span>
                   )}
-                  <p className="text-xs text-[#9CA3AF] mt-0.5">Statut : {a.statut}</p>
+                  <span className="text-xs text-[#9CA3AF]">[{a.statut}]</span>
                 </div>
-              ))}
-            </div>
+                {a.lienvision?.trim() ? (
+                  <p className="text-xs italic text-[#6B7280] mt-0.5">🎯 {a.lienvision}</p>
+                ) : (
+                  <p className="text-xs italic text-[#E30613] mt-0.5">🎯 Lien à votre vision non précisé — à compléter dans le PAP.</p>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
+
+      {/* ── PAP CREATION MODAL ─────────────────────────────────────────────── */}
+      {showPAPModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[#E0E0E0]">
+              <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Nouvelle action — liée à ma vision</h3>
+              <button onClick={() => setShowPAPModal(false)} className="text-[#9CA3AF] hover:text-[#1A1A1A] text-lg leading-none transition-colors">×</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Titre */}
+              <div>
+                <label className="text-xs font-semibold text-[#6B7280]">Titre de l&apos;action *</label>
+                <input
+                  value={papForm.titre}
+                  onChange={e => setPapForm(f => ({ ...f, titre: e.target.value }))}
+                  className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
+                  placeholder="Titre de l'action"
+                  autoFocus
+                />
+              </div>
+              {/* Axe + Priorité */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[#6B7280]">Axe</label>
+                  <select
+                    value={papForm.axe}
+                    onChange={e => setPapForm(f => ({ ...f, axe: e.target.value as ActionAxe }))}
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
+                  >
+                    {PAP_AXES.map(ax => <option key={ax} value={ax}>{ax}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[#6B7280]">Priorité</label>
+                  <select
+                    value={papForm.priorite}
+                    onChange={e => setPapForm(f => ({ ...f, priorite: Number(e.target.value) as 1|2|3 }))}
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
+                  >
+                    <option value={1}>P1 — Urgente</option>
+                    <option value={2}>P2 — Importante</option>
+                    <option value={3}>P3 — Standard</option>
+                  </select>
+                </div>
+              </div>
+              {/* Pilote + Échéance */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[#6B7280]">Pilote</label>
+                  <input
+                    value={papForm.pilote}
+                    onChange={e => setPapForm(f => ({ ...f, pilote: e.target.value }))}
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
+                    placeholder="Responsable"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[#6B7280]">Échéance</label>
+                  <input
+                    type="date"
+                    value={papForm.echeance}
+                    onChange={e => setPapForm(f => ({ ...f, echeance: e.target.value }))}
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
+                  />
+                </div>
+              </div>
+              {/* Statut + Gain */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[#6B7280]">Statut</label>
+                  <select
+                    value={papForm.statut}
+                    onChange={e => setPapForm(f => ({ ...f, statut: e.target.value as StoredStatut }))}
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
+                  >
+                    {PAP_STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[#6B7280]">Gain estimé (€)</label>
+                  <input
+                    type="number"
+                    value={papForm.gain || ''}
+                    onChange={e => setPapForm(f => ({ ...f, gain: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              {/* Lien vision — pre-rempli */}
+              <div>
+                <label className="text-xs font-semibold text-[#E30613]">🎯 Lien avec ma vision</label>
+                <textarea
+                  value={papForm.lienvision ?? ''}
+                  onChange={e => setPapForm(f => ({ ...f, lienvision: e.target.value.slice(0, 200) }))}
+                  rows={3}
+                  maxLength={200}
+                  className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613] resize-none"
+                />
+                <div className="text-right text-xs text-[#9CA3AF] mt-0.5">{(papForm.lienvision ?? '').length}/200</div>
+              </div>
+              {/* Description */}
+              <div>
+                <label className="text-xs font-semibold text-[#6B7280]">Description</label>
+                <textarea
+                  value={papForm.description}
+                  onChange={e => setPapForm(f => ({ ...f, description: e.target.value }))}
+                  rows={2}
+                  className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613] resize-none"
+                  placeholder="Détails de l'action..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end px-5 pb-5">
+              <button
+                onClick={() => setShowPAPModal(false)}
+                className="text-xs px-4 py-2 rounded-lg bg-white border border-[#E0E0E0] hover:bg-[#F5F5F5] text-[#6B7280] transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={createPAPAction}
+                disabled={!papForm.titre.trim()}
+                className="text-xs px-4 py-2 rounded-lg bg-[#E30613] hover:bg-[#B8050F] text-white font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Créer l&apos;action
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
