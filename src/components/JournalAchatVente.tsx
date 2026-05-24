@@ -15,11 +15,17 @@ const FAMILY_LABELS: Record<FamilyCode, string> = {
   IPOR:'💻 Informatique', ITAB:'📱 Tablettes', OTHER:'Autre',
 };
 const FAMILY_SECTION_TITLE: Record<FamilyCode, string> = {
-  TLCE:'🏷️ Répartition des marques (TLCE)', JCON:'🎮 Répartition des plateformes (JCON)',
-  JCDR:'🎮 Répartition des plateformes (JCDR)', JPOR:'🎮 Répartition (JPOR)',
-  BOR:'💍 Répartition (BOR)', BOPI:'✨ Répartition (BOPI)',
-  BMAR:'👜 Répartition (BMAR)', BMON:'⌚ Répartition (BMON)',
-  IPOR:'💻 Répartition (IPOR)', ITAB:'📱 Répartition (ITAB)', OTHER:'📊 Répartition',
+  TLCE:'🏷️ Répartition par marque (TLCE)',
+  JCON:'🎮 Répartition des plateformes (JCON)',
+  JCDR:'🎮 Répartition des plateformes (JCDR)',
+  JPOR:'🎮 Répartition des plateformes (JPOR)',
+  BOR:'💍 Répartition par type de produit (BOR)',
+  BOPI:'💍 Répartition par type de produit (BOPI)',
+  BMAR:'🏷️ Répartition par marque (BMAR)',
+  BMON:'🏷️ Répartition par marque (BMON)',
+  IPOR:'🏷️ Répartition par marque (IPOR)',
+  ITAB:'🏷️ Répartition par marque (ITAB)',
+  OTHER:'📊 Répartition',
 };
 const EP_FAMILIES: FamilyCode[] = ['TLCE','JCON','JCDR','JPOR','IPOR','ITAB'];
 
@@ -151,20 +157,21 @@ function detectPlatform(libelle: string): string {
   if (u.includes('XBOX SERIES S') || u.includes('SERIES S')) return 'Xbox Series S';
   if (u.includes('XBOX ONE')) return 'Xbox One';
   if (u.includes('XBOX 360') || /\bX360\b/.test(u)) return 'Xbox 360';
+  if (u.includes('XBOX')) return 'Xbox';
   // Nintendo — most specific first
-  if (u.includes('SWITCH OLED')) return 'Switch OLED';
   if (u.includes('SWITCH 2')) return 'Switch 2';
+  if (u.includes('SWITCH OLED')) return 'Switch OLED';
   if (/\bSWITCH\b/.test(u)) return 'Switch';
   if (u.includes('WII U')) return 'Wii U';
   if (/\bWII\b/.test(u)) return 'Wii';
   if (u.includes('GAMECUBE') || u.includes('GAME CUBE')) return 'GameCube';
   if (u.includes('NINTENDO 64') || /\bN64\b/.test(u)) return 'Nintendo 64';
   if (u.includes('SNES') || u.includes('SUPER NINTENDO')) return 'SNES';
-  if (/\bNES\b/.test(u)) return 'NES';
   if (/\b3DS\b/.test(u)) return '3DS';
-  if (u.includes('NINTENDO DS') || /\bDS\b/.test(u)) return 'DS';
-  if (u.includes('GAMEBOY ADVANCE') || /\bGBA\b/.test(u)) return 'GameBoy Advance';
+  if (u.includes('NINTENDO DS') || u.includes(' DS ') || u.endsWith(' DS') || u.includes(' DS,')) return 'DS';
+  if (u.includes('GAMEBOY ADVANCE') || u.includes('GAME BOY ADVANCE') || /\bGBA\b/.test(u)) return 'GameBoy Advance';
   if (u.includes('GAMEBOY') || u.includes('GAME BOY')) return 'GameBoy';
+  if (/\bNES\b/.test(u)) return 'NES';
   // Other
   if (u.includes('STEAM DECK')) return 'Steam Deck';
   return 'Plateforme non détectée';
@@ -218,18 +225,29 @@ function extractPoids(libelle: string): number|null {
   return isNaN(v)||v<=0 ? null : v;
 }
 
-const BMAR_BRANDS = ['MICHAEL KORS','LANCEL','LACOSTE','GUESS','HUGO BOSS','DESIGUAL','FOSSIL','LANCASTER','LE TANNEUR','LOUIS VUITTON','CELINE','CÉLINE','ARMANI','CALVIN KLEIN','MANOUKIAN','TORRENTE','CHRISTIAN LACROIX','FIRENZE','DAVID JONES'];
+// Multi-word brands listed first to avoid partial matches
+const BMAR_BRANDS = [
+  'LOUIS VUITTON','MICHAEL KORS','CHRISTIAN LACROIX','CALVIN KLEIN','HUGO BOSS',
+  'ARTHUR ASTON','DAVID JONES','PIERRE CARDIN','LE TANNEUR','FIRENZE',
+  'LANCEL','LACOSTE','DESIGUAL','LANCASTER','MANOUKIAN','TORRENTE',
+  'FOSSIL','ARMANI','CÉLINE','CELINE','GUESS','DDP',
+];
 function detectBMARBrand(libelle: string): string {
   const u=libelle.toUpperCase();
   for (const b of BMAR_BRANDS) { if (u.includes(b)) return b; }
   return 'Sans marque identifiée';
 }
 
-const BMON_BRANDS = ['SWATCH','FOSSIL','GUESS','MICHAEL KORS','SEIKO','CASIO','TISSOT','LONGINES','ROLEX','OMEGA','BREITLING','TAG HEUER','HAMILTON','ICE WATCH','BULOVA','CITIZEN','FESTINA'];
+// Multi-word brands listed first to avoid partial matches
+const BMON_BRANDS = [
+  'DANIEL WELLINGTON','PIERRE LANNIER','MICHAEL KORS','TAG HEUER','ICE WATCH',
+  'HAMILTON','LONGINES','BREITLING','TISSOT','SWATCH','FOSSIL','GUESS','SEIKO',
+  'CASIO','ROLEX','OMEGA','BULOVA','CITIZEN','FESTINA','CLUSE','LOTUS',
+];
 function detectBMONBrand(libelle: string): string {
   const u=libelle.toUpperCase();
   for (const b of BMON_BRANDS) { if (u.includes(b)) return b; }
-  return extractBrand(libelle);
+  return 'Sans marque identifiée';
 }
 
 // ── BOR validity filter ───────────────────────────────────────────────────────
@@ -677,6 +695,13 @@ function BORCanalTable({ rows }: { rows: BreakdownRow[]; }) {
   );
 }
 
+// ── fallback labels for non-recognized items per family (for alert threshold) ──
+const FALLBACK_LABELS: Partial<Record<FamilyCode, string>> = {
+  JCDR: 'Plateforme non détectée', JCON: 'Plateforme non détectée',
+  BOR:  'Non catégorisé', BOPI: 'Autres',
+  BMAR: 'Sans marque identifiée', BMON: 'Sans marque identifiée',
+};
+
 // ── family-specific breakdown section ─────────────────────────────────────────
 function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
   rows: CRow[];
@@ -750,19 +775,26 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
     return {tauxFonte, diff, vitrine, fonte};
   },[family,canalBreakdown]);
 
-  // BOR: % of "Non catégorisé" lines
-  const borNonCatPct = useMemo(()=>{
-    if (family!=='BOR'||effectiveRows.length===0) return 0;
-    const nc=effectiveRows.filter(r=>detectBORType(r.m)==='Non catégorisé').length;
-    return Math.round(nc/effectiveRows.length*100);
-  },[effectiveRows,family]);
-
-  // JCDR/JCON: % of undetected platforms
-  const jcdrNonDetecte = useMemo(()=>{
-    if (family!=='JCDR'&&family!=='JCON') return 0;
-    const nd=rows.filter(r=>detectPlatform(r.m)==='Plateforme non détectée').length;
-    return rows.length>0?Math.round(nd/rows.length*100):0;
-  },[rows,family]);
+  // Unified non-recognized % for all supported families
+  const nonRecognizedPct = useMemo(()=>{
+    const fallback = FALLBACK_LABELS[family];
+    if (!fallback) return 0;
+    // BOR uses effectiveRows (already filtered); others use all rows
+    const src = family==='BOR' ? effectiveRows : rows;
+    if (!src.length) return 0;
+    const getLabel = (r: CRow): string => {
+      if (family==='JCDR'||family==='JCON') return detectPlatform(r.m);
+      if (family==='BOR') return detectBORType(r.m);
+      if (family==='BOPI') return detectBijouType(r.m);
+      if (family==='BMAR') return detectBMARBrand(r.m);
+      if (family==='BMON') return detectBMONBrand(r.m);
+      return '';
+    };
+    const nc = src.filter(r => getLabel(r) === fallback).length;
+    return Math.round(nc / src.length * 100);
+  },[family, effectiveRows, rows]);
+  const nonRecAlertThreshold = family==='BOR' ? 25 : 30;
+  const showNonRecAlert = nonRecognizedPct > nonRecAlertThreshold;
 
   if (effectiveRows.length<5) {
     return (
@@ -795,10 +827,10 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
             {effectiveRows.length} lignes valides analysées sur {rows.length} lignes brutes
             {borFilteredCount>0&&<> ({borFilteredCount} filtrée{borFilteredCount>1?'s':''} : erreurs de saisie ou retours)</>}.
           </div>
-          {/* 25% non catégorisé alert */}
-          {borNonCatPct>25&&(
+          {/* Non-recognized alert (BOR threshold 25%) */}
+          {showNonRecAlert&&(
             <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-3 py-2 text-xs text-[#6B7280]">
-              ⚠️ {borNonCatPct}% des libellés BOR n&apos;ont pas pu être attribués à un type de produit. Vérifiez vos libellés Athéna pour améliorer la précision.
+              ⚠️ {nonRecognizedPct}% des libellés BOR n&apos;ont pas pu être attribués à un type de produit. Vérifiez vos libellés Athéna pour améliorer la précision.
             </div>
           )}
           {/* Cookson field */}
@@ -816,10 +848,10 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
         </>
       )}
 
-      {/* JCDR/JCON: 30% undetected platform alert */}
-      {(family==='JCDR'||family==='JCON') && jcdrNonDetecte>30 && (
+      {/* Generic non-recognized alert (non-BOR families — BOR has its own above) */}
+      {family!=='BOR' && showNonRecAlert && (
         <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-3 py-2 text-xs text-[#6B7280]">
-          ⚠️ Plus de 30% des libellés {family} n&apos;ont pas pu être attribués à une plateforme. Vérifiez vos libellés Athéna.
+          ⚠️ {nonRecognizedPct}% des libellés {FAMILY_LABELS[family]} n&apos;ont pas pu être classés automatiquement. Vérifiez vos libellés Athéna.
         </div>
       )}
 
@@ -956,7 +988,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
     const statsAll=computeStats(rows);
     const MIN3all=(s:ModelStats)=>s.qteVendue>=3;
     const perteSall=statsAll.filter(s=>MIN3all(s)&&s.margeTotal<0);
-    const faibleAll=statsAll.filter(s=>MIN3all(s)&&s.tauxMarge<20&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.margeTotal>=0);
+    const faibleAll=statsAll.filter(s=>MIN3all(s)&&s.tauxMarge<20&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.margeTotal>=0); // global uses 90j
     console.group(`[JournalAchatVente] Rapport diagnostic — ${magasinNom} — ${rows.length} lignes`);
     console.log('=== Répartition par famille ===');
     Array.from(familyCounts.entries()).sort((a,b)=>b[1]-a[1]).forEach(([fc,n])=>{
@@ -1073,7 +1105,11 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
   const topVolume=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.qteVendue-a.qteVendue).slice(0,15),[stats]);
   const coherenceEP=useMemo(()=>stats.filter(s=>MIN3(s)&&s.ecartEP!==null&&Math.abs(s.ecartEP)>10).sort((a,b)=>Math.abs(b.ecartEP!)-Math.abs(a.ecartEP!)),[stats]);
   const perteSeche=useMemo(()=>stats.filter(s=>MIN3(s)&&s.margeTotal<0).sort((a,b)=>a.margeTotal-b.margeTotal),[stats]);
-  const faibleRendement=useMemo(()=>stats.filter(s=>MIN3(s)&&s.tauxMarge<20&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.margeTotal>=0).sort((a,b)=>a.tauxMarge-b.tauxMarge),[stats]);
+  // Jewelry families rotate more slowly by nature → lower delay threshold
+  const faibleRendement=useMemo(()=>{
+    const delaiThreshold=(selectedFamily==='BOR'||selectedFamily==='BOPI'||selectedFamily==='BMAR'||selectedFamily==='BMON')?60:90;
+    return stats.filter(s=>MIN3(s)&&s.tauxMarge<20&&s.delaiMoyen!==null&&s.delaiMoyen>delaiThreshold&&s.margeTotal>=0).sort((a,b)=>a.tauxMarge-b.tauxMarge);
+  },[stats,selectedFamily]);
   const pepites=useMemo(()=>{
     const rotSet=new Set(topRotations.filter(r=>r.qteVendue>=5).map(r=>r.modele.toLowerCase()));
     return topMarge.filter(m=>rotSet.has(m.modele.toLowerCase())).slice(0,5);
@@ -1134,6 +1170,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
   );
 
   const btnFilter=(active: boolean)=>`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${active?'bg-[#E30613] text-white':'bg-white border border-[#E0E0E0] text-[#6B7280] hover:border-[#E30613] hover:text-[#E30613]'}`;
+  const faibleDelaiLabel=(selectedFamily==='BOR'||selectedFamily==='BOPI'||selectedFamily==='BMAR'||selectedFamily==='BMON')?'60':'90';
 
   return (
     <div className="space-y-5">
@@ -1419,9 +1456,9 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
                 {/* Faible rendement */}
                 {faibleRendement.length>0&&(
                   <SectionTable
-                    title="🟡 Faible rendement (lents et peu rentables)"
+                    title={`🟡 Faible rendement (lents et peu rentables — délai > ${faibleDelaiLabel}j)`}
                     cnt={`${faibleRendement.length} modèle${faibleRendement.length!==1?'s':''} · min 3 ventes`}
-                    alert="Ces modèles cumulent deux faiblesses : taux de marge sous les 20% ET rotation lente (plus de 90 jours). Ils mobilisent du cash sans rapporter beaucoup. À arbitrer : soit augmenter la marge (prix achat / prix vente), soit éviter d'en acheter au comptoir."
+                    alert={`Ces modèles cumulent deux faiblesses : taux de marge sous les 20% ET rotation lente (plus de ${faibleDelaiLabel} jours). Ils mobilisent du cash sans rapporter beaucoup. À arbitrer : soit augmenter la marge (prix achat / prix vente), soit éviter d'en acheter au comptoir.`}
                     rows={faibleRendement}
                     cols={[
                       {label:'Modèle',render:modeleCol},
