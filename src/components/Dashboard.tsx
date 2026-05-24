@@ -433,10 +433,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                   <p className="text-sm font-semibold text-[#1A1A1A] mb-3">Quel est votre problème aujourd&apos;hui ?</p>
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      { icon: '💰', label: "Je ne gagne pas assez d'argent", tab: 'diagnostic' },
-                      { icon: '📉', label: 'Mes ventes baissent', tab: 'diagnostic' },
-                      { icon: '📦', label: 'Mon stock me pose problème', tab: 'diagnostic' },
-                      { icon: '👥', label: 'Mon équipe ne performe pas', tab: 'diagnostic' },
+                      { icon: '💰', label: "Je ne gagne pas assez d'argent", tab: 'assistant' },
+                      { icon: '📉', label: 'Mes ventes baissent', tab: 'assistant' },
+                      { icon: '📦', label: 'Mon stock me pose problème', tab: 'assistant' },
+                      { icon: '👥', label: 'Mon équipe ne performe pas', tab: 'assistant' },
                     ].map(b => (
                       <button key={b.label} onClick={() => onNavigate(b.tab)} className="text-left p-3 rounded-xl bg-[#F5F5F5] border border-[#E0E0E0] hover:bg-[#EBEBEB] transition-colors text-sm text-[#1A1A1A]">
                         <span className="mr-1.5">{b.icon}</span>{b.label}

@@ -4,14 +4,11 @@ import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction } from '@/types';
 import { DEFAULT_DATA } from '@/types';
 import Dashboard from '@/components/Dashboard';
-import Diagnostic from '@/components/Diagnostic';
 import PlanAction from '@/components/PlanAction';
 import Objectifs from '@/components/Objectifs';
 import CouvertureGamme from '@/components/CouvertureGamme';
 import Simulateur from '@/components/Simulateur';
 import Competences from '@/components/Competences';
-import Comparatif from '@/components/Comparatif';
-import VisiteCR from '@/components/VisiteCR';
 import AssistantIA from '@/components/AssistantIA';
 import Routines from '@/components/Routines';
 import JournalAchatVente from '@/components/JournalAchatVente';
@@ -19,17 +16,14 @@ import { detectSpiral } from '@/lib/spiral';
 
 const TABS = [
   { id: 'dashboard',   label: 'Dashboard' },
-  { id: 'diagnostic',  label: 'Diagnostic' },
-  { id: 'plan',        label: "Plan d'Action" },
+  { id: 'objectifs',   label: '🎯 Objectifs' },
+  { id: 'plan',        label: "📋 Plan d'Action" },
+  { id: 'journal',     label: '📊 Journal' },
+  { id: 'couverture',  label: '🗂 Gamme' },
   { id: 'routines',    label: '🔁 Routines' },
-  { id: 'objectifs',   label: '🎯 Ma vision' },
-  { id: 'couverture',  label: '🎯 Couverture de gamme' },
-  { id: 'journal',     label: '📊 Journal achat-vente' },
-  { id: 'simulateur',  label: 'Simulateur' },
-  { id: 'competences', label: 'Compétences' },
-  { id: 'comparatif',  label: 'Comparatif' },
-  { id: 'visite',      label: 'Visite CR' },
-  { id: 'assistant',   label: 'Assistant IA' },
+  { id: 'competences', label: '🎓 Compétences' },
+  { id: 'simulateur',  label: '💰 Simulateur' },
+  { id: 'assistant',   label: '🤖 Assistant IA' },
 ] as const;
 type TabId = typeof TABS[number]['id'];
 
@@ -157,18 +151,15 @@ export default function App() {
 
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 py-5">
-        {tab === 'dashboard'   && <Dashboard   data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
-        {tab === 'diagnostic'  && <Diagnostic  data={data} />}
-        {tab === 'plan'        && <PlanAction   data={data} actions={actions} onSave={saveActions} />}
-        {tab === 'routines'    && <Routines        magasinNom={currentNom} />}
-        {tab === 'objectifs'   && <Objectifs       magasinNom={currentNom} />}
-        {tab === 'couverture'  && <CouvertureGamme  magasinNom={currentNom} />}
+        {tab === 'dashboard'   && <Dashboard        data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
+        {tab === 'objectifs'   && <Objectifs         magasinNom={currentNom} />}
+        {tab === 'plan'        && <PlanAction        data={data} actions={actions} onSave={saveActions} />}
         {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'simulateur'  && <Simulateur       magasinNom={currentNom} isCriticalSpiral={isCritical} />}
-        {tab === 'competences' && <Competences  magasinNom={currentNom} />}
-        {tab === 'comparatif'  && <Comparatif   magasins={magasins} />}
-        {tab === 'visite'      && <VisiteCR      data={data} actions={actions} />}
-        {tab === 'assistant'   && <AssistantIA   data={data} actions={actions} magasinNom={currentNom} />}
+        {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} />}
+        {tab === 'routines'    && <Routines          magasinNom={currentNom} />}
+        {tab === 'competences' && <Competences       magasinNom={currentNom} />}
+        {tab === 'simulateur'  && <Simulateur        magasinNom={currentNom} isCriticalSpiral={isCritical} />}
+        {tab === 'assistant'   && <AssistantIA       data={data} actions={actions} magasinNom={currentNom} />}
       </main>
     </div>
   );

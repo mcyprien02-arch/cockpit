@@ -5,7 +5,7 @@ import type { PAPAction, ActionAxe, StoredStatut } from '@/types';
 
 interface Props { magasinNom: string; }
 
-// ── Vision ───────────────────────────────────────────────────────────────────
+// ── Long-term vision ─────────────────────────────────────────────────────────
 
 interface VisionData {
   vision3ans: string;
@@ -16,33 +16,64 @@ interface VisionData {
 }
 
 const DEFAULT_VISION: VisionData = { vision3ans: '', valeur1: '', valeur2: '', valeur3: '', capCommercial: '' };
+const VISION_KEY = (nom: string) => `vision_longterme_${nom}`;
 
 function loadVision(magasinNom: string): VisionData {
+  if (!magasinNom) return DEFAULT_VISION;
   try {
-    const s = localStorage.getItem(`vision_${magasinNom}`);
-    return s ? { ...DEFAULT_VISION, ...JSON.parse(s) as Partial<VisionData> } : DEFAULT_VISION;
+    // Try new key first
+    const s = localStorage.getItem(VISION_KEY(magasinNom));
+    if (s) return { ...DEFAULT_VISION, ...JSON.parse(s) as Partial<VisionData> };
+    // Migrate from old key
+    const old = localStorage.getItem(`vision_${magasinNom}`);
+    if (old) {
+      const parsed = { ...DEFAULT_VISION, ...JSON.parse(old) as Partial<VisionData> };
+      localStorage.setItem(VISION_KEY(magasinNom), JSON.stringify(parsed));
+      return parsed;
+    }
+    return DEFAULT_VISION;
   } catch { return DEFAULT_VISION; }
 }
 
 function persistVision(magasinNom: string, v: VisionData) {
   if (!magasinNom) return;
-  localStorage.setItem(`vision_${magasinNom}`, JSON.stringify(v));
+  localStorage.setItem(VISION_KEY(magasinNom), JSON.stringify(v));
 }
 
+/** Exported helper for AssistantIA — reads vision + monthly objectives from localStorage */
 export function getVisionContext(magasinNom: string): string {
   if (typeof window === 'undefined' || !magasinNom) return '';
   try {
     const parts: string[] = [];
 
-    const vs = localStorage.getItem(`vision_${magasinNom}`);
+    // Vision long terme
+    const vs = localStorage.getItem(VISION_KEY(magasinNom))
+            ?? localStorage.getItem(`vision_${magasinNom}`); // fallback old key
     if (vs) {
       const v = JSON.parse(vs) as VisionData;
-      if (v.vision3ans?.trim()) parts.push(`Vision du franchisé : ${v.vision3ans}`);
+      if (v.vision3ans?.trim()) parts.push(`Vision long terme du franchisé : ${v.vision3ans}`);
       const valeurs = [v.valeur1, v.valeur2, v.valeur3].filter(x => x?.trim());
       if (valeurs.length) parts.push(`Valeurs non-négociables : ${valeurs.join(', ')}`);
-      if (v.capCommercial?.trim()) parts.push(`Cap commercial : ${v.capCommercial}`);
+      if (v.capCommercial?.trim()) parts.push(`Cap commercial annuel : ${v.capCommercial}`);
     }
 
+    // Objectifs mensuels (mois courant)
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const os = localStorage.getItem(`objectifs_${magasinNom}_${currentMonth}`);
+    if (os) {
+      const obj = JSON.parse(os) as { familles: Array<{ famille: string; margeCible: number; tauxMarge: number; margeRealisee: number }>; promoRedist: number };
+      if (obj.familles?.length) {
+        const lines = obj.familles
+          .filter(f => f.famille && f.margeCible > 0)
+          .map(f => {
+            const avanc = f.margeCible > 0 ? Math.round(f.margeRealisee / f.margeCible * 100) : 0;
+            return `  - ${f.famille} : cible ${f.margeCible.toLocaleString('fr-FR')}€ · réalisé ${f.margeRealisee.toLocaleString('fr-FR')}€ (${avanc}%)`;
+          });
+        if (lines.length) parts.push(`Objectifs mensuels (${currentMonth}) :\n${lines.join('\n')}`);
+      }
+    }
+
+    // Active PAP actions with vision link
     const as_ = localStorage.getItem(`ec_actions_${magasinNom}`);
     if (as_) {
       const acts = JSON.parse(as_) as PAPAction[];
@@ -61,7 +92,7 @@ export function getVisionContext(magasinNom: string): string {
   } catch { return ''; }
 }
 
-// ── Objectifs (marge par famille) ────────────────────────────────────────────
+// ── Objectifs mensuels ───────────────────────────────────────────────────────
 
 interface ObjFamille {
   id: string;
@@ -238,17 +269,18 @@ export default function Objectifs({ magasinNom }: Props) {
 
   const ic = 'bg-white border border-[#E0E0E0] rounded-md px-2 py-1.5 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]';
   const tasCls = 'w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613] resize-none';
+  const inputModal = 'w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]';
 
   const activeActions = papActions.filter(a => a.statut === 'À faire' || a.statut === 'En cours');
 
   return (
     <div className="space-y-6">
 
-      {/* ── MA VISION ──────────────────────────────────────────────────────── */}
+      {/* ── SECTION 1 : OBJECTIFS LONG TERME ───────────────────────────────── */}
       <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-5">
-        <div>
-          <h2 className="text-lg font-bold text-[#1A1A1A]">🌟 Ma vision — {magasinNom || 'Magasin'}</h2>
-          <p className="text-xs text-[#6B7280] mt-0.5">Votre cap à long terme, vos valeurs, votre ambition commerciale.</p>
+        <div className="border-b border-[#F0F0F0] pb-4">
+          <h2 className="text-lg font-bold text-[#1A1A1A]">🌟 Objectifs long terme</h2>
+          <p className="text-xs text-[#6B7280] mt-0.5">Mon cap stratégique sur 3 ans — {magasinNom || 'Magasin'}</p>
         </div>
 
         {/* Vision 3 ans */}
@@ -283,10 +315,10 @@ export default function Objectifs({ magasinNom }: Props) {
           </div>
         </div>
 
-        {/* Cap commercial */}
+        {/* Cap commercial annuel */}
         <div>
           <label className="text-sm font-semibold text-[#1A1A1A] block mb-1.5">
-            🚀 Mon cap commercial pour cette année
+            🚀 Mon cap commercial pour l&apos;année
           </label>
           <textarea
             value={vision.capCommercial}
@@ -296,13 +328,54 @@ export default function Objectifs({ magasinNom }: Props) {
             placeholder="Écrivez votre cap commercial"
           />
         </div>
+
+        {/* ── Traduire en actions ─────────────────────────────────────────── */}
+        <div className="border-t border-[#F0F0F0] pt-4 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Comment je traduis ma vision en actions concrètes</h3>
+            <button
+              onClick={openPAPModal}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#E30613] hover:bg-[#B8050F] text-white transition-colors"
+            >
+              + Créer une action liée à ma vision
+            </button>
+          </div>
+
+          {activeActions.length === 0 ? (
+            <p className="text-sm text-[#6B7280] italic">
+              Aucune action active. Cliquez sur le bouton ci-dessus pour créer votre première action liée à votre vision.
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              {activeActions.map(a => (
+                <div key={a.id} className="border-l-2 border-[#E30613] pl-3 py-1">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-medium text-[#1A1A1A]">{a.titre}</span>
+                    {a.echeance && (
+                      <span className="text-xs text-[#6B7280]">— {new Date(a.echeance).toLocaleDateString('fr-FR')}</span>
+                    )}
+                    <span className="text-xs text-[#9CA3AF]">[{a.statut}]</span>
+                  </div>
+                  {a.lienvision?.trim() ? (
+                    <p className="text-xs italic text-[#6B7280] mt-0.5">🎯 {a.lienvision}</p>
+                  ) : (
+                    <p className="text-xs italic text-[#E30613] mt-0.5">🎯 Lien à votre vision non précisé — à compléter dans le PAP.</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ── OBJECTIFS DU MOIS ──────────────────────────────────────────────── */}
+      {/* ── SECTION 2 : OBJECTIFS MENSUELS ─────────────────────────────────── */}
       <div className="space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <h2 className="text-lg font-bold text-[#1A1A1A]">🎯 Objectifs — {magasinNom || 'Magasin'}</h2>
+          <div>
+            <h2 className="text-lg font-bold text-[#1A1A1A]">📅 Objectifs mensuels</h2>
+            <p className="text-xs text-[#6B7280] mt-0.5">Mes objectifs de marge pour le mois en cours — {magasinNom || 'Magasin'}</p>
+          </div>
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <label className="text-xs text-[#6B7280]">Mois</label>
@@ -465,45 +538,6 @@ export default function Objectifs({ magasinNom }: Props) {
         </div>
       </div>
 
-      {/* ── COHÉRENCE VISION-PAP ───────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Comment je traduis ma vision en actions concrètes</h3>
-          <button
-            onClick={openPAPModal}
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#E30613] hover:bg-[#B8050F] text-white transition-colors"
-          >
-            + Créer une nouvelle action liée à ma vision
-          </button>
-        </div>
-
-        {activeActions.length === 0 ? (
-          <p className="text-sm text-[#6B7280] italic">
-            Aucune action active dans votre Plan d&apos;Action. Cliquez sur le bouton ci-dessus pour créer votre première action liée à votre vision.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-xs text-[#6B7280]">Vos actions en cours et comment elles servent votre vision :</p>
-            {activeActions.map(a => (
-              <div key={a.id} className="border-l-2 border-[#E30613] pl-3 py-1">
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="font-medium text-[#1A1A1A]">{a.titre}</span>
-                  {a.echeance && (
-                    <span className="text-xs text-[#6B7280]">— {new Date(a.echeance).toLocaleDateString('fr-FR')}</span>
-                  )}
-                  <span className="text-xs text-[#9CA3AF]">[{a.statut}]</span>
-                </div>
-                {a.lienvision?.trim() ? (
-                  <p className="text-xs italic text-[#6B7280] mt-0.5">🎯 {a.lienvision}</p>
-                ) : (
-                  <p className="text-xs italic text-[#E30613] mt-0.5">🎯 Lien à votre vision non précisé — à compléter dans le PAP.</p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* ── PAP CREATION MODAL ─────────────────────────────────────────────── */}
       {showPAPModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
@@ -513,124 +547,72 @@ export default function Objectifs({ magasinNom }: Props) {
               <button onClick={() => setShowPAPModal(false)} className="text-[#9CA3AF] hover:text-[#1A1A1A] text-lg leading-none transition-colors">×</button>
             </div>
             <div className="p-5 space-y-4">
-              {/* Titre */}
               <div>
                 <label className="text-xs font-semibold text-[#6B7280]">Titre de l&apos;action *</label>
                 <input
                   value={papForm.titre}
                   onChange={e => setPapForm(f => ({ ...f, titre: e.target.value }))}
-                  className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
+                  className={inputModal}
                   placeholder="Titre de l'action"
                   autoFocus
                 />
               </div>
-              {/* Axe + Priorité */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-[#6B7280]">Axe</label>
-                  <select
-                    value={papForm.axe}
-                    onChange={e => setPapForm(f => ({ ...f, axe: e.target.value as ActionAxe }))}
-                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
-                  >
+                  <select value={papForm.axe} onChange={e => setPapForm(f => ({ ...f, axe: e.target.value as ActionAxe }))} className={inputModal}>
                     {PAP_AXES.map(ax => <option key={ax} value={ax}>{ax}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-[#6B7280]">Priorité</label>
-                  <select
-                    value={papForm.priorite}
-                    onChange={e => setPapForm(f => ({ ...f, priorite: Number(e.target.value) as 1|2|3 }))}
-                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
-                  >
+                  <select value={papForm.priorite} onChange={e => setPapForm(f => ({ ...f, priorite: Number(e.target.value) as 1|2|3 }))} className={inputModal}>
                     <option value={1}>P1 — Urgente</option>
                     <option value={2}>P2 — Importante</option>
                     <option value={3}>P3 — Standard</option>
                   </select>
                 </div>
               </div>
-              {/* Pilote + Échéance */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-[#6B7280]">Pilote</label>
-                  <input
-                    value={papForm.pilote}
-                    onChange={e => setPapForm(f => ({ ...f, pilote: e.target.value }))}
-                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
-                    placeholder="Responsable"
-                  />
+                  <input value={papForm.pilote} onChange={e => setPapForm(f => ({ ...f, pilote: e.target.value }))} className={inputModal} placeholder="Responsable" />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-[#6B7280]">Échéance</label>
-                  <input
-                    type="date"
-                    value={papForm.echeance}
-                    onChange={e => setPapForm(f => ({ ...f, echeance: e.target.value }))}
-                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
-                  />
+                  <input type="date" value={papForm.echeance} onChange={e => setPapForm(f => ({ ...f, echeance: e.target.value }))} className={inputModal} />
                 </div>
               </div>
-              {/* Statut + Gain */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-[#6B7280]">Statut</label>
-                  <select
-                    value={papForm.statut}
-                    onChange={e => setPapForm(f => ({ ...f, statut: e.target.value as StoredStatut }))}
-                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
-                  >
+                  <select value={papForm.statut} onChange={e => setPapForm(f => ({ ...f, statut: e.target.value as StoredStatut }))} className={inputModal}>
                     {PAP_STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-[#6B7280]">Gain estimé (€)</label>
-                  <input
-                    type="number"
-                    value={papForm.gain || ''}
-                    onChange={e => setPapForm(f => ({ ...f, gain: parseFloat(e.target.value) || 0 }))}
-                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613]"
-                    placeholder="0"
-                  />
+                  <input type="number" value={papForm.gain || ''} onChange={e => setPapForm(f => ({ ...f, gain: parseFloat(e.target.value) || 0 }))} className={inputModal} placeholder="0" />
                 </div>
               </div>
-              {/* Lien vision — pre-rempli */}
               <div>
                 <label className="text-xs font-semibold text-[#E30613]">🎯 Lien avec ma vision</label>
                 <textarea
                   value={papForm.lienvision ?? ''}
                   onChange={e => setPapForm(f => ({ ...f, lienvision: e.target.value.slice(0, 200) }))}
-                  rows={3}
-                  maxLength={200}
-                  className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613] resize-none"
+                  rows={3} maxLength={200}
+                  className={`${inputModal} resize-none`}
                 />
                 <div className="text-right text-xs text-[#9CA3AF] mt-0.5">{(papForm.lienvision ?? '').length}/200</div>
               </div>
-              {/* Description */}
               <div>
                 <label className="text-xs font-semibold text-[#6B7280]">Description</label>
-                <textarea
-                  value={papForm.description}
-                  onChange={e => setPapForm(f => ({ ...f, description: e.target.value }))}
-                  rows={2}
-                  className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] mt-1 focus:outline-none focus:border-[#E30613] resize-none"
-                  placeholder="Détails de l'action..."
-                />
+                <textarea value={papForm.description} onChange={e => setPapForm(f => ({ ...f, description: e.target.value }))} rows={2} className={`${inputModal} resize-none`} placeholder="Détails de l'action..." />
               </div>
             </div>
             <div className="flex gap-2 justify-end px-5 pb-5">
-              <button
-                onClick={() => setShowPAPModal(false)}
-                className="text-xs px-4 py-2 rounded-lg bg-white border border-[#E0E0E0] hover:bg-[#F5F5F5] text-[#6B7280] transition-colors"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={createPAPAction}
-                disabled={!papForm.titre.trim()}
-                className="text-xs px-4 py-2 rounded-lg bg-[#E30613] hover:bg-[#B8050F] text-white font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Créer l&apos;action
-              </button>
+              <button onClick={() => setShowPAPModal(false)} className="text-xs px-4 py-2 rounded-lg bg-white border border-[#E0E0E0] hover:bg-[#F5F5F5] text-[#6B7280] transition-colors">Annuler</button>
+              <button onClick={createPAPAction} disabled={!papForm.titre.trim()} className="text-xs px-4 py-2 rounded-lg bg-[#E30613] hover:bg-[#B8050F] text-white font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Créer l&apos;action</button>
             </div>
           </div>
         </div>
