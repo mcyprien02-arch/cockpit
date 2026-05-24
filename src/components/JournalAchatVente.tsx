@@ -55,10 +55,12 @@ interface BreakdownRow {
 }
 
 // ── column aliases ────────────────────────────────────────────────────────────
+// ORDER MATTERS: earlier alias = higher priority (mapColumns picks lowest index)
 const COL_ALIASES: Record<string, string[]> = {
   typeTransaction:      ['typedetransaction','typetransaction','transaction'],
-  famille:              ['sousfamille','sousfamilleproduit','famille','familleproduit'],
-  modele:               ['fichetechlibelle','fichetech','modele','libellearticle','achatlibellearticle','libelle'],
+  // "Sous_famille" (norm → 'sousfamille') must win over "Famille" (norm → 'famille')
+  famille:              ['sousfamille','sousfamilleproduit','sousfamille','famille','familleproduit'],
+  modele:               ['fichetechlibelle','fichetech','achatlibellearticle','libellearticle','modele','libelle'],
   grade:                ['articlegrade','grade','gradearticle'],
   prixAchat:            ['achatprix','prixachat','prixdachat'],
   prixVente:            ['venteprixvendu','prixvente','prixvendu'],
@@ -77,10 +79,23 @@ const COL_ALIASES: Record<string, string[]> = {
 function norm(s: string): string {
   return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[\s_\-'"]/g,'');
 }
+// Alias-order-aware column mapper: prefers the alias with the LOWEST index
+// so 'sousfamille' (idx 0) always beats 'famille' (idx 3) even if "Famille"
+// appears before "Sous_famille" in the CSV header row.
 function mapColumns(headers: string[]): Record<string,string> {
-  const r: Record<string,string>={};
-  for (const h of headers) { const n=norm(h); for (const [f,a] of Object.entries(COL_ALIASES)) { if (!r[f]&&a.includes(n)) r[f]=h; } }
-  return r;
+  const result: Record<string,string>={};
+  const bestIdx: Record<string,number>={};
+  for (const h of headers) {
+    const n=norm(h);
+    for (const [field, aliases] of Object.entries(COL_ALIASES)) {
+      const idx=aliases.indexOf(n);
+      if (idx>=0 && (!(field in result) || idx<bestIdx[field])) {
+        result[field]=h;
+        bestIdx[field]=idx;
+      }
+    }
+  }
+  return result;
 }
 function parseNum(v: unknown): number {
   if (typeof v==='number') return v;
@@ -1195,6 +1210,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
         if (ep)  r.ep=ep;  if (epa) r.epa=epa;
         if (cv)  r.cv=cv;  if (fn)  r.fn=fn;  if (fp) r.fp=fp;
         if (co)  r.co=co;  if (an)  r.an=an;  if (ap) r.ap=ap;
+        if (rows.length<3) console.log('DEBUG row parsing:',{libelle:r.m,sousfamille_recue:r.f,sousfamille_lowercase:r.f.toLowerCase()});
         rows.push(r);
       }
       if (!rows.length) throw new Error('Aucune vente valide (grades A/B/C) trouvée.');
