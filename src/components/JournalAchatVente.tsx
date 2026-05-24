@@ -189,6 +189,138 @@ function extractBrand(libelle: string): string {
   return (libelle.trim().split(/\s+/)[0]||'—').toUpperCase();
 }
 
+// ── family-aware brand/platform/type detector (ACTION 1) ──────────────────────
+function detectMarqueOuPlateforme(libelle: string, sousfamille: string): string {
+  if (!libelle) return 'Non détecté';
+  const lib = libelle.toUpperCase().trim();
+  const sf  = sousfamille.toLowerCase();
+
+  // JCDR
+  if (sf.includes('cd rom')||sf.includes('jeu vidéo')||sf.includes('jeu video')) {
+    if (lib.includes('PS5')||lib.includes('PLAYSTATION 5')) return 'PS5';
+    if (lib.includes('PS4')||lib.includes('PLAYSTATION 4')) return 'PS4';
+    if (lib.includes('PS3')||lib.includes('PLAYSTATION 3')) return 'PS3';
+    if (lib.includes('PS2')||lib.includes('PLAYSTATION 2')) return 'PS2';
+    if (lib.includes('PS VITA')||lib.includes('PSVITA')) return 'PS Vita';
+    if (lib.includes('PSP')) return 'PSP';
+    if (lib.includes('PS1')||lib.includes('PSX')) return 'PS1';
+    if (lib.includes('XBOX SERIES X')) return 'Xbox Series X';
+    if (lib.includes('XBOX SERIES S')) return 'Xbox Series S';
+    if (lib.includes('XBOX ONE')) return 'Xbox One';
+    if (lib.includes('XBOX 360')) return 'Xbox 360';
+    if (lib.includes('XBOX')) return 'Xbox';
+    if (lib.includes('SWITCH 2')) return 'Switch 2';
+    if (lib.includes('SWITCH OLED')) return 'Switch OLED';
+    if (lib.includes('SWITCH')) return 'Switch';
+    if (lib.includes('WII U')) return 'Wii U';
+    if (lib.includes('WII')) return 'Wii';
+    if (lib.includes('GAMECUBE')||lib.includes('GAME CUBE')) return 'GameCube';
+    if (lib.includes('NINTENDO 64')||lib.includes('N64')) return 'Nintendo 64';
+    if (lib.includes('SNES')) return 'SNES';
+    if (lib.includes('3DS')) return '3DS';
+    if (/ DS\b|NINTENDO DS/.test(lib)||lib.endsWith(' DS')) return 'DS';
+    if (lib.includes('GAMEBOY ADVANCE')||lib.includes('GAME BOY ADVANCE')||lib.includes('GBA')) return 'GameBoy Advance';
+    if (lib.includes('GAMEBOY')||lib.includes('GAME BOY')) return 'GameBoy';
+    if (lib.includes('STEAM DECK')) return 'Steam Deck';
+    if (lib.includes('NES')) return 'NES';
+    return 'Plateforme non détectée';
+  }
+  // JCON
+  if (sf.includes('console')&&!sf.includes('cd rom')) {
+    if (lib.includes('PS5')) return 'PS5';
+    if (lib.includes('PS4')) return 'PS4';
+    if (lib.includes('PS3')) return 'PS3';
+    if (lib.includes('PS2')) return 'PS2';
+    if (lib.includes('PS VITA')||lib.includes('PSVITA')) return 'PS Vita';
+    if (lib.includes('PSP')) return 'PSP';
+    if (lib.includes('PS1')) return 'PS1';
+    if (lib.includes('XBOX SERIES X')) return 'Xbox Series X';
+    if (lib.includes('XBOX SERIES S')) return 'Xbox Series S';
+    if (lib.includes('XBOX ONE')) return 'Xbox One';
+    if (lib.includes('XBOX 360')) return 'Xbox 360';
+    if (lib.includes('XBOX')) return 'Xbox';
+    if (lib.includes('SWITCH 2')) return 'Switch 2';
+    if (lib.includes('SWITCH OLED')) return 'Switch OLED';
+    if (lib.includes('SWITCH')) return 'Switch';
+    if (lib.includes('WII U')) return 'Wii U';
+    if (lib.includes('WII')) return 'Wii';
+    if (lib.includes('3DS')) return '3DS';
+    return 'Plateforme non détectée';
+  }
+  // BOR / BOPI
+  if (sf.includes('bijouterie or')||sf.includes('plaqu')) {
+    if (lib.includes('CHASSIS')||lib.includes('IPHONE')||lib.includes('DELL')||lib.includes('CASQUE')||lib.includes('ORDINATEUR')) return 'Erreur saisie';
+    if (lib.includes('NAPOLEON')||lib.includes('MARIANNE')||lib.includes('GENIE')||lib.includes('20 FRANCS')||lib.includes('20FR')||lib.includes('DOS PESOS')||lib.includes('PESOS')||lib.includes('LOUIS D')) return 'Pièces or';
+    if (lib.includes('CHEVALIERE')||lib.includes('CHEVALIER ')||lib.includes('ALLIANCE')||lib.includes('TRILOGIE')||lib.includes('BAGUE')) return 'Bagues';
+    if (lib.includes('GOURMETTE')||lib.includes('MANCHETTE')||lib.includes('BRACELET')||lib.includes('JONC')) return 'Bracelets';
+    if (lib.includes('CHAINE')||lib.includes('CHAÎNE')||lib.includes('COLLIER')||lib.includes('SAUTOIR')||lib.includes('RAS DE COU')) return 'Chaînes';
+    if (lib.includes("BOUCLE D'OREILLE")||lib.includes('BOUCLE DOREILLE')||lib.includes('B.O')||lib.includes(' BO ')||lib.includes('CRÉOLE')||lib.includes('CREOLE')||lib.includes('DORMEUSE')||lib.includes('CHARMEUSE')||lib.includes('PUCE')) return "Boucles d'oreilles";
+    if (lib.includes('PENDENTIF')||lib.includes('MEDAILLE')||lib.includes('MÉDAILLE')||lib.includes('MEDAILLON')||lib.includes('CROIX')||lib.includes('COEUR')||lib.includes('CHARM')||lib.includes('BRELOQUE')) return 'Pendentifs';
+    if (lib.includes('DEBRIS')||lib.includes('BRUT')||lib.includes('A REPARER')||lib.includes('À REPARER')||lib.includes('CASSE')||lib.includes('CASSER')||lib.includes('CASSEE')) return 'Débris / À réparer';
+    if (lib.includes('BROCHE')||lib.includes('PEPITE')||lib.includes('PÉPITE')) return 'Autres';
+    return 'Non catégorisé';
+  }
+  // BMAR
+  if (sf.includes('maroquinerie')) {
+    if (lib.includes('MICHAEL KORS')||lib.includes('MICKAEL KORS')) return 'Michael Kors';
+    if (lib.includes('LOUIS VUITTON')||lib.includes('VUITTON')) return 'Louis Vuitton';
+    if (lib.includes('CHRISTIAN LACROIX')||lib.includes('LACROIX')) return 'Christian Lacroix';
+    if (lib.includes('HUGO BOSS')) return 'Hugo Boss';
+    if (lib.includes('CALVIN KLEIN')) return 'Calvin Klein';
+    if (lib.includes('ARTHUR ASTON')) return 'Arthur Aston';
+    if (lib.includes('DAVID JONES')) return 'David Jones';
+    if (lib.includes('PIERRE CARDIN')) return 'Pierre Cardin';
+    if (lib.includes('LE TANNEUR')||lib.includes('TANNEUR')) return 'Le Tanneur';
+    if (lib.includes('LANCEL')) return 'Lancel';
+    if (lib.includes('LACOSTE')) return 'Lacoste';
+    if (lib.includes('DESIGUAL')) return 'Desigual';
+    if (lib.includes('LANCASTER')) return 'Lancaster';
+    if (lib.includes('MANOUKIAN')) return 'Manoukian';
+    if (lib.includes('TORRENTE')) return 'Torrente';
+    if (lib.includes('FIRENZE')) return 'Firenze';
+    if (lib.includes('FOSSIL')) return 'Fossil';
+    if (lib.includes('ARMANI')) return 'Armani';
+    if (lib.includes('CELINE')||lib.includes('CÉLINE')) return 'Celine';
+    if (lib.includes('GUESS')) return 'Guess';
+    if (lib.includes('DDP')) return 'DDP';
+    return 'Sans marque identifiée';
+  }
+  // BMON
+  if (sf.includes('montre')) {
+    if (lib.includes('DANIEL WELLINGTON')) return 'Daniel Wellington';
+    if (lib.includes('PIERRE LANNIER')||lib.includes('LANNIER')) return 'Pierre Lannier';
+    if (lib.includes('MICHAEL KORS')||lib.includes('MICKAEL KORS')) return 'Michael Kors';
+    if (lib.includes('TAG HEUER')||lib.includes('TAGHEUER')) return 'Tag Heuer';
+    if (lib.includes('ICE WATCH')||lib.includes('ICEWATCH')) return 'Ice Watch';
+    if (lib.includes('HAMILTON')) return 'Hamilton';
+    if (lib.includes('LONGINES')) return 'Longines';
+    if (lib.includes('BREITLING')) return 'Breitling';
+    if (lib.includes('TISSOT')) return 'Tissot';
+    if (lib.includes('SWATCH')) return 'Swatch';
+    if (lib.includes('FOSSIL')) return 'Fossil';
+    if (lib.includes('GUESS')) return 'Guess';
+    if (lib.includes('SEIKO')) return 'Seiko';
+    if (lib.includes('CASIO')) return 'Casio';
+    if (lib.includes('ROLEX')) return 'Rolex';
+    if (lib.includes('OMEGA')) return 'Omega';
+    if (lib.includes('BULOVA')) return 'Bulova';
+    if (lib.includes('CITIZEN')) return 'Citizen';
+    if (lib.includes('FESTINA')) return 'Festina';
+    if (lib.includes('CLUSE')) return 'Cluse';
+    if (lib.includes('LOTUS')) return 'Lotus';
+    return 'Sans marque identifiée';
+  }
+  // Fallback for TLCE, ITAB, IPOR, JPOR — first word
+  return extractBrand(lib);
+}
+
+// ── pepite delay threshold per sous-famille (ACTION 5) ───────────────────────
+function getSeuilDelaiPepite(sousfamille: string): number {
+  const sf = sousfamille.toLowerCase();
+  if (sf.includes('bijouterie or')||sf.includes('plaqu')||sf.includes('maroquinerie')||sf.includes('montre')) return 60;
+  return 30;
+}
+
 function detectIPORUsage(libelle: string): string {
   const u = libelle.toUpperCase();
   const keys = ['GTX','RTX','RYZEN 7','RYZEN 9',' I7 ',' I9 ','16 GO','32 GO','GAMING','ROG','PREDATOR','OMEN','TUF'];
@@ -506,7 +638,7 @@ export function getJournalContext(magasinNom: string): string {
     const tqEPA=epaMs.reduce((s,m)=>s+m.qteVendue,0);
     const epAG=tqEPA>0?Math.round(epaMs.reduce((s,m)=>s+((m.paMoyen-m.epaMoyen!)/m.epaMoyen!*100)*m.qteVendue,0)/tqEPA*10)/10:null;
     const brands=new Map<string,number>();
-    for (const r of stored.rows) { const b=(r.m.trim().split(/\s+/)[0]||'—').toUpperCase(); brands.set(b,(brands.get(b)??0)+1); }
+    for (const r of stored.rows) { const b=detectMarqueOuPlateforme(r.m, r.f); brands.set(b,(brands.get(b)??0)+1); }
     const total=stored.rows.length;
     const topBrands=Array.from(brands.entries()).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([b,c])=>`${b} ${Math.round(c/total*100)}%`).join(', ');
     const src=computeSourcing(stored.rows);
@@ -1100,7 +1232,8 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
   const stats=useMemo(()=>computeStats(filteredRows),[filteredRows]);
   const MIN3=(s: ModelStats)=>s.qteVendue>=3;
 
-  const topRotations=useMemo(()=>stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<30).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999)),[stats]);
+  // Per-model pepite threshold: 60j for jewelry/maro/watches, 30j for tech
+  const topRotations=useMemo(()=>stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999)),[stats]);
   const topMarge=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.margeTotal-a.margeTotal).slice(0,20),[stats]);
   const topVolume=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.qteVendue-a.qteVendue).slice(0,15),[stats]);
   const coherenceEP=useMemo(()=>stats.filter(s=>MIN3(s)&&s.ecartEP!==null&&Math.abs(s.ecartEP)>10).sort((a,b)=>Math.abs(b.ecartEP!)-Math.abs(a.ecartEP!)),[stats]);
@@ -1135,12 +1268,24 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
     return tq>0?Math.round(ms.reduce((s,m)=>s+((m.paMoyen-m.epaMoyen!)/m.epaMoyen!*100)*m.qteVendue,0)/tq*10)/10:null;
   },[stats]);
 
+  // ACTION 2: family-aware brand/platform widget data
   const topBrands=useMemo(()=>{
     const brands=new Map<string,number>();
-    for (const r of filteredRows) { const b=(r.m.trim().split(/\s+/)[0]||'—').toUpperCase(); brands.set(b,(brands.get(b)??0)+1); }
+    for (const r of filteredRows) { const b=detectMarqueOuPlateforme(r.m, r.f); brands.set(b,(brands.get(b)??0)+1); }
     const total=filteredRows.length;
     return total>0?Array.from(brands.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([brand,count])=>({brand,count,pct:Math.round(count/total*100)})):[];
   },[filteredRows]);
+
+  // ACTION 4: adaptive widget title based on detected/selected family
+  const topBrandsTitle=useMemo(()=>{
+    const fc: FamilyCode|null = selectedFamily!=='all'
+      ? selectedFamily as FamilyCode
+      : detectedFamilies.length===1 ? detectedFamilies[0] : null;
+    if (!fc) return '🏷️ Répartition (top 5)';
+    if (fc==='JCDR'||fc==='JCON'||fc==='JPOR') return '🎮 Répartition des plateformes (top 5)';
+    if (fc==='BOR'||fc==='BOPI') return '💍 Répartition par type de produit (top 5)';
+    return '🏷️ Répartition par marque (top 5)';
+  },[selectedFamily, detectedFamilies]);
 
   const investTotal=useMemo(()=>topRotations.reduce((s,r)=>s+r.paMoyen,0),[topRotations]);
   const srcTotal=sourcing.reduce((s,r)=>s+r.nbAchats,0);
@@ -1206,7 +1351,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
             )}
             {topBrands.length>0&&(
               <div className="rounded-lg p-3 border border-[#E0E0E0]">
-                <p className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">🏷️ Répartition marques (top 5)</p>
+                <p className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2">{topBrandsTitle}</p>
                 <div className="space-y-1.5">
                   {topBrands.map(b=>(
                     <div key={b.brand} className="flex items-center gap-2">
