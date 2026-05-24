@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { MagasinData, PAPAction } from '@/types';
 import { getAlerts, getCategoryScores } from '@/lib/kpis';
 import { getJournalContext } from '@/components/JournalAchatVente';
+import { getVisionContext } from '@/components/Objectifs';
 
 interface Props {
   data: MagasinData;
@@ -164,7 +165,11 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
     setSelectedTemplate(id);
     const base = tpl.build(data, actions);
     const journalCtx = magasinNom ? getJournalContext(magasinNom) : '';
-    setPrompt(journalCtx ? `${base}\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}` : base);
+    const visionCtx = magasinNom ? getVisionContext(magasinNom) : '';
+    let built = base;
+    if (journalCtx) built += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
+    if (visionCtx) built += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
+    setPrompt(built);
     setCopied(false);
   }
 

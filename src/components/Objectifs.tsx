@@ -1,8 +1,67 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import type { PAPAction } from '@/types';
 
 interface Props { magasinNom: string; }
+
+// ── Vision ───────────────────────────────────────────────────────────────────
+
+interface VisionData {
+  vision3ans: string;
+  valeur1: string;
+  valeur2: string;
+  valeur3: string;
+  capCommercial: string;
+}
+
+const DEFAULT_VISION: VisionData = { vision3ans: '', valeur1: '', valeur2: '', valeur3: '', capCommercial: '' };
+
+function loadVision(magasinNom: string): VisionData {
+  try {
+    const s = localStorage.getItem(`vision_${magasinNom}`);
+    return s ? { ...DEFAULT_VISION, ...JSON.parse(s) as Partial<VisionData> } : DEFAULT_VISION;
+  } catch { return DEFAULT_VISION; }
+}
+
+function persistVision(magasinNom: string, v: VisionData) {
+  if (!magasinNom) return;
+  localStorage.setItem(`vision_${magasinNom}`, JSON.stringify(v));
+}
+
+export function getVisionContext(magasinNom: string): string {
+  if (typeof window === 'undefined' || !magasinNom) return '';
+  try {
+    const parts: string[] = [];
+
+    const vs = localStorage.getItem(`vision_${magasinNom}`);
+    if (vs) {
+      const v = JSON.parse(vs) as VisionData;
+      if (v.vision3ans?.trim()) parts.push(`Vision du franchisé : ${v.vision3ans}`);
+      const valeurs = [v.valeur1, v.valeur2, v.valeur3].filter(x => x?.trim());
+      if (valeurs.length) parts.push(`Valeurs non-négociables : ${valeurs.join(', ')}`);
+      if (v.capCommercial?.trim()) parts.push(`Cap commercial : ${v.capCommercial}`);
+    }
+
+    const as_ = localStorage.getItem(`ec_actions_${magasinNom}`);
+    if (as_) {
+      const acts = JSON.parse(as_) as PAPAction[];
+      const active = acts.filter(a => a.statut === 'À faire' || a.statut === 'En cours');
+      if (active.length > 0) {
+        const lines = active.map(a => {
+          const date = a.echeance ? ` (échéance : ${new Date(a.echeance).toLocaleDateString('fr-FR')})` : '';
+          const lien = a.lienvision?.trim() ? ` — Vision : ${a.lienvision}` : '';
+          return `  - ${a.titre}${date} [${a.statut}]${lien}`;
+        }).join('\n');
+        parts.push(`Actions PAP en cours et leur lien à la vision :\n${lines}`);
+      }
+    }
+
+    return parts.length ? '\n' + parts.join('\n') : '';
+  } catch { return ''; }
+}
+
+// ── Objectifs (marge par famille) ────────────────────────────────────────────
 
 interface ObjFamille {
   id: string;
@@ -35,10 +94,28 @@ export default function Objectifs({ magasinNom }: Props) {
   const today = new Date();
   const defaultMonth = today.toISOString().slice(0, 7);
 
+  // Vision state
+  const [vision, setVision] = useState<VisionData>(DEFAULT_VISION);
+
+  // Objectifs state
   const [month, setMonth] = useState(defaultMonth);
   const [promoRedist, setPromoRedist] = useState(30);
   const [familles, setFamilles] = useState<ObjFamille[]>(defaultRows());
 
+  // PAP actions for cohérence panel
+  const [papActions, setPapActions] = useState<PAPAction[]>([]);
+
+  // Load vision + PAP when magasin changes
+  useEffect(() => {
+    if (!magasinNom) return;
+    setVision(loadVision(magasinNom));
+    try {
+      const s = localStorage.getItem(`ec_actions_${magasinNom}`);
+      setPapActions(s ? JSON.parse(s) as PAPAction[] : []);
+    } catch { setPapActions([]); }
+  }, [magasinNom]);
+
+  // Load objectifs when month or magasin changes
   useEffect(() => {
     try {
       const key = `objectifs_${magasinNom}_${month}`;
@@ -56,7 +133,15 @@ export default function Objectifs({ magasinNom }: Props) {
     }
   }, [month, magasinNom]);
 
-  function save(f: ObjFamille[], p: number) {
+  // Vision handlers
+  function updateVision(field: keyof VisionData, value: string) {
+    const next = { ...vision, [field]: value };
+    setVision(next);
+    persistVision(magasinNom, next);
+  }
+
+  // Objectifs handlers
+  function saveObj(f: ObjFamille[], p: number) {
     const key = `objectifs_${magasinNom}_${month}`;
     localStorage.setItem(key, JSON.stringify({ familles: f, promoRedist: p } as ObjData));
   }
@@ -64,24 +149,24 @@ export default function Objectifs({ magasinNom }: Props) {
   function updateFamille(id: string, field: keyof ObjFamille, value: string | number) {
     const next = familles.map(f => f.id === id ? { ...f, [field]: value } : f);
     setFamilles(next);
-    save(next, promoRedist);
+    saveObj(next, promoRedist);
   }
 
   function addFamille() {
     const next = [...familles, { id: uid(), famille: '', tauxMarge: 40, margeCible: 0, margeRealisee: 0 }];
     setFamilles(next);
-    save(next, promoRedist);
+    saveObj(next, promoRedist);
   }
 
   function delFamille(id: string) {
     const next = familles.filter(f => f.id !== id);
     setFamilles(next);
-    save(next, promoRedist);
+    saveObj(next, promoRedist);
   }
 
   function updatePromo(p: number) {
     setPromoRedist(p);
-    save(familles, p);
+    saveObj(familles, p);
   }
 
   function stockNecessaire(f: ObjFamille): number {
@@ -111,172 +196,266 @@ export default function Objectifs({ magasinNom }: Props) {
         : { msg: 'En retard — relancez les ventes', cls: 'bg-orange-50 border-orange-200 text-orange-600', icon: '⚠' };
 
   const ic = 'bg-white border border-[#E0E0E0] rounded-md px-2 py-1.5 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]';
+  const tasCls = 'w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613] resize-none';
+
+  const activeActions = papActions.filter(a => a.statut === 'À faire' || a.statut === 'En cours');
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-lg font-bold text-[#1A1A1A]">🎯 Objectifs — {magasinNom || 'Magasin'}</h2>
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-[#6B7280]">Mois</label>
-            <input
-              type="month"
-              value={month}
-              onChange={e => setMonth(e.target.value)}
-              className={ic}
-            />
+    <div className="space-y-6">
+
+      {/* ── MA VISION ──────────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-5">
+        <div>
+          <h2 className="text-lg font-bold text-[#1A1A1A]">🌟 Ma vision — {magasinNom || 'Magasin'}</h2>
+          <p className="text-xs text-[#6B7280] mt-0.5">Votre cap à long terme, vos valeurs, votre ambition commerciale.</p>
+        </div>
+
+        {/* Vision 3 ans */}
+        <div>
+          <label className="text-sm font-semibold text-[#1A1A1A] block mb-1.5">
+            🌟 Ma vision pour mon magasin dans 3 ans
+          </label>
+          <textarea
+            value={vision.vision3ans}
+            onChange={e => updateVision('vision3ans', e.target.value)}
+            rows={3}
+            className={tasCls}
+            placeholder="Écrivez votre vision en quelques phrases"
+          />
+        </div>
+
+        {/* 3 valeurs */}
+        <div>
+          <label className="text-sm font-semibold text-[#1A1A1A] block mb-1.5">
+            💎 Mes 3 valeurs non-négociables pour mon équipe
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {(['valeur1', 'valeur2', 'valeur3'] as const).map((k, i) => (
+              <input
+                key={k}
+                value={vision[k]}
+                onChange={e => updateVision(k, e.target.value)}
+                className="bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
+                placeholder={`Valeur ${i + 1}`}
+              />
+            ))}
           </div>
-          <div className="flex items-center gap-1">
-            <label className="text-xs text-[#6B7280]">Redistrib. promo</label>
-            <input
-              type="number"
-              value={promoRedist || ''}
-              onChange={e => updatePromo(parseFloat(e.target.value) || 0)}
-              className={`${ic} w-16 text-center`}
-              placeholder="30"
-            />
-            <span className="text-xs text-[#6B7280]">%</span>
-          </div>
+        </div>
+
+        {/* Cap commercial */}
+        <div>
+          <label className="text-sm font-semibold text-[#1A1A1A] block mb-1.5">
+            🚀 Mon cap commercial pour cette année
+          </label>
+          <textarea
+            value={vision.capCommercial}
+            onChange={e => updateVision('capCommercial', e.target.value)}
+            rows={2}
+            className={tasCls}
+            placeholder="Écrivez votre cap commercial"
+          />
         </div>
       </div>
 
-      {/* Status message */}
-      {statusMsg && (
-        <div className={`rounded-xl px-4 py-3 border font-semibold text-sm ${statusMsg.cls}`}>
-          {statusMsg.icon} {statusMsg.msg}
-          {totalAvancement > 0 && ` — ${totalAvancement}% réalisé`}
+      {/* ── OBJECTIFS DU MOIS ──────────────────────────────────────────────── */}
+      <div className="space-y-5">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <h2 className="text-lg font-bold text-[#1A1A1A]">🎯 Objectifs — {magasinNom || 'Magasin'}</h2>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-[#6B7280]">Mois</label>
+              <input
+                type="month"
+                value={month}
+                onChange={e => setMonth(e.target.value)}
+                className={ic}
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <label className="text-xs text-[#6B7280]">Redistrib. promo</label>
+              <input
+                type="number"
+                value={promoRedist || ''}
+                onChange={e => updatePromo(parseFloat(e.target.value) || 0)}
+                className={`${ic} w-16 text-center`}
+                placeholder="30"
+              />
+              <span className="text-xs text-[#6B7280]">%</span>
+            </div>
+          </div>
         </div>
-      )}
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-[#F5F5F5] border-b border-[#E0E0E0]">
-                <th className="text-left px-3 py-2.5 font-semibold text-[#6B7280]">Famille</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge cible (€)</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Taux marge (%)</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock nécessaire</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge réalisée (€)</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Avancement</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Budget promo (€)</th>
-                <th className="px-2 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E0E0E0]">
-              {familles.map(f => {
-                const stock = stockNecessaire(f);
-                const avanc = avancement(f);
-                const promo = budgetPromo(f);
-                return (
-                  <tr key={f.id} className="hover:bg-[#FAFAFA]">
-                    <td className="px-3 py-2">
-                      <input
-                        value={f.famille}
-                        onChange={e => updateFamille(f.id, 'famille', e.target.value)}
-                        className={`${ic} w-32`}
-                        placeholder="Famille"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        value={f.margeCible || ''}
-                        onChange={e => updateFamille(f.id, 'margeCible', parseFloat(e.target.value) || 0)}
-                        className={`${ic} w-24 text-right`}
-                        placeholder="0"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        value={f.tauxMarge || ''}
-                        onChange={e => updateFamille(f.id, 'tauxMarge', parseFloat(e.target.value) || 0)}
-                        className={`${ic} w-16 text-right`}
-                        placeholder="40"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium text-[#1A1A1A]">
-                      {stock > 0 ? stock.toLocaleString('fr-FR') + ' €' : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        value={f.margeRealisee || ''}
-                        onChange={e => updateFamille(f.id, 'margeRealisee', parseFloat(e.target.value) || 0)}
-                        className={`${ic} w-24 text-right`}
-                        placeholder="0"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <span className={`font-bold ${
-                        avanc >= 100 ? 'text-green-600'
-                        : avanc >= 50 ? 'text-blue-600'
-                        : avanc > 0 ? 'text-orange-500'
-                        : 'text-[#9CA3AF]'
-                      }`}>
-                        {f.margeCible > 0 ? `${avanc}%` : '—'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <span className={`font-semibold ${promo > 0 ? 'text-green-600' : 'text-[#9CA3AF]'}`}>
-                        {promo > 0 ? `+${promo.toLocaleString('fr-FR')} €` : '—'}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2">
-                      <button onClick={() => delFamille(f.id)} className="text-[#9CA3AF] hover:text-red-600 transition-colors">🗑</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        {/* Status message */}
+        {statusMsg && (
+          <div className={`rounded-xl px-4 py-3 border font-semibold text-sm ${statusMsg.cls}`}>
+            {statusMsg.icon} {statusMsg.msg}
+            {totalAvancement > 0 && ` — ${totalAvancement}% réalisé`}
+          </div>
+        )}
+
+        {/* Table */}
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-[#F5F5F5] border-b border-[#E0E0E0]">
+                  <th className="text-left px-3 py-2.5 font-semibold text-[#6B7280]">Famille</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge cible (€)</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Taux marge (%)</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock nécessaire</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge réalisée (€)</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Avancement</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Budget promo (€)</th>
+                  <th className="px-2 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E0E0E0]">
+                {familles.map(f => {
+                  const stock = stockNecessaire(f);
+                  const avanc = avancement(f);
+                  const promo = budgetPromo(f);
+                  return (
+                    <tr key={f.id} className="hover:bg-[#FAFAFA]">
+                      <td className="px-3 py-2">
+                        <input
+                          value={f.famille}
+                          onChange={e => updateFamille(f.id, 'famille', e.target.value)}
+                          className={`${ic} w-32`}
+                          placeholder="Famille"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          value={f.margeCible || ''}
+                          onChange={e => updateFamille(f.id, 'margeCible', parseFloat(e.target.value) || 0)}
+                          className={`${ic} w-24 text-right`}
+                          placeholder="0"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          value={f.tauxMarge || ''}
+                          onChange={e => updateFamille(f.id, 'tauxMarge', parseFloat(e.target.value) || 0)}
+                          className={`${ic} w-16 text-right`}
+                          placeholder="40"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-[#1A1A1A]">
+                        {stock > 0 ? stock.toLocaleString('fr-FR') + ' €' : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          value={f.margeRealisee || ''}
+                          onChange={e => updateFamille(f.id, 'margeRealisee', parseFloat(e.target.value) || 0)}
+                          className={`${ic} w-24 text-right`}
+                          placeholder="0"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className={`font-bold ${
+                          avanc >= 100 ? 'text-green-600'
+                          : avanc >= 50 ? 'text-blue-600'
+                          : avanc > 0 ? 'text-orange-500'
+                          : 'text-[#9CA3AF]'
+                        }`}>
+                          {f.margeCible > 0 ? `${avanc}%` : '—'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className={`font-semibold ${promo > 0 ? 'text-green-600' : 'text-[#9CA3AF]'}`}>
+                          {promo > 0 ? `+${promo.toLocaleString('fr-FR')} €` : '—'}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2">
+                        <button onClick={() => delFamille(f.id)} className="text-[#9CA3AF] hover:text-red-600 transition-colors">🗑</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-3 py-2 border-t border-[#E0E0E0]">
+            <button onClick={addFamille} className="text-xs text-[#E30613] hover:text-[#B8050F] font-medium transition-colors">
+              + Ajouter une famille
+            </button>
+          </div>
         </div>
-        <div className="px-3 py-2 border-t border-[#E0E0E0]">
-          <button onClick={addFamille} className="text-xs text-[#E30613] hover:text-[#B8050F] font-medium transition-colors">
-            + Ajouter une famille
-          </button>
+
+        {/* Recap */}
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
+          <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-4">Récapitulatif du mois</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-xl font-black text-[#1A1A1A]">{totalCible.toLocaleString('fr-FR')} €</div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Total marge cible</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black text-[#1A1A1A]">{totalRealisee.toLocaleString('fr-FR')} €</div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Total marge réalisée</div>
+            </div>
+            <div className="text-center">
+              <div className={`text-xl font-black ${
+                totalAvancement >= 100 ? 'text-green-600'
+                : totalAvancement >= 50 ? 'text-blue-600'
+                : totalAvancement > 0 ? 'text-orange-500'
+                : 'text-[#9CA3AF]'
+              }`}>
+                {totalCible > 0 ? `${totalAvancement}%` : '—'}
+              </div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Avancement global</div>
+            </div>
+            <div className="text-center">
+              <div className={`text-xl font-black ${totalBudgetPromo > 0 ? 'text-green-600' : 'text-[#9CA3AF]'}`}>
+                {totalBudgetPromo > 0 ? `+${totalBudgetPromo.toLocaleString('fr-FR')} €` : '—'}
+              </div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Budget promo libéré</div>
+            </div>
+          </div>
+          {totalBudgetPromo > 0 && (
+            <p className="text-xs text-[#6B7280] mt-3 border-t border-[#E0E0E0] pt-3">
+              Budget promo = (Marge réalisée − Marge cible) × {promoRedist}% pour les familles en dépassement d&apos;objectif
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Recap */}
-      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
-        <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-4">Récapitulatif du mois</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center">
-            <div className="text-xl font-black text-[#1A1A1A]">{totalCible.toLocaleString('fr-FR')} €</div>
-            <div className="text-xs text-[#6B7280] mt-0.5">Total marge cible</div>
-          </div>
-          <div className="text-center">
-            <div className="text-xl font-black text-[#1A1A1A]">{totalRealisee.toLocaleString('fr-FR')} €</div>
-            <div className="text-xs text-[#6B7280] mt-0.5">Total marge réalisée</div>
-          </div>
-          <div className="text-center">
-            <div className={`text-xl font-black ${
-              totalAvancement >= 100 ? 'text-green-600'
-              : totalAvancement >= 50 ? 'text-blue-600'
-              : totalAvancement > 0 ? 'text-orange-500'
-              : 'text-[#9CA3AF]'
-            }`}>
-              {totalCible > 0 ? `${totalAvancement}%` : '—'}
-            </div>
-            <div className="text-xs text-[#6B7280] mt-0.5">Avancement global</div>
-          </div>
-          <div className="text-center">
-            <div className={`text-xl font-black ${totalBudgetPromo > 0 ? 'text-green-600' : 'text-[#9CA3AF]'}`}>
-              {totalBudgetPromo > 0 ? `+${totalBudgetPromo.toLocaleString('fr-FR')} €` : '—'}
-            </div>
-            <div className="text-xs text-[#6B7280] mt-0.5">Budget promo libéré</div>
-          </div>
-        </div>
-        {totalBudgetPromo > 0 && (
-          <p className="text-xs text-[#6B7280] mt-3 border-t border-[#E0E0E0] pt-3">
-            Budget promo = (Marge réalisée − Marge cible) × {promoRedist}% pour les familles en dépassement d&apos;objectif
+      {/* ── COHÉRENCE VISION-PAP ───────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5">
+        <h3 className="text-sm font-bold text-[#1A1A1A] mb-3">📋 Comment je traduis ma vision en actions</h3>
+        {activeActions.length === 0 ? (
+          <p className="text-sm text-[#6B7280] italic">
+            Aucune action active dans votre Plan d&apos;Action. Définissez vos premières actions pour traduire votre vision en réalité opérationnelle.
           </p>
+        ) : (
+          <div>
+            <p className="text-xs text-[#6B7280] mb-3">Vos actions en cours et comment elles servent votre vision :</p>
+            <div className="space-y-3">
+              {activeActions.map(a => (
+                <div key={a.id} className="border-l-2 border-[#E30613] pl-3 py-1">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-medium text-[#1A1A1A]">{a.titre}</span>
+                    {a.echeance && (
+                      <span className="text-xs text-[#6B7280]">— {new Date(a.echeance).toLocaleDateString('fr-FR')}</span>
+                    )}
+                  </div>
+                  {a.lienvision?.trim() ? (
+                    <p className="text-xs italic text-[#6B7280] mt-0.5">🎯 {a.lienvision}</p>
+                  ) : (
+                    <p className="text-xs italic text-[#E30613] mt-0.5">🎯 Lien à votre vision non précisé — à compléter dans le PAP.</p>
+                  )}
+                  <p className="text-xs text-[#9CA3AF] mt-0.5">Statut : {a.statut}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
+
     </div>
   );
 }

@@ -29,7 +29,7 @@ function uid() { return Math.random().toString(36).slice(2); }
 
 const EMPTY_ACTION: Omit<PAPAction, 'id'> = {
   titre: '', axe: 'Stock', pilote: '', copilote: '',
-  description: '', echeance: '', priorite: 1, gain: 0, statut: 'À faire',
+  description: '', lienvision: '', echeance: '', priorite: 1, gain: 0, statut: 'À faire',
 };
 
 function isRetard(a: PAPAction): boolean {
@@ -160,6 +160,7 @@ function GanttChart({ actions, onScrollTo }: {
           {tooltip.a.pilote && <div className="text-[#6B7280]">👤 {tooltip.a.pilote}{tooltip.a.copilote ? ` / ${tooltip.a.copilote}` : ''}</div>}
           {tooltip.a.echeance && <div className="text-[#6B7280]">📅 {new Date(tooltip.a.echeance).toLocaleDateString('fr-FR')}</div>}
           {tooltip.a.gain > 0 && <div className="text-green-600">+{tooltip.a.gain.toLocaleString('fr-FR')} €</div>}
+          {tooltip.a.lienvision?.trim() && <div className="text-[#6B7280] italic mt-0.5 max-w-xs">🎯 {tooltip.a.lienvision}</div>}
           <div className="text-[#9CA3AF] mt-0.5 text-[10px]">Cliquer pour voir l&apos;action</div>
         </div>
       )}
@@ -181,7 +182,7 @@ async function exportPAP(data: { nom: string }, actions: PAPAction[]) {
       return a.echeance.localeCompare(b.echeance);
     });
 
-    const COLS = ['Titre', 'Axe', 'Pilote', 'Copilote', 'Échéance', 'Priorité', 'Gain estimé', 'Statut'];
+    const COLS = ['Titre', 'Axe', 'Pilote', 'Copilote', 'Échéance', 'Priorité', 'Gain estimé', 'Statut', 'Lien vision'];
     const headerRow = new TableRow({
       children: COLS.map(text => new TableCell({
         children: [new Paragraph({ children: [new TextRun({ text, bold: true })] })],
@@ -196,6 +197,7 @@ async function exportPAP(data: { nom: string }, actions: PAPAction[]) {
         `P${a.priorite}`,
         a.gain > 0 ? `${a.gain.toLocaleString('fr-FR')} €` : '',
         a.statut,
+        a.lienvision?.trim() || '',
       ].map(text => new TableCell({
         children: [new Paragraph({ children: [new TextRun({ text: String(text) })] })],
       })),
@@ -262,7 +264,8 @@ export default function PlanAction({ data, actions, onSave }: Props) {
 
   function edit(a: PAPAction) {
     setForm({ titre: a.titre, axe: a.axe, pilote: a.pilote, copilote: a.copilote,
-      description: a.description, echeance: a.echeance, priorite: a.priorite, gain: a.gain, statut: a.statut });
+      description: a.description, lienvision: a.lienvision ?? '', echeance: a.echeance,
+      priorite: a.priorite, gain: a.gain, statut: a.statut });
     setEditId(a.id);
     setShowForm(true);
   }
@@ -417,6 +420,18 @@ export default function PlanAction({ data, actions, onSave }: Props) {
                 rows={2} className={`${inputCls} resize-none`}
                 placeholder="Détails de l'action..." />
             </div>
+            <div className="md:col-span-2">
+              <label className="text-xs text-[#6B7280]">🎯 Lien avec ma vision <span className="text-[#E30613]">*</span></label>
+              <textarea
+                value={form.lienvision ?? ''}
+                onChange={e => setForm(f => ({ ...f, lienvision: e.target.value.slice(0, 200) }))}
+                rows={2}
+                maxLength={200}
+                className={`${inputCls} resize-none`}
+                placeholder="En quoi cette action sert votre vision, vos valeurs ou votre cap commercial ?"
+              />
+              <div className="text-right text-xs text-[#9CA3AF] mt-0.5">{(form.lienvision ?? '').length}/200</div>
+            </div>
           </div>
           <div className="flex gap-2 justify-end">
             <button onClick={() => { setShowForm(false); setEditId(null); }}
@@ -459,6 +474,11 @@ export default function PlanAction({ data, actions, onSave }: Props) {
                           {action.gain > 0 && <span className="text-green-600">+{action.gain.toLocaleString('fr-FR')} €</span>}
                         </div>
                         {action.description && <p className="text-xs text-[#6B7280] mt-1">{action.description}</p>}
+                        {action.lienvision?.trim() ? (
+                          <p className="text-xs italic text-[#6B7280] mt-1">🎯 {action.lienvision}</p>
+                        ) : (
+                          <p className="text-xs italic text-[#E30613] mt-1">🎯 Lien avec votre vision à préciser</p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <select

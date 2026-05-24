@@ -66,6 +66,7 @@ export interface PAPAction {
   pilote: string;
   copilote: string;
   description: string;
+  lienvision?: string;
   echeance: string;
   priorite: 1 | 2 | 3;
   gain: number;
