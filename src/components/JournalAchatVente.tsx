@@ -240,27 +240,10 @@ function detectMarqueOuPlateforme(libelle: string, sousfamille: string): string 
     if (lib.includes('NES')) return 'NES';
     return 'Plateforme non détectée';
   }
-  // JCON
+  // JCON — delegates to detectPlatform, guarantees 'Plateforme non détectée' as fallback
+  // (never falls through to first-word extractBrand)
   if (sf.includes('console')&&!sf.includes('cd rom')) {
-    if (lib.includes('PS5')) return 'PS5';
-    if (lib.includes('PS4')) return 'PS4';
-    if (lib.includes('PS3')) return 'PS3';
-    if (lib.includes('PS2')) return 'PS2';
-    if (lib.includes('PS VITA')||lib.includes('PSVITA')) return 'PS Vita';
-    if (lib.includes('PSP')) return 'PSP';
-    if (lib.includes('PS1')) return 'PS1';
-    if (lib.includes('XBOX SERIES X')) return 'Xbox Series X';
-    if (lib.includes('XBOX SERIES S')) return 'Xbox Series S';
-    if (lib.includes('XBOX ONE')) return 'Xbox One';
-    if (lib.includes('XBOX 360')) return 'Xbox 360';
-    if (lib.includes('XBOX')) return 'Xbox';
-    if (lib.includes('SWITCH 2')) return 'Switch 2';
-    if (lib.includes('SWITCH OLED')) return 'Switch OLED';
-    if (lib.includes('SWITCH')) return 'Switch';
-    if (lib.includes('WII U')) return 'Wii U';
-    if (lib.includes('WII')) return 'Wii';
-    if (lib.includes('3DS')) return '3DS';
-    return 'Plateforme non détectée';
+    return detectPlatform(lib);
   }
   // BOR / BOPI
   if (sf.includes('bijouterie or')||sf.includes('plaqu')) {
@@ -355,21 +338,33 @@ function detectBijouType(libelle: string): string {
 
 function detectBORCanal(r: CRow): string {
   // Only check buyer fields (an = acheteurNom, ap = acheteurPrenom)
+  // Canal FONTE uniquement si l'acheteur est "CHANGE VIVIENNE" / "CHANGEVIVIENNE"
   const an = (r.an ?? '').toUpperCase();
   const ap = (r.ap ?? '').toUpperCase();
   const combined = norm(an + ' ' + ap);
   if (combined.includes('changevivienne')) return 'Fonte';
-  if (combined.includes('easycashagde')) return 'Fonte';
-  if ((an.includes('EASYCASH') || ap.includes('EASYCASH')) && (an.includes('AGDE') || ap.includes('AGDE'))) return 'Fonte';
   return 'Vitrine';
 }
 
 function extractPoids(libelle: string): number|null {
-  // Match "X,XX G" or "X.XX G" or "X G" — requires space before G, G not followed by another letter
+  // Match "X,XX G" or "X.XX G" or "X G" — G must be followed by non-letter or end
   const m = libelle.match(/(\d+[,.]\d+|\d+)\s+[Gg](?=[^a-zA-Z]|$)/);
   if (!m) return null;
   const v = parseFloat(m[1].replace(',','.'));
-  return isNaN(v)||v<=0 ? null : v;
+  return isNaN(v)||v<=0||v>1000 ? null : v;
+}
+
+// Detect gold titre from Athéna libellé (e.g. "OR 750/1000 BAGUE 2,30 G")
+function detectTitreOr(libelle: string): string {
+  if (!libelle) return 'Titre inconnu';
+  const lib = libelle.toUpperCase();
+  if (lib.includes('999/1000') || lib.includes('999 /1000')) return '24 carats (999)';
+  if (lib.includes('916/1000') || lib.includes('916 /1000')) return '22 carats (916)';
+  if (lib.includes('900/1000') || lib.includes('900 /1000')) return '22 carats pièces (900)';
+  if (lib.includes('750/1000') || lib.includes('750 /1000')) return '18 carats (750)';
+  if (lib.includes('585/1000') || lib.includes('585 /1000')) return '14 carats (585)';
+  if (lib.includes('375/1000') || lib.includes('375 /1000')) return '9 carats (375)';
+  return 'Titre inconnu';
 }
 
 // Multi-word brands listed first to avoid partial matches
@@ -523,6 +518,48 @@ function computeBORCanalBreakdown(rows: CRow[]): BreakdownRow[] {
     delaiMoyen:e.dvs.length>0?Math.round(e.dvs.reduce((s,v)=>s+v,0)/e.dvs.length):null,
     valeurAchats:e.va, valeurVentes:e.vv, poidsTotal:e.poidsTotal,
   }));
+}
+
+// ── BOR: prix au gramme par titre × canal ─────────────────────────────────────
+interface BORTitreCanalRow {
+  titre: string; canal: string;
+  nbLignes: number; poidsTotal: number;
+  valeurAchatTotal: number; valeurVenteTotal: number; margeTotal: number;
+  prixAchatMoyen: number|null; tauxMargeMoyen: number;
+}
+// Fixed display order for titres
+const TITRE_ORDER = ['18 carats (750)','14 carats (585)','9 carats (375)','22 carats pièces (900)','22 carats (916)','24 carats (999)','Titre inconnu'];
+function computeBORPrixGrammeTable(rows: CRow[]): BORTitreCanalRow[] {
+  const groups = new Map<string,{titre:string;canal:string;pas:number[];pvs:number[];poids:number[]}>();
+  for (const r of rows) {
+    const titre = detectTitreOr(r.m);
+    const canal = detectBORCanal(r);
+    const key = `${titre}|||${canal}`;
+    if (!groups.has(key)) groups.set(key,{titre,canal,pas:[],pvs:[],poids:[]});
+    const g = groups.get(key)!;
+    g.pas.push(r.pa); g.pvs.push(r.pv);
+    const p = extractPoids(r.m); if (p) g.poids.push(p);
+  }
+  const result: BORTitreCanalRow[] = Array.from(groups.values()).map(g=>{
+    const poidsTotal = Math.round(g.poids.reduce((s,v)=>s+v,0)*100)/100;
+    const valeurAchatTotal = Math.round(g.pas.reduce((s,v)=>s+v,0));
+    const valeurVenteTotal = Math.round(g.pvs.reduce((s,v)=>s+v,0));
+    const margeTotal = valeurVenteTotal - valeurAchatTotal;
+    return {
+      titre:g.titre, canal:g.canal, nbLignes:g.pvs.length,
+      poidsTotal, valeurAchatTotal, valeurVenteTotal, margeTotal,
+      prixAchatMoyen: poidsTotal>0 ? Math.round(valeurAchatTotal/poidsTotal*100)/100 : null,
+      tauxMargeMoyen: valeurVenteTotal>0 ? Math.round(margeTotal/valeurVenteTotal*100) : 0,
+    };
+  });
+  // Sort: titre priority order, then Fonte before Vitrine
+  result.sort((a,b)=>{
+    const ti = TITRE_ORDER.indexOf(a.titre), tj = TITRE_ORDER.indexOf(b.titre);
+    const to = (ti<0?999:ti) - (tj<0?999:tj);
+    if (to!==0) return to;
+    return (a.canal==='Fonte'?0:1)-(b.canal==='Fonte'?0:1);
+  });
+  return result;
 }
 
 // ── filter + compute model stats ──────────────────────────────────────────────
@@ -842,6 +879,87 @@ function BORCanalTable({ rows }: { rows: BreakdownRow[]; }) {
   );
 }
 
+// ── BOR: prix au gramme par titre × canal ─────────────────────────────────────
+function BORPrixGrammeSection({ rows, cooksonStr }: { rows: CRow[]; cooksonStr: string }) {
+  const fmtK = (n: number) => n.toLocaleString('fr-FR');
+  const tableData = useMemo(()=>computeBORPrixGrammeTable(rows),[rows]);
+  const cooksonNum = parseFloat(cooksonStr.replace(',','.'));
+  const hasCookson = !isNaN(cooksonNum) && cooksonNum > 0;
+
+  // Synthetic 18k indicators
+  const r18F = tableData.find(r=>r.titre==='18 carats (750)'&&r.canal==='Fonte');
+  const r18V = tableData.find(r=>r.titre==='18 carats (750)'&&r.canal==='Vitrine');
+  const p18Total = (r18F?.poidsTotal??0)+(r18V?.poidsTotal??0);
+  const tauxFonte18 = p18Total>0&&(r18F?.poidsTotal??0)>0 ? Math.round((r18F!.poidsTotal)/p18Total*100) : null;
+  const diff18 = r18V?.prixAchatMoyen!=null&&r18F?.prixAchatMoyen!=null
+    ? Math.round((r18V.prixAchatMoyen-r18F.prixAchatMoyen)*100)/100 : null;
+
+  if (!tableData.length) return <p className="text-xs text-[#9CA3AF] italic">Aucune donnée titre/canal disponible.</p>;
+  return (
+    <div className="space-y-3">
+      <h4 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">💰 Analyse prix au gramme par titre et canal</h4>
+      <div className="overflow-x-auto rounded-lg border border-[#E0E0E0]">
+        <table className="text-xs w-full border-collapse">
+          <thead>
+            <tr>
+              <th className={TH}>Titre d&apos;or</th>
+              <th className={TH}>Canal</th>
+              <th className={THR}>Lignes</th>
+              <th className={THR}>Poids (g)</th>
+              <th className={THR}>Val. achat (€)</th>
+              <th className={THR}>Prix achat moy. (€/g)</th>
+              <th className={THR}>Val. vente (€)</th>
+              <th className={THR}>Marge (€)</th>
+              <th className={THR}>Taux marge (%)</th>
+              {hasCookson&&<th className={THR}>Écart vs Cookson</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {tableData.map((r,i)=>{
+              const is18Fonte = r.titre==='18 carats (750)'&&r.canal==='Fonte';
+              const ecart = hasCookson&&is18Fonte&&r.prixAchatMoyen!=null
+                ? Math.round((r.prixAchatMoyen-cooksonNum)/cooksonNum*100) : null;
+              return (
+                <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                  <td className={TD}><span className="font-medium">{r.titre}</span></td>
+                  <td className={TD}>{r.canal}</td>
+                  <td className={TDR}>{r.nbLignes}</td>
+                  <td className={TDR}>{r.poidsTotal>0?`${r.poidsTotal} g`:'—'}</td>
+                  <td className={TDR}>{fmtK(r.valeurAchatTotal)} €</td>
+                  <td className={TDR}>{r.prixAchatMoyen!=null?`${fmtK(r.prixAchatMoyen)} €/g`:'—'}</td>
+                  <td className={TDR}>{fmtK(r.valeurVenteTotal)} €</td>
+                  <td className={TDR}><span className={r.margeTotal<0?'text-red-600 font-semibold':''}>{fmtK(r.margeTotal)} €</span></td>
+                  <td className={TDR}>{r.tauxMargeMoyen}%</td>
+                  {hasCookson&&(
+                    <td className={TDR}>
+                      {ecart!=null?(
+                        <span className={`font-semibold ${ecart>0?'text-orange-600':ecart<0?'text-green-600':'text-[#1A1A1A]'}`}>
+                          {ecart>0?'+':''}{ecart}%
+                        </span>
+                      ):'—'}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {/* Synthetic indicators */}
+      {(tauxFonte18!=null||diff18!=null)&&(
+        <div className="flex flex-wrap gap-4 text-xs text-[#6B7280]">
+          {tauxFonte18!=null&&(
+            <span>Taux de fonte sur poids racheté (18k uniquement) : <strong className="text-[#1A1A1A]">{tauxFonte18}%</strong></span>
+          )}
+          {diff18!=null&&(
+            <span>Différentiel prix au gramme 18k vitrine vs fonte : <strong className={diff18>0?'text-orange-600':diff18<0?'text-blue-600':'text-[#1A1A1A]'}>{diff18>0?'+':''}{diff18} €/g</strong></span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── fallback labels for non-recognized items per family (for alert threshold) ──
 const FALLBACK_LABELS: Partial<Record<FamilyCode, string>> = {
   JCDR: 'Plateforme non détectée', JCON: 'Plateforme non détectée',
@@ -1009,12 +1127,18 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
 
       {/* Two-column families (JPOR, ITAB, BOPI, BMAR, BMON) */}
       {hasTwoCols && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <BreakdownTable
-            title={family==='JPOR'?'Par marque / famille console':family==='BOPI'?'Par type de produit':'Par marque'}
-            rows={breakdown1}
-          />
-          <BreakdownTable title="Par tranche de prix" rows={priceBreakdown} showDelai={false} />
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <BreakdownTable
+              title={family==='JPOR'?'Par marque / famille console':family==='BOPI'?'Par type de produit':'Par marque'}
+              rows={breakdown1}
+            />
+            <BreakdownTable title="Par tranche de prix" rows={priceBreakdown} showDelai={false} />
+          </div>
+          {/* BOPI: prix au gramme par titre × canal (même logique que BOR) */}
+          {family==='BOPI' && (
+            <BORPrixGrammeSection rows={effectiveRows} cooksonStr={cookson} />
+          )}
         </div>
       )}
 
@@ -1031,6 +1155,8 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
       {family==='BOR' && (
         <div className="space-y-5">
           <BreakdownTable title="💍 Par type de produit" rows={breakdown1} segmentLabel="Type" />
+          {/* Analyse prix au gramme par titre × canal — ACTION 4 */}
+          <BORPrixGrammeSection rows={effectiveRows} cooksonStr={cookson} />
           <BreakdownTable title="💰 Par tranche de prix" rows={priceBreakdown} showDelai={false} />
           <div className="space-y-2">
             <h4 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">🏪 Par canal vitrine vs fonte</h4>
