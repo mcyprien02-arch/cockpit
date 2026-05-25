@@ -5,6 +5,7 @@ import type { MagasinData, PAPAction } from '@/types';
 import { getAlerts, getCategoryScores } from '@/lib/kpis';
 import { getJournalContext } from '@/components/JournalAchatVente';
 import { getVisionContext } from '@/components/Objectifs';
+import { getBenchmarkContext } from '@/components/BenchmarkFinancier';
 
 interface Props {
   data: MagasinData;
@@ -164,11 +165,13 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
     if (!tpl) return;
     setSelectedTemplate(id);
     const base = tpl.build(data, actions);
-    const journalCtx = magasinNom ? getJournalContext(magasinNom) : '';
-    const visionCtx = magasinNom ? getVisionContext(magasinNom) : '';
+    const journalCtx    = magasinNom ? getJournalContext(magasinNom) : '';
+    const visionCtx     = magasinNom ? getVisionContext(magasinNom) : '';
+    const benchmarkCtx  = magasinNom ? getBenchmarkContext(magasinNom) : '';
     let built = base;
-    if (journalCtx) built += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
-    if (visionCtx) built += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
+    if (journalCtx)   built += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
+    if (visionCtx)    built += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
+    if (benchmarkCtx) built += `\n\nBENCHMARK FINANCIER :${benchmarkCtx}`;
     setPrompt(built);
     setCopied(false);
   }

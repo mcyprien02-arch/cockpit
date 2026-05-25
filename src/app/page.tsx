@@ -13,6 +13,7 @@ import AssistantIA from '@/components/AssistantIA';
 import Routines from '@/components/Routines';
 import JournalAchatVente from '@/components/JournalAchatVente';
 import BijouterieScreen from '@/components/BijouterieScreen';
+import BenchmarkFinancier from '@/components/BenchmarkFinancier';
 import { detectSpiral } from '@/lib/spiral';
 
 const TABS = [
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'plan',        label: "📋 Plan d'Action" },
   { id: 'journal',     label: '📊 Journal' },
   { id: 'bijouterie',  label: '💍 Bijouterie' },
+  { id: 'benchmark',   label: '📊 Benchmark' },
   { id: 'couverture',  label: '🗂 Gamme' },
   { id: 'routines',    label: '🔁 Routines' },
   { id: 'competences', label: '🎓 Compétences' },
@@ -158,6 +160,7 @@ export default function App() {
         {tab === 'plan'        && <PlanAction        data={data} actions={actions} onSave={saveActions} />}
         {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} onNavigateToBijouterie={() => setTab('bijouterie')} />}
         {tab === 'bijouterie'  && <BijouterieScreen  magasinNom={currentNom} onNavigateToJournal={() => setTab('journal')} />}
+        {tab === 'benchmark'   && <BenchmarkFinancier magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} />}
         {tab === 'routines'    && <Routines          magasinNom={currentNom} />}
         {tab === 'competences' && <Competences       magasinNom={currentNom} />}
