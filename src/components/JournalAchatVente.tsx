@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
 
-interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
+interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; }
 type Periode = 'all' | '3m' | '6m' | '12m';
 type FamilyCode = 'TLCE'|'JCON'|'JCDR'|'JPOR'|'BOR'|'BOPI'|'BMAR'|'BMON'|'IPOR'|'ITAB'|'OTHER';
 
@@ -1261,7 +1261,7 @@ function FamilyBreakdownSection({ rows, canalRows, family, cookson, onCooksonCha
 }
 
 // ── main component ────────────────────────────────────────────────────────────
-export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
+export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateToBijouterie }: Props) {
   const [stored,         setStored]         = useState<StoredImport|null>(null);
   const [periode,        setPeriode]        = useState<Periode>('all');
   const [grade,          setGrade]          = useState('all');
@@ -1644,6 +1644,23 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
             <button onClick={()=>{localStorage.removeItem(`journal_analyse_${magasinNom}`);setStored(null);setSelectedFamily('all');}} className="text-[#9CA3AF] hover:text-red-500 transition-colors">🗑 Effacer</button>
           </div>
           <p className="text-xs text-[#9CA3AF] italic">Seuls les modèles avec ≥ 3 ventes sont affichés dans les sections ci-dessous. La fiabilité est indiquée par un badge coloré.</p>
+
+          {/* Bijouterie module bandeau */}
+          {(selectedFamily==='BOR'||selectedFamily==='BOPI')&&onNavigateToBijouterie&&(
+            <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">💍</span>
+                <span className="text-sm font-semibold text-amber-800">Analyse Bijouterie spécialisée disponible</span>
+                <span className="text-xs text-amber-600">— titre d&apos;or, poids, croisement titre × canal</span>
+              </div>
+              <button
+                onClick={onNavigateToBijouterie}
+                className="text-xs font-bold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg px-3 py-1.5 transition-colors"
+              >
+                Ouvrir le module Bijouterie →
+              </button>
+            </div>
+          )}
 
           {/* Family-specific breakdown */}
           {selectedFamily!=='all'&&(
