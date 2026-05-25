@@ -13,6 +13,16 @@ type PosteKey =
 type MoyennesReseau = Record<PosteKey, Record<TrancheKey, number>>;
 type SortKey = 'ecart_euros'|'poste'|'ecart_pct';
 
+type SanteKey = 'taux_marge_net'|'charges_externes'|'masse_salariale'|'ebe'|'rcai';
+type SanteStatus = 'vert'|'orange'|'rouge';
+interface SanteIndicateur {
+  key: SanteKey;
+  label: string;
+  cible: string;
+  evaluate(v: number): SanteStatus;
+  papDesc(v: number): string;
+}
+
 interface DiagRow {
   key: PosteKey; label: string;
   montant: number; myPct: number;
@@ -70,6 +80,50 @@ const DEFAULT_MOYENNES: MoyennesReseau = {
   transports:          { centre_ville:0.52, '0_999':0.57, '1000_1199':0.56, '1200_1399':0.37, '1400_1599':0.41, '1600_1999':0.53, '2000_plus':0.55 },
 };
 
+// ── Santé financière globale — 5 indicateurs DAF 2022 ─────────────────────────
+
+const SANTE_INDICATEURS: SanteIndicateur[] = [
+  {
+    key: 'taux_marge_net',
+    label: 'Taux de marge net TTC',
+    cible: '38–39 %',
+    evaluate(v) { return v >= 38 ? 'vert' : v >= 36 ? 'orange' : 'rouge'; },
+    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF 38-39 %. Pistes : vérifier mix rayon, EasyPrice, gestion stock, ventes complémentaires, démarque.`; },
+  },
+  {
+    key: 'charges_externes',
+    label: 'Charges externes (loyer inclus) — % du CA HT',
+    cible: '12–13 %',
+    evaluate(v) { return v <= 13 ? 'vert' : v <= 14.9 ? 'orange' : 'rouge'; },
+    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF 12-13 %. Voir la section Détail charges externes ci-dessous pour identifier les postes en écart.`; },
+  },
+  {
+    key: 'masse_salariale',
+    label: 'Masse salariale (rémunération franchisé incluse) — % du CA HT',
+    cible: '≤ 15 %',
+    evaluate(v) { return v <= 15 ? 'vert' : v <= 17 ? 'orange' : 'rouge'; },
+    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ≤15 %. Référence : 1 salarié par tranche de 250 K€ de CA. Voir le module Simulateur équipe pour la modélisation.`; },
+  },
+  {
+    key: 'ebe',
+    label: 'EBE — % du CA HT',
+    cible: '≥ 8 %',
+    evaluate(v) { return v >= 8 ? 'vert' : v >= 5 ? 'orange' : 'rouge'; },
+    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ≥8 %. L'EBE dépend directement du taux de marge net, des charges externes et de la masse salariale. Identifier le levier prioritaire.`; },
+  },
+  {
+    key: 'rcai',
+    label: 'Résultat courant avant impôts (RCAI) — % du CA HT',
+    cible: '≥ 5 %',
+    evaluate(v) { return v >= 5 ? 'vert' : v >= 3 ? 'orange' : 'rouge'; },
+    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ≥5 %. Le RCAI intègre charges financières et amortissements. Vérifier l'endettement et le niveau d'amortissement.`; },
+  },
+];
+
+const EMPTY_SANTE: Record<SanteKey, string> = {
+  taux_marge_net: '', charges_externes: '', masse_salariale: '', ebe: '', rcai: '',
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(n: number): string { return Math.round(n).toLocaleString('fr-FR'); }
@@ -104,6 +158,20 @@ function statusColor(s: DiagRow['status']): string {
   return 'text-[#6B7280]';
 }
 
+function santeBg(s: SanteStatus|undefined): string {
+  if (s === 'rouge')  return 'bg-red-50';
+  if (s === 'orange') return 'bg-orange-50';
+  if (s === 'vert')   return 'bg-green-50';
+  return 'bg-white';
+}
+
+function santeEmoji(s: SanteStatus|undefined): string {
+  if (s === 'rouge')  return '🔴';
+  if (s === 'orange') return '🟠';
+  if (s === 'vert')   return '✅';
+  return '—';
+}
+
 function emptyCharges(): Record<PosteKey, string> {
   const o: Partial<Record<PosteKey, string>> = {};
   POSTES.forEach(p => { o[p.key] = ''; });
@@ -114,16 +182,41 @@ function emptyCharges(): Record<PosteKey, string> {
 
 export function getBenchmarkContext(magasinNom: string): string {
   try {
+    let ctx = '';
+
+    // Santé globale context
+    const santeRaw = localStorage.getItem(`benchmark_sante_globale_${magasinNom}`);
+    if (santeRaw) {
+      const sd = JSON.parse(santeRaw) as Record<SanteKey, number>;
+      const filled = SANTE_INDICATEURS.filter(ind => sd[ind.key] != null && sd[ind.key] > 0);
+      if (filled.length > 0) {
+        let nbVert = 0, nbOrange = 0, nbRouge = 0;
+        ctx += '\nSanté financière globale du magasin :';
+        filled.forEach(ind => {
+          const v = sd[ind.key];
+          const st = ind.evaluate(v);
+          if (st === 'vert')   nbVert++;
+          if (st === 'orange') nbOrange++;
+          if (st === 'rouge')  nbRouge++;
+          ctx += `\n${ind.label} : ${v} % (cible DAF ${ind.cible}, statut ${st})`;
+        });
+        ctx += `\nSynthèse : ${nbVert} vert${nbVert > 1 ? 's' : ''}, ${nbOrange} orange${nbOrange > 1 ? 's' : ''}, ${nbRouge} rouge${nbRouge > 1 ? 's' : ''}`;
+      }
+    }
+
+    // Charges benchmark context
     const raw = localStorage.getItem(`benchmark_franchise_${magasinNom}`);
-    if (!raw) return '';
+    if (!raw) return ctx;
     const d = JSON.parse(raw) as { ca_ht?: number; centre_ville?: boolean; charges?: Record<string, number> };
-    if (!d.ca_ht) return '';
+    if (!d.ca_ht) return ctx;
     const charges = d.charges ?? {};
     const filledCount = Object.values(charges).filter(v => v > 0).length;
-    if (filledCount < 5) return '';
+    if (filledCount < 5) return ctx;
 
     const moyennesRaw = localStorage.getItem('benchmark_moyennes_reseau');
-    const moyennes: MoyennesReseau = moyennesRaw ? { ...DEFAULT_MOYENNES, ...(JSON.parse(moyennesRaw) as Partial<MoyennesReseau>) } : DEFAULT_MOYENNES;
+    const moyennes: MoyennesReseau = moyennesRaw
+      ? { ...DEFAULT_MOYENNES, ...(JSON.parse(moyennesRaw) as Partial<MoyennesReseau>) }
+      : DEFAULT_MOYENNES;
 
     const tranche = detectTranche(d.ca_ht, !!d.centre_ville);
     const rows = POSTES.map(p => {
@@ -138,7 +231,7 @@ export function getBenchmarkContext(magasinNom: string): string {
     const top3 = rows.slice(0, 3);
     const potentiel = top3.reduce((s, r) => s + r.ecartEuros, 0);
 
-    let ctx = `\nBenchmark financier :`;
+    ctx += `\nBenchmark financier :`;
     ctx += `\nCA HT : ${fmt(d.ca_ht)} €`;
     ctx += `\nTranche de référence : ${getTrancheLabel(tranche)}`;
     if (top3.length > 0) {
@@ -155,6 +248,13 @@ export function getBenchmarkContext(magasinNom: string): string {
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
 export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
+  // ── Santé globale state
+  const [sante, setSante]             = useState<Record<SanteKey, string>>(EMPTY_SANTE);
+  const [showSante, setShowSante]     = useState(true);
+  const [santeAdded, setSanteAdded]   = useState<Set<SanteKey>>(new Set());
+  const [toastMsg, setToastMsg]       = useState('');
+
+  // ── Charges benchmark state
   const [moyennes, setMoyennes]               = useState<MoyennesReseau>(DEFAULT_MOYENNES);
   const [showSection1, setShowSection1]       = useState(false);
   const [caHTStr, setCaHTStr]                 = useState('');
@@ -165,8 +265,19 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [mounted, setMounted]                 = useState(false);
 
-  // Load from localStorage on mount
+  // ── Load from localStorage on mount ────────────────────────────────────────
   useEffect(() => {
+    try {
+      const sRaw = localStorage.getItem(`benchmark_sante_globale_${magasinNom}`);
+      if (sRaw) {
+        const sd = JSON.parse(sRaw) as Record<SanteKey, number>;
+        const filled = { ...EMPTY_SANTE };
+        (Object.keys(sd) as SanteKey[]).forEach(k => {
+          if (sd[k] != null && sd[k] > 0) filled[k] = String(sd[k]);
+        });
+        setSante(filled);
+      }
+    } catch { /* ignore */ }
     try {
       const mRaw = localStorage.getItem('benchmark_moyennes_reseau');
       if (mRaw) setMoyennes({ ...DEFAULT_MOYENNES, ...(JSON.parse(mRaw) as Partial<MoyennesReseau>) });
@@ -175,8 +286,8 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
       const fRaw = localStorage.getItem(`benchmark_franchise_${magasinNom}`);
       if (fRaw) {
         const d = JSON.parse(fRaw) as { ca_ht?: number; centre_ville?: boolean; charges?: Record<string, number> };
-        if (d.ca_ht)            setCaHTStr(String(d.ca_ht));
-        if (d.centre_ville)     setCentreVille(!!d.centre_ville);
+        if (d.ca_ht)        setCaHTStr(String(d.ca_ht));
+        if (d.centre_ville) setCentreVille(!!d.centre_ville);
         if (d.charges) {
           const filled = emptyCharges();
           POSTES.forEach(p => {
@@ -189,7 +300,15 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
     setMounted(true);
   }, [magasinNom]);
 
-  // Save franchise data whenever it changes
+  // ── Save sante whenever it changes ─────────────────────────────────────────
+  useEffect(() => {
+    if (!mounted) return;
+    const num: Record<string, number> = {};
+    (Object.keys(sante) as SanteKey[]).forEach(k => { num[k] = parseFloat(sante[k].replace(',', '.')) || 0; });
+    localStorage.setItem(`benchmark_sante_globale_${magasinNom}`, JSON.stringify(num));
+  }, [mounted, magasinNom, sante]);
+
+  // ── Save franchise data whenever it changes ─────────────────────────────────
   useEffect(() => {
     if (!mounted) return;
     const ca = parseFloat(caHTStr) || 0;
@@ -198,14 +317,35 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
     localStorage.setItem(`benchmark_franchise_${magasinNom}`, JSON.stringify({ ca_ht: ca, centre_ville: centreVille, charges: chargesNum }));
   }, [mounted, magasinNom, caHTStr, centreVille, charges]);
 
-  // Save moyennes whenever they change
+  // ── Save moyennes whenever they change ──────────────────────────────────────
   useEffect(() => {
     if (!mounted) return;
     localStorage.setItem('benchmark_moyennes_reseau', JSON.stringify(moyennes));
   }, [mounted, moyennes]);
 
+  // ── Computed ────────────────────────────────────────────────────────────────
+
+  const santeStatuses = useMemo((): Partial<Record<SanteKey, SanteStatus>> => {
+    const result: Partial<Record<SanteKey, SanteStatus>> = {};
+    SANTE_INDICATEURS.forEach(ind => {
+      const v = parseFloat(sante[ind.key].replace(',', '.'));
+      if (!isNaN(v)) result[ind.key] = ind.evaluate(v);
+    });
+    return result;
+  }, [sante]);
+
+  const santeSummary = useMemo(() => {
+    const statuses = Object.values(santeStatuses);
+    return {
+      nbVert:   statuses.filter(s => s === 'vert').length,
+      nbOrange: statuses.filter(s => s === 'orange').length,
+      nbRouge:  statuses.filter(s => s === 'rouge').length,
+      nbSaisied: statuses.length,
+    };
+  }, [santeStatuses]);
+
   const caHT = parseFloat(caHTStr) || 0;
-  const trancheKey = useMemo(() => detectTranche(caHT, centreVille), [caHT, centreVille]);
+  const trancheKey  = useMemo(() => detectTranche(caHT, centreVille), [caHT, centreVille]);
   const trancheLabel = getTrancheLabel(trancheKey);
 
   const diagnostic = useMemo((): DiagRow[] => {
@@ -243,6 +383,40 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
 
   const potentielTotal = useMemo(() => priorities.reduce((s, r) => s + r.ecartEuros, 0), [priorities]);
 
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+
+  function showToast(msg: string) {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), 3000);
+  }
+
+  function updateSante(key: SanteKey, val: string) {
+    setSante(prev => ({ ...prev, [key]: val }));
+  }
+
+  function santeAddToPAP(ind: SanteIndicateur) {
+    if (!onAddAction) return;
+    const v = parseFloat(sante[ind.key].replace(',', '.')) || 0;
+    const today = new Date();
+    const echeance = new Date(today.getFullYear(), today.getMonth() + 6, today.getDate())
+      .toISOString().split('T')[0];
+    const action: PAPAction = {
+      id: String(Date.now()),
+      titre: `Améliorer ${ind.label}`,
+      axe: 'Transverse',
+      pilote: '',
+      copilote: '',
+      description: ind.papDesc(v),
+      echeance,
+      priorite: 1,
+      gain: 0,
+      statut: 'À faire',
+    };
+    onAddAction(action);
+    setSanteAdded(prev => new Set(prev).add(ind.key));
+    showToast('✅ Action ajoutée au Plan d\'Action');
+  }
+
   function updateMoyenne(poste: PosteKey, tranche: TrancheKey, val: string) {
     const n = parseFloat(val.replace(',', '.')) || 0;
     setMoyennes(prev => ({ ...prev, [poste]: { ...prev[poste], [tranche]: n } }));
@@ -272,8 +446,11 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
   }
 
   function clearAll() {
+    localStorage.removeItem(`benchmark_sante_globale_${magasinNom}`);
     localStorage.removeItem('benchmark_moyennes_reseau');
     localStorage.removeItem(`benchmark_franchise_${magasinNom}`);
+    setSante({ ...EMPTY_SANTE });
+    setSanteAdded(new Set());
     setMoyennes(DEFAULT_MOYENNES);
     setCaHTStr('');
     setCentreVille(false);
@@ -282,7 +459,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
     setShowClearConfirm(false);
   }
 
-  // ── Shared table styles ────────────────────────────────────────────────────
+  // ── Shared table styles ──────────────────────────────────────────────────────
   const TH  = 'px-3 py-2 text-left text-xs font-semibold text-[#6B7280] bg-[#F9FAFB] border-b border-[#E0E0E0]';
   const THR = 'px-3 py-2 text-right text-xs font-semibold text-[#6B7280] bg-[#F9FAFB] border-b border-[#E0E0E0]';
   const TD  = 'px-3 py-2 text-xs text-[#1A1A1A] border-b border-[#F0F0F0]';
@@ -291,10 +468,17 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
   return (
     <div className="space-y-5">
 
+      {/* Toast */}
+      {toastMsg && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1A1A1A] text-white text-sm font-medium px-5 py-3 rounded-xl shadow-lg pointer-events-none">
+          {toastMsg}
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <h2 className="text-lg font-bold text-[#1A1A1A]">📊 Benchmark financier</h2>
-        <p className="text-sm text-[#6B7280] mt-0.5">Positionnez vos charges vs les moyennes réseau de votre tranche de CA.</p>
+        <p className="text-sm text-[#6B7280] mt-0.5">Positionnez vos indicateurs financiers et vos charges vs les références DAF Easycash.</p>
       </div>
 
       {/* Confidentialité bandeau */}
@@ -305,7 +489,135 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
         </p>
       </div>
 
-      {/* ── SECTION 1 : Configuration moyennes réseau ── */}
+      {/* ══ SECTION 0 : Santé financière globale ══ */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-5 py-4 text-left"
+          onClick={() => setShowSante(v => !v)}
+        >
+          <div>
+            <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Santé financière globale</h3>
+            <p className="text-xs text-[#6B7280] mt-0.5">Les 5 indicateurs cibles de la DAF Easycash 2022 — votre tableau de bord macro</p>
+          </div>
+          <div className="flex items-center gap-3 ml-4 shrink-0">
+            {santeSummary.nbSaisied > 0 && (
+              <span className="text-xs text-[#6B7280]">
+                {santeSummary.nbVert > 0 && <span className="mr-1">✅ {santeSummary.nbVert}</span>}
+                {santeSummary.nbOrange > 0 && <span className="mr-1">🟠 {santeSummary.nbOrange}</span>}
+                {santeSummary.nbRouge > 0 && <span className="mr-1">🔴 {santeSummary.nbRouge}</span>}
+              </span>
+            )}
+            <span className="text-[#6B7280] text-sm">{showSante ? '▲' : '▼'}</span>
+          </div>
+        </button>
+
+        {showSante && (
+          <div className="px-5 pb-5 space-y-4">
+
+            {/* Saisie table */}
+            <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
+              <table className="text-xs w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className={`${TH} min-w-[280px]`}>Indicateur</th>
+                    <th className={THR}>Ma valeur (%)</th>
+                    <th className={THR}>Cible DAF Easycash</th>
+                    <th className={THR}>Statut</th>
+                    {onAddAction && <th className={THR}>Action</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {SANTE_INDICATEURS.map((ind, i) => {
+                    const st = santeStatuses[ind.key];
+                    const rowBg = st ? santeBg(st) : (i % 2 === 0 ? 'bg-white' : 'bg-[#FAFAFA]');
+                    const alreadyAdded = santeAdded.has(ind.key);
+                    return (
+                      <tr key={ind.key} className={rowBg}>
+                        <td className={TD}>{ind.label}</td>
+                        <td className="px-2 py-1.5 border-b border-[#F0F0F0]">
+                          <div className="flex items-center justify-end gap-1">
+                            <input
+                              type="number"
+                              step="0.1"
+                              placeholder="ex : 37,5"
+                              value={sante[ind.key]}
+                              onChange={e => updateSante(ind.key, e.target.value)}
+                              className="w-20 text-xs text-right border border-[#E0E0E0] rounded px-2 py-0.5 focus:outline-none focus:border-[#E30613]"
+                            />
+                            <span className="text-[#9CA3AF]">%</span>
+                          </div>
+                        </td>
+                        <td className={TDR + ' font-medium text-[#374151]'}>{ind.cible}</td>
+                        <td className={TDR}>
+                          {st ? (
+                            <span className="text-base">{santeEmoji(st)}</span>
+                          ) : (
+                            <span className="text-[#D1D5DB]">—</span>
+                          )}
+                        </td>
+                        {onAddAction && (
+                          <td className={TDR}>
+                            {st === 'rouge' || st === 'orange' ? (
+                              alreadyAdded ? (
+                                <span className="text-xs text-green-700 font-semibold">✓ Ajouté</span>
+                              ) : (
+                                <button
+                                  onClick={() => santeAddToPAP(ind)}
+                                  className={`text-xs font-semibold rounded-full px-2.5 py-1 transition-colors whitespace-nowrap ${st === 'rouge' ? 'text-white bg-[#E30613] hover:bg-red-700' : 'text-orange-700 bg-orange-100 hover:bg-orange-200 border border-orange-300'}`}
+                                >
+                                  + PAP
+                                </button>
+                              )
+                            ) : null}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Synthèse automatique */}
+            {santeSummary.nbSaisied > 0 && (
+              <div className={`rounded-xl border px-4 py-3 space-y-2 ${santeSummary.nbRouge > 0 ? 'bg-red-50 border-red-200' : santeSummary.nbOrange > 0 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
+                <p className="text-sm font-semibold text-[#1A1A1A]">📊 Synthèse de ma santé financière :</p>
+                <p className="text-sm text-[#374151]">
+                  Sur <strong>{santeSummary.nbSaisied}</strong> indicateur{santeSummary.nbSaisied > 1 ? 's' : ''} cible{santeSummary.nbSaisied > 1 ? 's' : ''}, vous êtes :
+                </p>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  {santeSummary.nbVert > 0   && <span className="font-semibold text-green-700">✅ Au vert sur {santeSummary.nbVert} indicateur{santeSummary.nbVert > 1 ? 's' : ''}</span>}
+                  {santeSummary.nbOrange > 0 && <span className="font-semibold text-orange-600">🟠 En alerte orange sur {santeSummary.nbOrange} indicateur{santeSummary.nbOrange > 1 ? 's' : ''}</span>}
+                  {santeSummary.nbRouge > 0  && <span className="font-semibold text-red-700">🔴 En alerte rouge sur {santeSummary.nbRouge} indicateur{santeSummary.nbRouge > 1 ? 's' : ''}</span>}
+                </div>
+                {santeSummary.nbRouge > 0 && (
+                  <p className="text-xs text-red-700 font-medium pt-1">
+                    ⚠️ Les indicateurs en rouge sont critiques pour la rentabilité de votre magasin. Travaillez-les en priorité avec votre animateur.
+                  </p>
+                )}
+                {santeSummary.nbRouge === 0 && santeSummary.nbOrange === 0 && santeSummary.nbVert === santeSummary.nbSaisied && santeSummary.nbSaisied === 5 && (
+                  <p className="text-sm text-green-800 font-semibold">🎉 Excellente maîtrise. Tous vos indicateurs sont alignés avec les cibles DAF Easycash.</p>
+                )}
+              </div>
+            )}
+
+            {/* Références DAF 2022 */}
+            <div className="bg-[#F9FAFB] border border-[#E0E0E0] rounded-xl px-4 py-3 space-y-1.5">
+              <p className="text-xs font-semibold text-[#374151]">📋 Références DAF Easycash 2022 (à titre indicatif) :</p>
+              <ul className="text-xs text-[#6B7280] space-y-0.5 list-none">
+                <li>• 1 salarié par tranche de 250 K€ de CA annuel (référence ETP)</li>
+                <li>• Stock total recommandé : &lt; 250 K€ pour la plupart des magasins</li>
+                <li>• Stock âgé : &lt; 30 % du stock total (seuil d&apos;alerte)</li>
+                <li>• Démarque (connue + inconnue) : &lt; 3 % du CA annuel</li>
+                <li>• CA TTC moyen réseau 2022 : 2 077 349 € — Médiane : 1 921 295 €</li>
+                <li>• Marge brute HT moyenne : 34,3 % — Médiane : 33,5 %</li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ══ SECTION 1 : Configuration moyennes réseau ══ */}
       <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
         <button
           className="w-full flex items-center justify-between px-5 py-4 text-left"
@@ -362,7 +674,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
         )}
       </div>
 
-      {/* ── SECTION 2 : Saisie franchisé ── */}
+      {/* ══ SECTION 2 : Saisie franchisé ══ */}
       <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-5">
         <div>
           <h3 className="text-sm font-bold text-[#1A1A1A]">💼 Mes données financières</h3>
@@ -452,7 +764,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
         </div>
       </div>
 
-      {/* ── SECTION 3 : Diagnostic comparatif ── */}
+      {/* ══ SECTION 3 : Diagnostic comparatif ══ */}
       {caHT > 0 && (
         <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-4">
           <div>
@@ -536,7 +848,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
         </div>
       )}
 
-      {/* ── SECTION 4 : Synthèse priorités ── */}
+      {/* ══ SECTION 4 : Synthèse priorités ══ */}
       {caHT > 0 && nbSaisied >= 3 && (
         <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-4">
           <div>
@@ -550,37 +862,35 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
               <p className="text-sm text-green-800 font-medium">Toutes vos charges sont sous la moyenne de votre tranche. Excellente maîtrise.</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              <div className="bg-red-50 border border-red-100 rounded-xl p-4 space-y-3">
-                <p className="text-sm font-semibold text-[#1A1A1A]">
-                  Vos {priorities.length} priorité{priorities.length > 1 ? 's' : ''} d&apos;optimisation pour rejoindre la moyenne de votre tranche :
-                </p>
-                {priorities.map((r, idx) => (
-                  <div key={r.key} className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-[#374151]">
-                      <span className="font-bold text-[#E30613]">{idx + 1}.</span>{' '}
-                      <span className="font-semibold">{r.label}</span>
-                      <span className="text-[#6B7280]"> : −{fmt(r.ecartEuros)} € possibles</span>
-                    </p>
-                    {onAddAction && (
-                      papAdded.has(r.key) ? (
-                        <span className="text-xs text-green-700 font-semibold bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap">✓ Ajouté au PAP</span>
-                      ) : (
-                        <button
-                          onClick={() => addToPAP(r)}
-                          className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors"
-                        >
-                          + Ajouter au PAP
-                        </button>
-                      )
-                    )}
-                  </div>
-                ))}
-                <div className="pt-2 border-t border-red-100">
-                  <p className="text-sm font-bold text-[#E30613]">
-                    Potentiel total identifié : {fmt(potentielTotal)} € de marge récupérable
+            <div className="bg-red-50 border border-red-100 rounded-xl p-4 space-y-3">
+              <p className="text-sm font-semibold text-[#1A1A1A]">
+                Vos {priorities.length} priorité{priorities.length > 1 ? 's' : ''} d&apos;optimisation pour rejoindre la moyenne de votre tranche :
+              </p>
+              {priorities.map((r, idx) => (
+                <div key={r.key} className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-[#374151]">
+                    <span className="font-bold text-[#E30613]">{idx + 1}.</span>{' '}
+                    <span className="font-semibold">{r.label}</span>
+                    <span className="text-[#6B7280]"> : −{fmt(r.ecartEuros)} € possibles</span>
                   </p>
+                  {onAddAction && (
+                    papAdded.has(r.key) ? (
+                      <span className="text-xs text-green-700 font-semibold bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap">✓ Ajouté au PAP</span>
+                    ) : (
+                      <button
+                        onClick={() => addToPAP(r)}
+                        className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors"
+                      >
+                        + Ajouter au PAP
+                      </button>
+                    )
+                  )}
                 </div>
+              ))}
+              <div className="pt-2 border-t border-red-100">
+                <p className="text-sm font-bold text-[#E30613]">
+                  Potentiel total identifié : {fmt(potentielTotal)} € de marge récupérable
+                </p>
               </div>
             </div>
           )}
