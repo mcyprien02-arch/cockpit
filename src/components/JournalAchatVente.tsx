@@ -330,7 +330,7 @@ function getSeuilDelaiPepite(sousfamille: string): number {
   if (!sousfamille) return 30;
   const sf = sousfamille.toLowerCase();
   if (sf.includes('bijouterie or')||sf.includes('plaqu')||sf.includes('pierres')||sf.includes('bopi')||
-      sf.includes('maroquinerie')||sf.includes('montre')) return 60;
+      sf.includes('maroquinerie')||sf.includes('montre')) return 90;
   return 30;
 }
 
@@ -352,13 +352,9 @@ function detectBijouType(libelle: string): string {
 }
 
 function detectBORCanal(r: CRow): string {
-  // Grade D → toujours Fonte (destiné à la refonte)
+  // Seul critère : Grade D = Fonte (destiné à la refonte)
+  // Tout le reste (A / B / C, quel que soit l'acheteur) = Vitrine
   if (r.g === 'D') return 'Fonte';
-  // Client acheteur = Change Vivienne → Fonte
-  const an = (r.an ?? '').toUpperCase();
-  const ap = (r.ap ?? '').toUpperCase();
-  const combined = norm(an + ' ' + ap);
-  if (combined.includes('changevivienne')) return 'Fonte';
   return 'Vitrine';
 }
 
@@ -385,11 +381,26 @@ function detectTitreOr(libelle: string): string {
 }
 
 // Multi-word brands listed first to avoid partial matches
+// Multi-word brands listed first to avoid partial matches (e.g. "MICHAEL KORS" before "KORS")
 const BMAR_BRANDS = [
-  'LOUIS VUITTON','MICHAEL KORS','CHRISTIAN LACROIX','CALVIN KLEIN','HUGO BOSS',
-  'ARTHUR ASTON','DAVID JONES','PIERRE CARDIN','LE TANNEUR','FIRENZE',
+  // Luxury
+  'LOUIS VUITTON','HERMES','CHANEL','DIOR','GUCCI','PRADA','FENDI','BOTTEGA','SAINT LAURENT',
+  'VALENTINO','BALENCIAGA','GIVENCHY','CARTIER','BURBERRY','YSL','YVES SAINT LAURENT',
+  // Premium
+  'MICHAEL KORS','MICKAEL KORS','CHRISTIAN LACROIX','KARL LAGERFELD','EMPORIO ARMANI',
+  'HUGO BOSS','TOMMY HILFIGER','JEAN PAUL GAULTIER','TED LAPIDUS','GERARD DAREL',
+  'CALVIN KLEIN','PIERRE CARDIN','CLAUDE MONTANA',
+  // Mid-range
+  'LONGCHAMP','FURLA','COACH','NAT ET NIN','NAT NIN','MAC DOUGLAS',
+  'LE TANNEUR','TANNEUR','LIU JO','LIUJO','MAJE','SANDRO','CLAUDIE PIERLOT',
+  'ARTHUR ASTON','DAVID JONES','FIRENZE ARTEGIANI','FIRENZE',
   'LANCEL','LACOSTE','DESIGUAL','LANCASTER','MANOUKIAN','TORRENTE',
-  'FOSSIL','ARMANI','CÉLINE','CELINE','GUESS','DDP',
+  'FOSSIL','ARMANI','CÉLINE','CELINE','GUESS','DDP','LAGERFELD',
+  'REPETTO','HACKETT','AGATHA','MORGAN','ELLE',
+  // Travel/casual
+  'SAMSONITE','DELSEY','EASTPAK','KIPLING','HEDGREN',
+  'HILFIGER','LACROIX','LAPIDUS','DAREL','BOSS','JPG',
+  'COMPTOIR DES COTONNIERS','MONOPRIX','DOUGLAS','VUITTON',
 ];
 function detectBMARBrand(libelle: string): string {
   const u=libelle.toUpperCase();
@@ -399,9 +410,22 @@ function detectBMARBrand(libelle: string): string {
 
 // Multi-word brands listed first to avoid partial matches
 const BMON_BRANDS = [
-  'DANIEL WELLINGTON','PIERRE LANNIER','MICHAEL KORS','TAG HEUER','ICE WATCH',
-  'HAMILTON','LONGINES','BREITLING','TISSOT','SWATCH','FOSSIL','GUESS','SEIKO',
-  'CASIO','ROLEX','OMEGA','BULOVA','CITIZEN','FESTINA','CLUSE','LOTUS',
+  // Luxury / high-end
+  'AUDEMARS PIGUET','PATEK PHILIPPE','JAEGER LECOULTRE','BAUME ET MERCIER','JEAN PAUL GAULTIER',
+  'MICHEL HERBELIN','TAG HEUER','APPLE WATCH','ICE WATCH','DANIEL WELLINGTON','PIERRE LANNIER',
+  'MICHAEL KORS','MICKAEL KORS','EMPORIO ARMANI','HUGO BOSS','CALVIN KLEIN',
+  // Premium
+  'BREITLING','LONGINES','HAMILTON','PANERAI','HUBLOT','ZENITH','RADO','YEMA','IWC',
+  'OMEGA','ROLEX','TISSOT','SEIKO','CITIZEN','BULOVA','ORIENT','TIMEX','EDOX',
+  'VICTORINOX','MONDAINE','SUUNTO','GARMIN','FITBIT','AMAZFIT','POLAR',
+  // Mid-range
+  'SWATCH','FOSSIL','GUESS','CASIO','FESTINA','CLUSE','LOTUS','LIP',
+  'MORELLATO','MAUBOUSSIN','CHAUMET','ZADIG','BERING','MAVERICK','KRONOS','WENGER',
+  'DIESEL','NIXON','INVICTA','ESPRIT','LACOSTE','HERBELIN',
+  // Sport/tech
+  'SAMSUNG','HUAWEI','XIAOMI','APPLE',
+  // Fashion
+  'FILA','PUMA','ADIDAS','NIKE','BOSS','ARMANI','LANNIER',
 ];
 function detectBMONBrand(libelle: string): string {
   const u=libelle.toUpperCase();
@@ -696,8 +720,8 @@ export function getJournalContext(magasinNom: string): string {
     const fmtE=(v:number)=>`${v>0?'+':''}${v}%`;
     const period=stored.dateMin&&stored.dateMax?`du ${fmtD(stored.dateMin)} au ${fmtD(stored.dateMax)}`:'période inconnue';
     const MIN3=(s:ModelStats)=>s.qteVendue>=3;
-    const rotSet=new Set(stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<30).map(s=>s.modele.toLowerCase()));
-    const topRot=stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<30).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999)).slice(0,5).map(r=>`${r.modele} (${r.delaiMoyen}j)`).join(', ');
+    const rotSet=new Set(stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).map(s=>s.modele.toLowerCase()));
+    const topRot=stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999)).slice(0,5).map(r=>`${r.modele} (${r.delaiMoyen}j)`).join(', ');
     const topMarge=[...stats].filter(MIN3).sort((a,b)=>b.margeTotal-a.margeTotal).slice(0,5).map(m=>`${m.modele} (${m.margeTotal.toLocaleString('fr-FR')}€)`).join(', ');
     const pepites=[...stats].filter(MIN3).sort((a,b)=>b.margeTotal-a.margeTotal).filter(s=>rotSet.has(s.modele.toLowerCase())).slice(0,3).map(p=>p.modele).join(', ');
     const perte=stats.filter(s=>MIN3(s)&&s.margeTotal<0).sort((a,b)=>a.margeTotal-b.margeTotal).slice(0,3).map(t=>t.modele).join(', ');
@@ -1417,8 +1441,14 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
   const stats=useMemo(()=>computeStats(filteredRows),[filteredRows]);
   const MIN3=(s: ModelStats)=>s.qteVendue>=3;
 
-  // Per-model pepite threshold: 60j for jewelry/maro/watches, 30j for tech
-  const topRotations=useMemo(()=>stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999)),[stats]);
+  // Per-model pépite threshold: 90j for jewelry/maro/watches, 30j for tech
+  const topRotations=useMemo(()=>{
+    if (stats.length>0) {
+      const sample=stats[0];
+      console.log('[DEBUG pépites]',{famille:sample.famille,seuil_applique:getSeuilDelaiPepite(sample.famille)});
+    }
+    return stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999));
+  },[stats]);
   const topMarge=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.margeTotal-a.margeTotal).slice(0,20),[stats]);
   const topVolume=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.qteVendue-a.qteVendue).slice(0,15),[stats]);
   const coherenceEP=useMemo(()=>stats.filter(s=>MIN3(s)&&s.ecartEP!==null&&Math.abs(s.ecartEP)>10).sort((a,b)=>Math.abs(b.ecartEP!)-Math.abs(a.ecartEP!)),[stats]);
@@ -1659,7 +1689,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
 
           {/* Top Rotations */}
           <SectionTable
-            title="⚡ TOP ROTATIONS (délai moyen < 30 jours)"
+            title={`⚡ TOP ROTATIONS (délai moyen < ${selectedFamily!=='all'&&['BOR','BOPI','BMAR','BMON'].includes(selectedFamily)?'90':'30'} jours)`}
             cnt={`${topRotations.length} modèle${topRotations.length!==1?'s':''} · min 3 ventes`}
             rows={topRotations}
             cols={[
@@ -1671,7 +1701,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
               {label:'Marge totale',right:true,render:s=>`${fmtK(s.margeTotal)} €`},
               {label:'Investissement type',right:true,render:s=>s.paMoyen>0?<span className="text-[#E30613] font-semibold">{fmtK(s.paMoyen)} € / u</span>:'—'},
             ]}
-            emptyMsg="Aucun modèle (≥ 3 ventes) avec délai moyen < 30 jours sur cette période."
+            emptyMsg={`Aucun modèle (≥ 3 ventes) avec délai moyen < ${selectedFamily!=='all'&&['BOR','BOPI','BMAR','BMON'].includes(selectedFamily)?'90':'30'} jours sur cette période.`}
             extra={topRotations.length>0&&investTotal>0?(
               <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg px-4 py-2.5 text-sm">
                 <span className="font-semibold text-[#E30613]">💡 Investissement total pour 1 unité de chaque top rotation :</span>
