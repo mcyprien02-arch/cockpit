@@ -11,27 +11,42 @@ interface Props {
 
 // ── Compact row after parsing ─────────────────────────────────────────────────
 interface BijRow {
-  lib: string;        // best libellé (achat ou fichetech)
-  sf: string;         // sous-famille
-  g: string;          // grade A/B/C/D
-  pa: number;         // prix achat
-  pv: number;         // prix vente
-  poids: number|null; // poids extrait (g), null si non trouvé
-  titre: string;      // ex. '18 carats (750)' ou 'Titre inconnu'
-  canal: string;      // 'Fonte' (grade D) ou 'Vitrine'
+  lib: string;            // best libellé
+  sf: string;             // sous-famille
+  g: string;              // grade A/B/C/D
+  pa: number;             // prix achat
+  pv: number;             // prix vente
+  poids: number|null;     // poids (g), null si non trouvé
+  titre: string;          // '18 carats (750)' etc.
+  canal: string;          // 'Fonte' | 'Vitrine'
+  famCode: 'BOR'|'BOPI';  // détection famille
+  acheteur: string;       // collaborateur/acheteur
+  dv: number|null;        // délai de vente (jours)
 }
 
-// ── Computed aggregation row ──────────────────────────────────────────────────
+// ── Aggregation row ───────────────────────────────────────────────────────────
 interface AggRow {
-  label: string;
-  qty: number;
-  poidsTotal: number;
+  label: string; qty: number; poidsTotal: number;
   va: number; vv: number; marge: number;
-  prixMoyen: number|null;
-  tauxMarge: number;
+  prixMoyen: number|null; tauxMarge: number;
 }
 
-// ── Column aliases (alias-priority aware) ─────────────────────────────────────
+// ── Acheteur performance row ──────────────────────────────────────────────────
+interface AcheteurRow {
+  nom: string; nbAchats: number; poidsTotal: number;
+  va: number; prixMoyenG: number|null; prixMoyenG18k: number|null;
+  vv: number; marge: number; tauxMarge: number;
+  tag: 'tres_genereux'|'genereux'|'performant'|null;
+}
+
+// ── Top rotation row ──────────────────────────────────────────────────────────
+interface RotationRow {
+  modele: string; typeProduit: string; qty: number;
+  delaiMoyen: number; paMoyen: number; pvMoyen: number;
+  margeUnitaire: number; tauxMarge: number;
+}
+
+// ── Column aliases ────────────────────────────────────────────────────────────
 const ALIASES: Record<string, string[]> = {
   typeTransaction:  ['typedetransaction','typetransaction','transaction'],
   famille:          ['sousfamille','sousfamilleproduit','famille','familleproduit'],
@@ -40,8 +55,11 @@ const ALIASES: Record<string, string[]> = {
   grade:            ['articlegrade','grade','gradearticle'],
   prixAchat:        ['achatprix','prixachat','prixdachat'],
   prixVente:        ['venteprixvendu','prixvente','prixvendu'],
+  collaborateur:    ['collaborateur','acheteur','utilisateur'],
+  delaiVente:       ['ventedelai','delaivente','delaidevente'],
 };
 
+// ── Utility functions ─────────────────────────────────────────────────────────
 function norm(s: string): string {
   return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[\s_\-'"]/g,'');
 }
@@ -85,16 +103,31 @@ function extractPoids(lib: string): number|null {
   const v=parseFloat(m[1].replace(',','.'));
   return isNaN(v)||v<=0||v>1000?null:v;
 }
-function isBijFamily(sf: string): boolean {
+function isBijFamily(sf: string|null|undefined): boolean {
+  if (!sf) return false;
   const s=sf.toLowerCase();
-  return s.includes('bijouterie or')||s.includes('plaqu')||s.includes('pierres')||s.includes('bopi');
+  return s.includes('bijouterie or')||s.includes('bopi')||s.includes('pierres')||s.includes('plaqu');
+}
+function detectFamCode(sf: string): 'BOR'|'BOPI' {
+  const s=sf.toLowerCase();
+  if (s.includes('bopi')||s.includes('pierres')||s.includes('plaqu')) return 'BOPI';
+  return 'BOR';
+}
+function detectBijouType(lib: string): string {
+  const u=lib.toUpperCase();
+  if (u.includes('BAGUE')||u.includes('CHEVALIERE')||u.includes('ALLIANCE')||u.includes('SOLITAIRE')) return 'Bague';
+  if (u.includes('COLLIER')||u.includes('SAUTOIR')||u.includes('CHAÎNE')||u.includes('CHAINE')) return 'Collier';
+  if (u.includes('BRACELET')||u.includes('JONC')) return 'Bracelet';
+  if (u.includes('PENDENTIF')||u.includes('MEDAILLE')||u.includes('MÉDAILLE')) return 'Pendentif';
+  if (u.includes('BOUCLE')||u.includes('CREOLE')||u.includes('CRÉOLE')) return 'Boucles oreilles';
+  if (u.includes('MONTRE')) return 'Montre';
+  if (u.includes('PIÈCE')||u.includes('PIECE')||u.includes('NAPOLEON')||u.includes('NAPOLÉON')) return 'Pièce';
+  return '—';
 }
 
 // Fixed sort order for titres
 const TITRE_ORDER=['18 carats (750)','14 carats (585)','9 carats (375)',
   '22 carats pièces (900)','22 carats (916)','24 carats (999)','Titre inconnu'];
-
-// Titres for which we split by canal in section 4
 const TITRES_WITH_CANAL=['18 carats (750)','14 carats (585)','9 carats (375)'];
 
 // ── Shared table styles ───────────────────────────────────────────────────────
@@ -103,7 +136,7 @@ const THR = 'px-3 py-2.5 text-right  text-xs font-semibold text-[#6B7280] bg-[#F
 const TD  = 'px-3 py-2   text-xs text-[#1A1A1A] border-t border-[#F0F0F0]';
 const TDR = 'px-3 py-2   text-xs text-right text-[#1A1A1A] border-t border-[#F0F0F0]';
 
-// ── aggregate helper ──────────────────────────────────────────────────────────
+// ── Aggregate helper ──────────────────────────────────────────────────────────
 function buildAgg(rows: BijRow[], label: string): AggRow {
   const va=Math.round(rows.reduce((s,r)=>s+r.pa,0));
   const vv=Math.round(rows.reduce((s,r)=>s+r.pv,0));
@@ -117,7 +150,7 @@ function buildAgg(rows: BijRow[], label: string): AggRow {
   };
 }
 
-// ── Context for AI (exported) ─────────────────────────────────────────────────
+// ── AI context export ─────────────────────────────────────────────────────────
 export function getBijouterieContext(magasinNom: string): string {
   try {
     const raw=localStorage.getItem(`bij_summary_${magasinNom}`);
@@ -134,7 +167,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
   const [error,    setError]    = useState<string|null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const fmtK = (n: number) => n.toLocaleString('fr-FR');
+  const fmtK = (n: number) => Math.round(n).toLocaleString('fr-FR');
 
   // Persist Cookson
   useEffect(()=>{
@@ -169,11 +202,17 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
         const lib=getBestLibelle(achatLib,fichLib);
         const g=col.grade?String(row[col.grade]??'').trim().toUpperCase():'';
         const pa=col.prixAchat?parseNum(row[col.prixAchat]):0;
+        const acheteur=col.collaborateur?String(row[col.collaborateur]??'').trim():'';
+        const dvRaw=col.delaiVente?parseNum(row[col.delaiVente]):null;
+        const dv=dvRaw!=null&&dvRaw>0?dvRaw:null;
         result.push({
           lib, sf, g, pa, pv,
           poids: extractPoids(lib),
           titre: detectTitreOr(lib),
           canal: g==='D'?'Fonte':'Vitrine',
+          famCode: detectFamCode(sf),
+          acheteur,
+          dv,
         });
       }
       if (!result.length) throw new Error('Aucune ligne bijouterie détectée dans le journal importé. Importez un journal contenant des familles BOR ou BOPI.');
@@ -193,6 +232,10 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
   // ── Cookson ───────────────────────────────────────────────────────────────
   const cooksonNum=parseFloat(cookson.replace(',','.'));
   const hasCookson=!isNaN(cooksonNum)&&cooksonNum>0;
+
+  // ── Family counts ─────────────────────────────────────────────────────────
+  const borCount  = useMemo(()=>rows.filter(r=>r.famCode==='BOR').length, [rows]);
+  const bopiCount = useMemo(()=>rows.filter(r=>r.famCode==='BOPI').length,[rows]);
 
   // ── Overview ──────────────────────────────────────────────────────────────
   const overview = useMemo(()=>{
@@ -226,9 +269,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
   const byCanal = useMemo(()=>{
     const g=new Map<string,BijRow[]>();
     for (const r of rows) { if (!g.has(r.canal)) g.set(r.canal,[]); g.get(r.canal)!.push(r); }
-    return ['Fonte','Vitrine']
-      .filter(c=>g.has(c))
-      .map(c=>buildAgg(g.get(c)!,c));
+    return ['Fonte','Vitrine'].filter(c=>g.has(c)).map(c=>buildAgg(g.get(c)!,c));
   },[rows]);
 
   const fonteRow   = byCanal.find(r=>r.label==='Fonte');
@@ -242,7 +283,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
 
   // ── Croisement titre × canal ──────────────────────────────────────────────
   const byTitreCanal = useMemo(()=>{
-    // Main titres split by canal
     const grouped=new Map<string,BijRow[]>();
     const autresRows: BijRow[]=[];
     for (const r of rows) {
@@ -250,9 +290,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
         const key=`${r.titre}|||${r.canal}`;
         if (!grouped.has(key)) grouped.set(key,[]);
         grouped.get(key)!.push(r);
-      } else {
-        autresRows.push(r);
-      }
+      } else { autresRows.push(r); }
     }
     const result: (AggRow&{titre:string;canal:string})[]=[];
     for (const [key,rs] of grouped.entries()) {
@@ -265,19 +303,18 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
       if (ti!==0) return ti;
       return (a.canal==='Fonte'?0:1)-(b.canal==='Fonte'?0:1);
     });
-    if (autresRows.length>0) {
+    if (autresRows.length>0)
       result.push({...buildAgg(autresRows,'Autres titres (22k, 24k, inconnus…)'),titre:'',canal:''});
-    }
     return result;
   },[rows]);
 
-  // Cookson écart for 18k Fonte
   const ecart18Fonte = useMemo(()=>{
     if (!hasCookson) return null;
     const r=byTitreCanal.find(r=>r.titre==='18 carats (750)'&&r.canal==='Fonte');
     if (!r?.prixMoyen) return null;
     return Math.round((r.prixMoyen-cooksonNum)/cooksonNum*100);
   },[byTitreCanal,hasCookson,cooksonNum]);
+
   const ecart18Vitrine = useMemo(()=>{
     if (!hasCookson) return null;
     const r=byTitreCanal.find(r=>r.titre==='18 carats (750)'&&r.canal==='Vitrine');
@@ -285,14 +322,101 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
     return Math.round((r.prixMoyen-cooksonNum)/cooksonNum*100);
   },[byTitreCanal,hasCookson,cooksonNum]);
 
+  // ── Prix moyen 18k magasin (pour tag Généreux) ───────────────────────────
+  const moyG18kMagasin = useMemo(()=>{
+    const r18=rows.filter(r=>r.titre==='18 carats (750)'&&r.poids!=null);
+    const pa=r18.reduce((s,r)=>s+r.pa,0);
+    const po=r18.reduce((s,r)=>s+(r.poids??0),0);
+    return po>0?pa/po:null;
+  },[rows]);
+
+  // ── Performance acheteurs ─────────────────────────────────────────────────
+  const byAcheteur = useMemo((): AcheteurRow[]=>{
+    const grp=new Map<string,BijRow[]>();
+    for (const r of rows) {
+      const k=r.acheteur||'Inconnu';
+      if (!grp.has(k)) grp.set(k,[]);
+      grp.get(k)!.push(r);
+    }
+    const result: AcheteurRow[]=[];
+    for (const [nom,rs] of grp.entries()) {
+      if (rs.length<5) continue;
+      const va=rs.reduce((s,r)=>s+r.pa,0);
+      const vv=rs.reduce((s,r)=>s+r.pv,0);
+      const marge=vv-va;
+      const avecPoids=rs.filter(r=>r.poids!=null);
+      const poidsTotal=avecPoids.reduce((s,r)=>s+(r.poids??0),0);
+      const prixMoyenG=poidsTotal>0?va/poidsTotal:null;
+      // 18k only for tag
+      const r18=rs.filter(r=>r.titre==='18 carats (750)'&&r.poids!=null);
+      const pa18=r18.reduce((s,r)=>s+r.pa,0);
+      const po18=r18.reduce((s,r)=>s+(r.poids??0),0);
+      const prixMoyenG18k=po18>0?pa18/po18:null;
+      // Tag vs magasin average
+      let tag: AcheteurRow['tag']=null;
+      if (moyG18kMagasin&&prixMoyenG18k&&r18.length>=3) {
+        const ratio=(prixMoyenG18k-moyG18kMagasin)/moyG18kMagasin*100;
+        if      (ratio>20)  tag='tres_genereux';
+        else if (ratio>10)  tag='genereux';
+        else if (ratio<-10) tag='performant';
+      }
+      result.push({
+        nom, nbAchats:rs.length,
+        poidsTotal:Math.round(poidsTotal*100)/100,
+        va:Math.round(va), vv:Math.round(vv),
+        marge:Math.round(marge),
+        prixMoyenG:prixMoyenG!=null?Math.round(prixMoyenG*100)/100:null,
+        prixMoyenG18k:prixMoyenG18k!=null?Math.round(prixMoyenG18k*100)/100:null,
+        tauxMarge:vv>0?Math.round(marge/vv*100):0,
+        tag,
+      });
+    }
+    return result.sort((a,b)=>b.tauxMarge-a.tauxMarge);
+  },[rows, moyG18kMagasin]);
+
+  // ── Top rotations (<60j, ≥2 ventes, marge positive) ──────────────────────
+  const topRotations = useMemo((): RotationRow[]=>{
+    const grp=new Map<string,BijRow[]>();
+    for (const r of rows) {
+      if (!grp.has(r.lib)) grp.set(r.lib,[]);
+      grp.get(r.lib)!.push(r);
+    }
+    const result: RotationRow[]=[];
+    for (const [lib,rs] of grp.entries()) {
+      if (rs.length<2) continue;
+      const withDv=rs.filter(r=>r.dv!=null);
+      if (!withDv.length) continue;
+      const delaiMoyen=withDv.reduce((s,r)=>s+(r.dv??0),0)/withDv.length;
+      if (delaiMoyen>=60) continue;
+      const paMoyen=rs.reduce((s,r)=>s+r.pa,0)/rs.length;
+      const pvMoyen=rs.reduce((s,r)=>s+r.pv,0)/rs.length;
+      const margeUnitaire=pvMoyen-paMoyen;
+      if (margeUnitaire<=0) continue;
+      result.push({
+        modele:lib,
+        typeProduit:detectBijouType(lib),
+        qty:rs.length,
+        delaiMoyen:Math.round(delaiMoyen),
+        paMoyen:Math.round(paMoyen),
+        pvMoyen:Math.round(pvMoyen),
+        margeUnitaire:Math.round(margeUnitaire),
+        tauxMarge:pvMoyen>0?Math.round(margeUnitaire/pvMoyen*100):0,
+      });
+    }
+    return result.sort((a,b)=>a.delaiMoyen-b.delaiMoyen).slice(0,20);
+  },[rows]);
+
   // ── Persist AI summary ────────────────────────────────────────────────────
   useEffect(()=>{
     if (!overview||!magasinNom) return;
     const titre18 = byTitre.find(r=>r.label==='18 carats (750)');
     const titre14 = byTitre.find(r=>r.label==='14 carats (585)');
     const titre9  = byTitre.find(r=>r.label==='9 carats (375)');
+    const top3ach = byAcheteur.slice(0,3);
+    const genereux  = byAcheteur.filter(a=>a.tag==='genereux').map(a=>a.nom);
+    const tresGen   = byAcheteur.filter(a=>a.tag==='tres_genereux').map(a=>a.nom);
     const lines=[
-      `Analyse Bijouterie spécialisée — ${overview.count} articles · poids total ${overview.poidsTotal} g`,
+      `Analyse Bijouterie spécialisée — ${overview.count} articles (BOR: ${borCount}, BOPI: ${bopiCount}) · poids total ${overview.poidsTotal} g`,
       `Valeur d'achat : ${fmtK(overview.va)} € · Valeur de vente : ${fmtK(overview.vv)} € · Marge : ${fmtK(overview.marge)} € (${overview.tauxMarge}%)`,
       titre18?`18 carats : ${titre18.qty} articles · ${titre18.poidsTotal} g · prix moyen ${titre18.prixMoyen??'—'} €/g`:'',
       titre14?`14 carats : ${titre14.qty} articles · ${titre14.poidsTotal} g · prix moyen ${titre14.prixMoyen??'—'} €/g`:'',
@@ -302,11 +426,19 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
       vitrineRow?.prixMoyen!=null?`Prix moyen 18k Vitrine : ${vitrineRow.prixMoyen} €/g`:'',
       diffPrixVF!=null?`Différentiel Vitrine vs Fonte : ${diffPrixVF>0?'+':''}${diffPrixVF} €/g`:'',
       hasCookson&&ecart18Fonte!=null?`Écart vs cours Cookson (${cooksonNum} €/g) sur 18k Fonte : ${ecart18Fonte>0?'+':''}${ecart18Fonte}%`:'',
+      // Acheteurs
+      top3ach.length>0
+        ?`Performance acheteurs Bijouterie :\nTop 3 acheteurs par taux de marge : ${top3ach.map(a=>`${a.nom} ${a.tauxMarge}%`).join(', ')}`
+        :'',
+      genereux.length>0?`Acheteurs tagués Généreux : ${genereux.join(', ')}`:'',
+      tresGen.length>0 ?`Acheteurs tagués Très généreux : ${tresGen.join(', ')}`:'',
+      // Rotations
+      topRotations.length>0?`Top rotations Bijouterie : ${topRotations.length} modèle(s) tournent en moins de 60j`:'',
     ].filter(Boolean).join('\n');
     try { localStorage.setItem(`bij_summary_${magasinNom}`,lines); } catch {}
-  },[overview,byTitre,tauxFonte,fonteRow,vitrineRow,diffPrixVF,hasCookson,ecart18Fonte,cooksonNum,magasinNom,fmtK]);
+  },[overview,byTitre,tauxFonte,fonteRow,vitrineRow,diffPrixVF,hasCookson,ecart18Fonte,cooksonNum,magasinNom,fmtK,borCount,bopiCount,byAcheteur,topRotations]);
 
-  // ── Shared components ─────────────────────────────────────────────────────
+  // ── AggTable shared component ─────────────────────────────────────────────
   function AggTable({ rows: aggRows, extraHeader, extraCell }: {
     rows: AggRow[];
     extraHeader?: string;
@@ -349,6 +481,26 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
     );
   }
 
+  // ── Tag badge helper ──────────────────────────────────────────────────────
+  function TagBadge({ tag }: { tag: AcheteurRow['tag'] }) {
+    if (!tag) return null;
+    if (tag==='tres_genereux') return (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+        🔴 Très généreux
+      </span>
+    );
+    if (tag==='genereux') return (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-200">
+        🟠 Généreux
+      </span>
+    );
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
+        ✅ Performant
+      </span>
+    );
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
@@ -382,8 +534,12 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
           : <div className="space-y-2">
               <div className="text-3xl">💍</div>
               <p className="text-sm font-semibold text-[#1A1A1A]">Glissez votre journal Athéna ici ou cliquez pour importer</p>
-              <p className="text-xs text-[#9CA3AF]">.csv · .xlsx · .xls — seules les familles BOR/BOPI sont analysées</p>
-              {rows.length>0&&<p className="text-xs text-[#6B7280] mt-1">{rows.length} lignes bijouterie en mémoire</p>}
+              <p className="text-xs text-[#9CA3AF]">.csv · .xlsx · .xls — familles BOR et BOPI détectées automatiquement</p>
+              {rows.length>0&&(
+                <p className="text-xs text-[#6B7280] mt-1">
+                  {borCount} lignes BOR + {bopiCount} lignes BOPI = <strong>{rows.length}</strong> lignes Bijouterie analysées
+                </p>
+              )}
             </div>
         }
       </div>
@@ -405,14 +561,24 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
       {rows.length>0&&overview&&(
         <div className="space-y-8">
 
+          {/* BOR/BOPI count banner */}
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+            <span className="text-sm">💍</span>
+            <p className="text-xs text-amber-800">
+              <span className="font-semibold">{borCount}</span> lignes BOR{' '}+{' '}
+              <span className="font-semibold">{bopiCount}</span> lignes BOPI{' '}={' '}
+              <span className="font-bold text-[#E30613]">{rows.length}</span> lignes Bijouterie analysées
+            </p>
+          </div>
+
           {/* ── SECTION 1 — Vue d'ensemble ─────────────────────────────── */}
           <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-4">
-            <h3 className="text-sm font-bold text-[#1A1A1A]">📊 Vue d'ensemble</h3>
+            <h3 className="text-sm font-bold text-[#1A1A1A]">📊 Vue d&apos;ensemble</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {[
                 {label:'Lignes analysées',      value:overview.count.toLocaleString('fr-FR'),       sub:`(${overview.lignesAvecPoids} avec poids extrait)`},
                 {label:'Poids total racheté',   value:`${overview.poidsTotal} g`,                   sub:''},
-                {label:'Valeur d\'achat',        value:`${fmtK(overview.va)} €`,                    sub:''},
+                {label:"Valeur d'achat",         value:`${fmtK(overview.va)} €`,                    sub:''},
                 {label:'Valeur de vente',        value:`${fmtK(overview.vv)} €`,                    sub:''},
                 {label:'Marge totale',           value:`${fmtK(overview.marge)} €`,                 sub:'',
                   color:overview.marge<0?'text-red-600':'text-green-600'},
@@ -450,14 +616,11 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
               <p className="text-xs text-[#9CA3AF] mt-0.5">Grade D = Fonte · Grade A/B/C = Vitrine</p>
             </div>
             <AggTable rows={byCanal} />
-            {/* Synthetic indicators */}
             {(tauxFonte!=null||diffPrixVF!=null)&&(
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 {tauxFonte!=null&&(
                   <div className="rounded-lg border border-[#E0E0E0] p-3">
-                    <p className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">
-                      Taux de fonte sur poids racheté
-                    </p>
+                    <p className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Taux de fonte sur poids racheté</p>
                     <p className="text-2xl font-black text-[#1A1A1A] mb-1">{tauxFonte}%</p>
                     <p className="text-xs text-[#6B7280]">
                       {tauxFonte<30?'🏬 Magasin orienté vitrine':tauxFonte<=60?'⚖️ Équilibre vitrine / fonte':'🔥 Magasin orienté fonte'}
@@ -466,9 +629,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
                 )}
                 {diffPrixVF!=null&&(
                   <div className="rounded-lg border border-[#E0E0E0] p-3">
-                    <p className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">
-                      Différentiel prix au gramme Vitrine vs Fonte
-                    </p>
+                    <p className="text-[10px] font-semibold text-[#6B7280] uppercase tracking-wider mb-1">Différentiel prix au gramme Vitrine vs Fonte</p>
                     <p className={`text-2xl font-black mb-1 ${diffPrixVF>0?'text-green-600':diffPrixVF<0?'text-orange-600':'text-[#1A1A1A]'}`}>
                       {diffPrixVF>0?'+':''}{diffPrixVF} €/g
                     </p>
@@ -487,7 +648,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
               <h3 className="text-sm font-bold text-[#1A1A1A]">💰 Analyse prix au gramme par titre et canal</h3>
               <p className="text-xs text-[#9CA3AF] mt-0.5">18k, 14k, 9k : séparés Fonte/Vitrine · autres titres regroupés</p>
             </div>
-
             {/* Cookson input */}
             <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg p-3 flex flex-wrap items-center gap-3">
               <label className="text-xs font-semibold text-[#1A1A1A] whitespace-nowrap">
@@ -504,7 +664,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
                 Optionnel — affiche l&apos;écart vs cours pour les lignes 18 carats
               </span>
             </div>
-
             {/* Titre × Canal table */}
             <div className="overflow-x-auto rounded-lg border border-[#E0E0E0]">
               <table className="text-xs w-full border-collapse">
@@ -524,9 +683,9 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
                 </thead>
                 <tbody>
                   {byTitreCanal.map((r,i)=>{
-                    const is18 = r.titre==='18 carats (750)';
-                    const ecart = hasCookson&&is18&&r.prixMoyen!=null
-                      ? Math.round((r.prixMoyen-cooksonNum)/cooksonNum*100) : null;
+                    const is18=r.titre==='18 carats (750)';
+                    const ecart=hasCookson&&is18&&r.prixMoyen!=null
+                      ?Math.round((r.prixMoyen-cooksonNum)/cooksonNum*100):null;
                     return (
                       <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
                         <td className={TD}><span className="font-medium">{r.titre||r.label.split(' — ')[0]}</span></td>
@@ -553,8 +712,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
                 </tbody>
               </table>
             </div>
-
-            {/* 18k synthetic recap */}
             {(ecart18Fonte!=null||ecart18Vitrine!=null)&&(
               <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg p-3 space-y-1">
                 <p className="text-xs font-semibold text-[#E30613]">Analyse 18 carats vs cours Cookson ({cooksonNum} €/g)</p>
@@ -572,6 +729,132 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
                   </p>
                 )}
               </div>
+            )}
+          </div>
+
+          {/* ── SECTION 5 — Performance acheteurs ────────────────────────── */}
+          <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-[#1A1A1A]">👥 Performance acheteurs Bijouterie</h3>
+              <p className="text-xs text-[#9CA3AF] mt-0.5">Qui rachète généreusement vs qui rachète à la bonne valeur · minimum 5 achats</p>
+            </div>
+
+            {byAcheteur.length===0?(
+              <p className="text-xs text-[#9CA3AF] italic">
+                Aucun acheteur avec au moins 5 achats bijouterie sur la période.
+                {!rows.some(r=>r.acheteur) && ' (Colonne "Collaborateur" non détectée dans le fichier.)'}
+              </p>
+            ):(
+              <>
+                <div className="bg-amber-50 border border-amber-100 rounded-lg px-4 py-2.5">
+                  <p className="text-xs text-amber-800">
+                    💡 Les tags <span className="font-bold">Généreux</span> identifient les acheteurs qui paient l&apos;or au-dessus de la moyenne magasin.
+                    Ce n&apos;est pas forcément une erreur : ils peuvent racheter du 18k de qualité supérieure.
+                    À croiser avec leur taux de marge final.
+                  </p>
+                </div>
+                {moyG18kMagasin!=null&&(
+                  <p className="text-xs text-[#6B7280]">
+                    Prix achat moyen magasin (toutes lignes 18k) :{' '}
+                    <span className="font-semibold text-[#1A1A1A]">{Math.round(moyG18kMagasin*100)/100} €/g</span>
+                  </p>
+                )}
+                <div className="overflow-x-auto rounded-lg border border-[#E0E0E0]">
+                  <table className="text-xs w-full border-collapse">
+                    <thead>
+                      <tr>
+                        <th className={TH}>Acheteur</th>
+                        <th className={THR}>Nb achats</th>
+                        <th className={THR}>Poids racheté (g)</th>
+                        <th className={THR}>Valeur achat (€)</th>
+                        <th className={THR}>PA moyen (€/g)</th>
+                        <th className={THR}>PA moyen 18k (€/g)</th>
+                        <th className={THR}>Valeur vente (€)</th>
+                        <th className={THR}>Marge totale (€)</th>
+                        <th className={THR}>Taux marge (%)</th>
+                        <th className={THR}>Tag 18k</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {byAcheteur.map((a,i)=>(
+                        <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                          <td className={TD}><span className="font-medium">{a.nom||'Inconnu'}</span></td>
+                          <td className={TDR}>{a.nbAchats}</td>
+                          <td className={TDR}>{a.poidsTotal>0?`${a.poidsTotal} g`:'—'}</td>
+                          <td className={TDR}>{fmtK(a.va)} €</td>
+                          <td className={TDR}>{a.prixMoyenG!=null?`${a.prixMoyenG} €/g`:'—'}</td>
+                          <td className={TDR}>{a.prixMoyenG18k!=null?`${a.prixMoyenG18k} €/g`:'—'}</td>
+                          <td className={TDR}>{fmtK(a.vv)} €</td>
+                          <td className={TDR}><span className={a.marge<0?'text-red-600 font-semibold':''}>{fmtK(a.marge)} €</span></td>
+                          <td className={TDR}>
+                            <span className={a.tauxMarge<10?'text-red-600 font-bold':a.tauxMarge>=25?'text-green-600 font-bold':''}>
+                              {a.tauxMarge}%
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right border-t border-[#F0F0F0]">
+                            <TagBadge tag={a.tag} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── SECTION 6 — Top rotations ─────────────────────────────────── */}
+          <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-[#1A1A1A]">⚡ Top rotations Bijouterie <span className="text-[#9CA3AF] font-normal">(les pépites)</span></h3>
+              <p className="text-xs text-[#9CA3AF] mt-0.5">Modèles qui se vendent en moins de 60 jours · minimum 2 ventes · marge positive</p>
+            </div>
+
+            {topRotations.length===0?(
+              <div className="bg-[#F9FAFB] border border-[#E0E0E0] rounded-xl px-4 py-6 text-center">
+                <p className="text-sm text-[#6B7280]">Aucun modèle Bijouterie ne tourne en moins de 60 jours sur cette période.</p>
+                <p className="text-xs text-[#9CA3AF] mt-1">Stock à challenger.{!rows.some(r=>r.dv!=null)&&' (Colonne délai de vente non détectée.)'}</p>
+              </div>
+            ):(
+              <>
+                <div className="bg-amber-50 border border-amber-100 rounded-lg px-4 py-2.5">
+                  <p className="text-xs text-amber-800">
+                    💡 Ces modèles tournent vite et bien. À répliquer dans la gamme : racheter ce type de produit en priorité au comptoir, mettre en avant en vitrine.
+                  </p>
+                </div>
+                {topRotations.length===20&&(
+                  <p className="text-xs text-[#9CA3AF] italic">Affichage limité aux 20 premiers modèles.</p>
+                )}
+                <div className="overflow-x-auto rounded-lg border border-[#E0E0E0]">
+                  <table className="text-xs w-full border-collapse">
+                    <thead>
+                      <tr>
+                        <th className={TH}>Modèle</th>
+                        <th className={TH}>Type de produit</th>
+                        <th className={THR}>Qté vendue</th>
+                        <th className={THR}>Délai moy. (j)</th>
+                        <th className={THR}>PA moyen (€)</th>
+                        <th className={THR}>PV moyen (€)</th>
+                        <th className={THR}>Marge unit. (€)</th>
+                        <th className={THR}>Taux marge (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topRotations.map((r,i)=>(
+                        <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                          <td className={`${TD} max-w-[200px] truncate`} title={r.modele}>{r.modele}</td>
+                          <td className={TD}>{r.typeProduit}</td>
+                          <td className={TDR}><span className="font-semibold text-green-700">{r.delaiMoyen} j</span></td>
+                          <td className={TDR}>{fmtK(r.paMoyen)} €</td>
+                          <td className={TDR}>{fmtK(r.pvMoyen)} €</td>
+                          <td className={TDR}>{fmtK(r.margeUnitaire)} €</td>
+                          <td className={TDR}><span className={r.tauxMarge>=25?'text-green-600 font-bold':''}>{r.tauxMarge}%</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
 
