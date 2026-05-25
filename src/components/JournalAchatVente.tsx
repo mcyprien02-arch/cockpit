@@ -60,7 +60,9 @@ const COL_ALIASES: Record<string, string[]> = {
   typeTransaction:      ['typedetransaction','typetransaction','transaction'],
   // "Sous_famille" (norm → 'sousfamille') must win over "Famille" (norm → 'famille')
   famille:              ['sousfamille','sousfamilleproduit','sousfamille','famille','familleproduit'],
-  modele:               ['fichetechlibelle','fichetech','achatlibellearticle','libellearticle','modele','libelle'],
+  // Dual libellé: parsed separately, getBestLibelle() picks the winner per row
+  achatLibelle:         ['achatlibellearticle','libellearticle'],
+  fichetechLibelle:     ['fichetechlibelle','fichetech','modele','libelle'],
   grade:                ['articlegrade','grade','gradearticle'],
   prixAchat:            ['achatprix','prixachat','prixdachat'],
   prixVente:            ['venteprixvendu','prixvente','prixvendu'],
@@ -97,6 +99,17 @@ function mapColumns(headers: string[]): Record<string,string> {
   }
   return result;
 }
+// Pick the best libellé line by line:
+// Achat_libelle_article is preferred (contains métier info: poids, titre d'or)
+// unless it's absent, too short, or a raw barcode.
+function getBestLibelle(achat: string, fichetech: string): string {
+  const a = achat.trim();
+  const f = fichetech.trim();
+  if (!a || a.length < 10) return f || a;
+  if (/^\d+$/.test(a)) return f || a;   // barcode → use fichetech
+  return a;
+}
+
 function parseNum(v: unknown): number {
   if (typeof v==='number') return v;
   const n=parseFloat(String(v??'').replace(',','.').replace(/[^\d.\-]/g,''));
@@ -140,7 +153,7 @@ function detectFamilyCode(s: string, warn = false): FamilyCode {
   // BOR
   if (raw.includes('BIJOUTERIE OR')) return 'BOR';
   // BOPI
-  if (raw.includes('PLAQUÉ')||raw.includes('PLAQUE')||raw.includes('BOPI')) return 'BOPI';
+  if (raw.includes('PLAQUÉ')||raw.includes('PLAQUE')||raw.includes('BOPI')||raw.includes('PIERRES')) return 'BOPI';
   // BMAR
   if (raw.includes('MAROQUINERIE')) return 'BMAR';
   // BMON
@@ -245,8 +258,8 @@ function detectMarqueOuPlateforme(libelle: string, sousfamille: string): string 
   if (sf.includes('console')&&!sf.includes('cd rom')) {
     return detectPlatform(lib);
   }
-  // BOR / BOPI
-  if (sf.includes('bijouterie or')||sf.includes('plaqu')) {
+  // BOR / BOPI (bijouterie or, plaqué, pierres précieuses, code BOPI)
+  if (sf.includes('bijouterie or')||sf.includes('plaqu')||sf.includes('pierres')||sf.includes('bopi')) {
     if (lib.includes('CHASSIS')||lib.includes('IPHONE')||lib.includes('DELL')||lib.includes('CASQUE')||lib.includes('ORDINATEUR')) return 'Erreur saisie';
     if (lib.includes('NAPOLEON')||lib.includes('MARIANNE')||lib.includes('GENIE')||lib.includes('20 FRANCS')||lib.includes('20FR')||lib.includes('DOS PESOS')||lib.includes('PESOS')||lib.includes('LOUIS D')) return 'Pièces or';
     if (lib.includes('CHEVALIERE')||lib.includes('CHEVALIER ')||lib.includes('ALLIANCE')||lib.includes('TRILOGIE')||lib.includes('BAGUE')) return 'Bagues';
@@ -314,8 +327,10 @@ function detectMarqueOuPlateforme(libelle: string, sousfamille: string): string 
 
 // ── pepite delay threshold per sous-famille (ACTION 5) ───────────────────────
 function getSeuilDelaiPepite(sousfamille: string): number {
+  if (!sousfamille) return 30;
   const sf = sousfamille.toLowerCase();
-  if (sf.includes('bijouterie or')||sf.includes('plaqu')||sf.includes('maroquinerie')||sf.includes('montre')) return 60;
+  if (sf.includes('bijouterie or')||sf.includes('plaqu')||sf.includes('pierres')||sf.includes('bopi')||
+      sf.includes('maroquinerie')||sf.includes('montre')) return 60;
   return 30;
 }
 
@@ -337,8 +352,9 @@ function detectBijouType(libelle: string): string {
 }
 
 function detectBORCanal(r: CRow): string {
-  // Only check buyer fields (an = acheteurNom, ap = acheteurPrenom)
-  // Canal FONTE uniquement si l'acheteur est "CHANGE VIVIENNE" / "CHANGEVIVIENNE"
+  // Grade D → toujours Fonte (destiné à la refonte)
+  if (r.g === 'D') return 'Fonte';
+  // Client acheteur = Change Vivienne → Fonte
   const an = (r.an ?? '').toUpperCase();
   const ap = (r.ap ?? '').toUpperCase();
   const combined = norm(an + ' ' + ap);
@@ -347,8 +363,9 @@ function detectBORCanal(r: CRow): string {
 }
 
 function extractPoids(libelle: string): number|null {
-  // Match "X,XX G" or "X.XX G" or "X G" — G must be followed by non-letter or end
-  const m = libelle.match(/(\d+[,.]\d+|\d+)\s+[Gg](?=[^a-zA-Z]|$)/);
+  // Match "X,XX G" or "X.XX G" or "X G" followed by space, end, comma or period
+  // Requires at least one space before G to avoid false positives within words
+  const m = libelle.toUpperCase().match(/(\d+[,.]?\d*)\s+G(?:\s|$|,|\.)/);
   if (!m) return null;
   const v = parseFloat(m[1].replace(',','.'));
   return isNaN(v)||v<=0||v>1000 ? null : v;
@@ -567,6 +584,7 @@ function filterRows(rows: CRow[], periode: Periode, grade: string): CRow[] {
   let cutoff: Date|null=null;
   if (periode!=='all') { cutoff=new Date(); cutoff.setMonth(cutoff.getMonth()-(periode==='3m'?3:periode==='6m'?6:12)); }
   return rows.filter(r=>{
+    if (r.g==='D') return false; // Grade D: BOR canal analysis only, not in filtered general rows
     if (grade!=='all'&&r.g!==grade) return false;
     if (cutoff&&r.d&&new Date(r.d)<cutoff) return false;
     return true;
@@ -576,6 +594,7 @@ function filterRows(rows: CRow[], periode: Periode, grade: string): CRow[] {
 function computeStats(rows: CRow[]): ModelStats[] {
   const groups=new Map<string,{modele:string;famille:string;pas:number[];pvs:number[];dvs:number[];eps:number[];epas:number[]}>();
   for (const r of rows) {
+    if (r.g==='D') continue; // Grade D: BOR Fonte only, never in general stats
     const key=r.m.toLowerCase();
     if (!groups.has(key)) groups.set(key,{modele:r.m,famille:r.f,pas:[],pvs:[],dvs:[],eps:[],epas:[]});
     const g=groups.get(key)!;
@@ -968,8 +987,9 @@ const FALLBACK_LABELS: Partial<Record<FamilyCode, string>> = {
 };
 
 // ── family-specific breakdown section ─────────────────────────────────────────
-function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
-  rows: CRow[];
+function FamilyBreakdownSection({ rows, canalRows, family, cookson, onCooksonChange }: {
+  rows: CRow[];           // filtered rows (Grade D excluded) — for type/price/brand breakdown
+  canalRows: CRow[];      // includes Grade D for BOR/BOPI canal analysis
   family: FamilyCode;
   cookson: string;
   onCooksonChange: (v: string) => void;
@@ -982,6 +1002,12 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
     return rows.filter(r=>isBORValid(r.m));
   },[rows,family]);
   const borFilteredCount = family==='BOR' ? rows.length - effectiveRows.length : 0;
+
+  // For BOR/BOPI canal analysis: includes Grade D (Fonte)
+  const effectiveCanalRows = useMemo(()=>{
+    if (family!=='BOR') return canalRows;
+    return canalRows.filter(r=>isBORValid(r.m));
+  },[canalRows,family]);
 
   const priceRanges = useMemo(()=>priceRangesFor(family),[family]);
 
@@ -1008,8 +1034,8 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
 
   const canalBreakdown = useMemo(()=>{
     if (family!=='BOR') return [];
-    return computeBORCanalBreakdown(effectiveRows);
-  },[effectiveRows,family]);
+    return computeBORCanalBreakdown(effectiveCanalRows);
+  },[effectiveCanalRows,family]);
 
   // BOR Cookson calculation: sum(pa) / sum(poids) — true weighted average
   const cooksonCalc = useMemo(()=>{
@@ -1137,7 +1163,7 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
           </div>
           {/* BOPI: prix au gramme par titre × canal (même logique que BOR) */}
           {family==='BOPI' && (
-            <BORPrixGrammeSection rows={effectiveRows} cooksonStr={cookson} />
+            <BORPrixGrammeSection rows={effectiveCanalRows} cooksonStr={cookson} />
           )}
         </div>
       )}
@@ -1156,7 +1182,7 @@ function FamilyBreakdownSection({ rows, family, cookson, onCooksonChange }: {
         <div className="space-y-5">
           <BreakdownTable title="💍 Par type de produit" rows={breakdown1} segmentLabel="Type" />
           {/* Analyse prix au gramme par titre × canal — ACTION 4 */}
-          <BORPrixGrammeSection rows={effectiveRows} cooksonStr={cookson} />
+          <BORPrixGrammeSection rows={effectiveCanalRows} cooksonStr={cookson} />
           <BreakdownTable title="💰 Par tranche de prix" rows={priceBreakdown} showDelai={false} />
           <div className="space-y-2">
             <h4 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">🏪 Par canal vitrine vs fonte</h4>
@@ -1306,17 +1332,20 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
       const raw=XLSX.utils.sheet_to_json(ws,{defval:''}) as Record<string,unknown>[];
       if (!raw.length) throw new Error('Le fichier semble vide.');
       const colMap=mapColumns(Object.keys(raw[0]));
-      if (!colMap.modele&&!colMap.prixVente) throw new Error("Colonnes non reconnues. Vérifiez que c'est bien un export Athéna.");
+      if (!colMap.achatLibelle&&!colMap.fichetechLibelle&&!colMap.prixVente) throw new Error("Colonnes non reconnues. Vérifiez que c'est bien un export Athéna.");
       const rows: CRow[]=[];
       let dateMin: Date|null=null, dateMax: Date|null=null;
       for (const row of raw) {
         if (colMap.typeTransaction&&!norm(String(row[colMap.typeTransaction]??'')).includes('vente')) continue;
         const pv=colMap.prixVente?parseNum(row[colMap.prixVente]):0;
         if (pv<=0) continue;
-        const modele=colMap.modele?String(row[colMap.modele]??'').trim():'';
+        // Dual libellé: pick best source per row
+        const achatLib = colMap.achatLibelle ? String(row[colMap.achatLibelle]??'').trim() : '';
+        const fichetechLib = colMap.fichetechLibelle ? String(row[colMap.fichetechLibelle]??'').trim() : '';
+        const modele = getBestLibelle(achatLib, fichetechLib);
         if (!modele) continue;
         const g=colMap.grade?String(row[colMap.grade]??'').trim().toUpperCase():'';
-        if (g==='D') continue;
+        // Grade D: keep in rows for BOR canal analysis (Fonte), excluded from general stats in computeStats
         const pa=colMap.prixAchat?parseNum(row[colMap.prixAchat]):0;
         const dvRaw=colMap.delaiVente?row[colMap.delaiVente]:null;
         const dv2=(dvRaw!==''&&dvRaw!=null)?(parseNum(dvRaw)||null):null;
@@ -1331,15 +1360,15 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
         const co=colMap.collaborateur?String(row[colMap.collaborateur]??'').trim():'';
         const an=colMap.clientAcheteurNom?String(row[colMap.clientAcheteurNom]??'').trim():'';
         const ap=colMap.clientAcheteurPrenom?String(row[colMap.clientAcheteurPrenom]??'').trim():'';
-        if (dateV) { if (!dateMin||dateV<dateMin) dateMin=dateV; if (!dateMax||dateV>dateMax) dateMax=dateV; }
+        if (dateV&&g!=='D') { if (!dateMin||dateV<dateMin) dateMin=dateV; if (!dateMax||dateV>dateMax) dateMax=dateV; }
         const r: CRow={m:modele,f:colMap.famille?String(row[colMap.famille]??'').trim():'',g,d:dateV?.toISOString()??null,pa,pv,dv:dv3};
         if (ep)  r.ep=ep;  if (epa) r.epa=epa;
         if (cv)  r.cv=cv;  if (fn)  r.fn=fn;  if (fp) r.fp=fp;
         if (co)  r.co=co;  if (an)  r.an=an;  if (ap) r.ap=ap;
-        if (rows.length<3) console.log('DEBUG row parsing:',{libelle:r.m,sousfamille_recue:r.f,sousfamille_lowercase:r.f.toLowerCase()});
+        if (rows.length<3) console.log('DEBUG row parsing:',{libelle:r.m,sousfamille_recue:r.f,grade:r.g,achatLib,fichetechLib});
         rows.push(r);
       }
-      if (!rows.length) throw new Error('Aucune vente valide (grades A/B/C) trouvée.');
+      if (!rows.length) throw new Error('Aucune vente valide trouvée.');
       const result: StoredImport={importedAt:new Date().toISOString(),rows,dateMin:dateMin?.toISOString()??null,dateMax:dateMax?.toISOString()??null};
       setStored(result);
       try { localStorage.setItem(`journal_analyse_${magasinNom}`,JSON.stringify(result)); } catch { /* quota */ }
@@ -1364,12 +1393,26 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
     return Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).map(([fc])=>fc);
   },[stored]);
 
-  // Filtered rows (period + grade + family)
+  // Filtered rows (period + grade + family) — Grade D excluded by filterRows
   const filteredRows = useMemo(()=>{
     let r=stored?filterRows(stored.rows,periode,grade):[];
     if (selectedFamily!=='all') r=r.filter(row=>detectFamilyCode(row.f)===selectedFamily);
     return r;
   },[stored,periode,grade,selectedFamily]);
+
+  // Canal rows for BOR/BOPI: includes Grade D (Fonte), applies period filter, NOT grade filter
+  const canalRows = useMemo(()=>{
+    if (!stored) return [];
+    let r = stored.rows;
+    if (selectedFamily!=='all') r = r.filter(row=>detectFamilyCode(row.f)===selectedFamily);
+    // Apply period filter (same cutoff logic as filterRows) but keep Grade D
+    if (periode!=='all') {
+      const cutoff=new Date();
+      cutoff.setMonth(cutoff.getMonth()-(periode==='3m'?3:periode==='6m'?6:12));
+      r = r.filter(row=>!row.d||new Date(row.d)>=cutoff);
+    }
+    return r;
+  },[stored,periode,selectedFamily]);
 
   const stats=useMemo(()=>computeStats(filteredRows),[filteredRows]);
   const MIN3=(s: ModelStats)=>s.qteVendue>=3;
@@ -1576,6 +1619,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction }: Props) {
           {selectedFamily!=='all'&&(
             <FamilyBreakdownSection
               rows={filteredRows}
+              canalRows={canalRows}
               family={selectedFamily as FamilyCode}
               cookson={cookson}
               onCooksonChange={setCookson}
