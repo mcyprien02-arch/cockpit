@@ -1463,6 +1463,52 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     return topMarge.filter(m=>rotSet.has(m.modele.toLowerCase())).slice(0,5);
   },[topRotations,topMarge]);
 
+  const platformPerf=useMemo(()=>{
+    const fc=selectedFamily!=='all'?selectedFamily as FamilyCode:null;
+    if (!fc||!(['JCDR','JCON','JPOR'] as FamilyCode[]).includes(fc)) return [];
+    const grp=new Map<string,{pvs:number[];pas:number[];dvs:number[]}>();
+    for (const r of filteredRows) {
+      const plat=detectMarqueOuPlateforme(r.m,r.f);
+      if (!grp.has(plat)) grp.set(plat,{pvs:[],pas:[],dvs:[]});
+      const g=grp.get(plat)!;
+      g.pvs.push(r.pv); g.pas.push(r.pa);
+      if (r.dv&&r.dv>0) g.dvs.push(r.dv);
+    }
+    const totalCA=filteredRows.reduce((s,r)=>s+r.pv,0);
+    return Array.from(grp.entries())
+      .filter(([,g])=>g.pvs.length>=5)
+      .map(([plat,g])=>{
+        const nb=g.pvs.length;
+        const ca=g.pvs.reduce((s,v)=>s+v,0);
+        const mt=g.pvs.reduce((s,v,i)=>s+v-g.pas[i],0);
+        return {
+          plateforme:plat,nb,ca:Math.round(ca),mt:Math.round(mt),
+          pctCA:totalCA>0?Math.round(ca/totalCA*100):0,
+          tauxMarge:ca>0?Math.round(mt/ca*100):0,
+          delaiMoyen:g.dvs.length>0?Math.round(g.dvs.reduce((s,v)=>s+v,0)/g.dvs.length):null,
+          pvMoyen:nb>0?Math.round(ca/nb):0,
+        };
+      })
+      .sort((a,b)=>b.mt-a.mt);
+  },[filteredRows,selectedFamily]);
+
+  const topEPErreurs=useMemo(()=>
+    stats.filter(s=>MIN3(s)&&s.epMoyen!=null&&s.ecartEP!==null&&s.ecartEP<-5)
+      .map(s=>({...s,potentielManque:Math.round(s.qteVendue*(s.epMoyen!-s.pvMoyen))}))
+      .sort((a,b)=>b.potentielManque-a.potentielManque)
+      .slice(0,10)
+  ,[stats]);
+
+  const totalPotentielManque=useMemo(()=>
+    stats.filter(s=>MIN3(s)&&s.epMoyen!=null&&s.ecartEP!==null&&s.ecartEP<-5)
+      .reduce((sum,s)=>sum+Math.round(s.qteVendue*(s.epMoyen!-s.pvMoyen)),0)
+  ,[stats]);
+
+  const modelsEnAlerte=useMemo(()=>
+    stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.ecartEP!==null)
+      .sort((a,b)=>(b.delaiMoyen??0)-(a.delaiMoyen??0))
+  ,[stats]);
+
   const hasSourcingData=useMemo(()=>filteredRows.some(r=>r.cv==='P'||r.cv==='F'),[filteredRows]);
   const hasFournisseurData=useMemo(()=>filteredRows.some(r=>r.cv==='F'&&r.fn),[filteredRows]);
   const hasCollaborateurData=useMemo(()=>filteredRows.some(r=>r.cv==='P'&&r.co),[filteredRows]);
@@ -1673,6 +1719,32 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             />
           )}
 
+          {/* Platform performance — JCDR/JCON/JPOR only */}
+          {platformPerf.length>0&&(
+            <div className="space-y-2.5">
+              <h3 className="text-sm font-bold text-[#1A1A1A]">🎮 Performance par plateforme <span className="text-xs font-normal text-[#9CA3AF]">min 5 ventes · tri marge totale</span></h3>
+              <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
+                <table className="text-xs w-full border-collapse">
+                  <thead><tr>{['Plateforme','Nb ventes','% du CA','Marge totale (€)','Taux marge (%)','Délai moyen (j)','PV moyen (€)'].map((l,i)=>(
+                    <th key={i} className={i===0?TH:THR}>{l}</th>
+                  ))}</tr></thead>
+                  <tbody>{platformPerf.map((p,i)=>(
+                    <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                      <td className={TD}><span className="font-medium">{p.plateforme}</span></td>
+                      <td className={TDR}>{p.nb}</td>
+                      <td className={TDR}>{p.pctCA} %</td>
+                      <td className={TDR}><span className={p.mt>0?'text-green-700 font-semibold':'text-red-600 font-semibold'}>{fmtK(p.mt)} €</span></td>
+                      <td className={TDR}><span className={p.tauxMarge>=35?'text-green-600 font-semibold':p.tauxMarge<20?'text-red-600':'text-orange-500'}>{p.tauxMarge} %</span></td>
+                      <td className={TDR}>{p.delaiMoyen!==null?`${p.delaiMoyen} j`:'—'}</td>
+                      <td className={TDR}>{fmtK(p.pvMoyen)} €</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <p className="text-xs text-[#9CA3AF] italic px-1">La plateforme correspond à la marque détectée sur le modèle. Un délai moyen court et un taux de marge élevé indiquent une plateforme à prioriser à l&apos;achat.</p>
+            </div>
+          )}
+
           {/* Sourcing */}
           {hasSourcingData&&(
             <div className="space-y-3">
@@ -1727,18 +1799,50 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             ):null}
           />
 
-          {/* Top Marge */}
-          <SectionTable title="💰 TOP VENTES EN MARGE" cnt={`Top ${topMarge.length} · min 3 ventes`}
-            rows={topMarge}
-            cols={[
-              {label:'Modèle',render:modeleCol},
-              {label:'Famille',render:s=>s.famille||'—'},
-              {label:'Qté',right:true,render:s=>s.qteVendue},
-              {label:'Marge totale',right:true,render:s=>`${fmtK(s.margeTotal)} €`},
-              {label:'Marge unit.',right:true,render:s=>`${fmtK(s.margeUnitaire)} €`},
-              {label:'Délai moyen',right:true,render:s=>s.delaiMoyen!==null?`${s.delaiMoyen} j`:'—'},
-            ]}
-          />
+          {/* TOP 10 Erreurs Prix EasyPrice */}
+          {showEP&&hasEPVente&&(
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h3 className="text-sm font-bold text-[#1A1A1A]">🚨 TOP 10 ERREURS PRIX EASYPRICE <span className="text-xs font-normal text-[#9CA3AF]">écart EP &lt; -5% · min 3 ventes</span></h3>
+                {totalPotentielManque>0&&<span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1">Manque à gagner total : {fmtK(totalPotentielManque)} €</span>}
+              </div>
+              {topEPErreurs.length>0?(
+                <>
+                  <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
+                    <table className="text-xs w-full border-collapse">
+                      <thead><tr>{['Modèle','Qté','PV moyen (€)','Cote EP (€)','Écart EP (%)','Potentiel manqué (€)'].map((l,i)=>(
+                        <th key={i} className={i===0?TH:THR}>{l}</th>
+                      ))}</tr></thead>
+                      <tbody>{topEPErreurs.map((s,i)=>(
+                        <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                          <td className={TD}>{modeleCol(s)}</td>
+                          <td className={TDR}>{s.qteVendue}</td>
+                          <td className={TDR}>{fmtK(s.pvMoyen)} €</td>
+                          <td className={TDR}>{s.epMoyen!=null?`${fmtK(s.epMoyen)} €`:'—'}</td>
+                          <td className={TDR}><span className="text-red-600 font-semibold">{fmtE(s.ecartEP!)}</span></td>
+                          <td className={TDR}><span className="text-red-700 font-bold">{fmtK(s.potentielManque)} €</span></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                  {topEPErreurs.length>=3&&(
+                    <div className="flex flex-wrap gap-3 text-xs">
+                      <span className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5 text-orange-700">
+                        <strong>Top 3 concentration :</strong> {Math.round(topEPErreurs.slice(0,3).reduce((s,r)=>s+r.potentielManque,0)/Math.max(totalPotentielManque,1)*100)}% du manque à gagner
+                      </span>
+                      <span className="bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 text-red-700">
+                        <strong>{stats.filter(s=>MIN3(s)&&s.epMoyen!=null&&s.ecartEP!==null&&s.ecartEP<-5).length} modèles</strong> vendus sous la cote EasyPrice (tous modèles confondus)
+                      </span>
+                    </div>
+                  )}
+                </>
+              ):(
+                <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
+                  ✅ Aucun modèle vendu significativement sous la cote EasyPrice sur cette période.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Top Volume */}
           <SectionTable title="📦 TOP VENTES EN VOLUME" cnt={`Top ${topVolume.length} · min 3 ventes`}
@@ -1805,16 +1909,60 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             </div>
           )}
 
-          {/* ⚠️ Modèles à surveiller */}
+          {/* ⚠️ Modèles en alerte — délai long + lecture EP */}
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-[#1A1A1A]">⚠️ Modèles à surveiller</h3>
+            <h3 className="text-sm font-bold text-[#1A1A1A]">⚠️ Modèles en alerte — délai long + lecture EP <span className="text-xs font-normal text-[#9CA3AF]">délai &gt; 90j · EP renseignée · min 3 ventes</span></h3>
+            {modelsEnAlerte.length===0?(
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
+                ✅ Aucun modèle en alerte (délai &gt; 90j avec EP renseignée) sur cette période.
+              </div>
+            ):(
+              <>
+                <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
+                  <table className="text-xs w-full border-collapse">
+                    <thead><tr>{['Modèle','Qté','Délai moy. (j)','PV moyen (€)','Cote EP (€)','Écart EP (%)','Verdict métier'].map((l,i)=>(
+                      <th key={i} className={i===0?TH:THR}>{l}</th>
+                    ))}</tr></thead>
+                    <tbody>{modelsEnAlerte.map((s,i)=>{
+                      const ecart=s.ecartEP!;
+                      const verdict=ecart<=-10
+                        ?{icon:'🔴',label:'Vendeur contraint de brader',cls:'text-red-600 font-semibold'}
+                        :ecart>=10
+                          ?{icon:'🟠',label:'Stock dormant',cls:'text-orange-500 font-semibold'}
+                          :{icon:'🟡',label:'Prix conforme mais demande faible',cls:'text-yellow-600 font-semibold'};
+                      return (
+                        <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                          <td className={TD}>{modeleCol(s)}</td>
+                          <td className={TDR}>{s.qteVendue}</td>
+                          <td className={TDR}><span className="text-orange-500 font-semibold">{s.delaiMoyen} j</span></td>
+                          <td className={TDR}>{fmtK(s.pvMoyen)} €</td>
+                          <td className={TDR}>{s.epMoyen!=null?`${fmtK(s.epMoyen)} €`:'—'}</td>
+                          <td className={TDR}><span className={ecart<0?'text-red-600 font-semibold':'text-orange-500 font-semibold'}>{fmtE(ecart)}</span></td>
+                          <td className={TDR}><span className={verdict.cls}>{verdict.icon} {verdict.label}</span></td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-1.5 text-xs text-[#1A1A1A]">
+                  <p className="font-semibold text-blue-800">📖 Comment lire ce tableau ?</p>
+                  <p><span className="font-semibold">🔴 Vendeur contraint de brader</span> — Le modèle se vend &gt; 10% sous la cote EP. Probable pression de vendre vite. Action : revoir la politique de dépréciation ou former le vendeur.</p>
+                  <p><span className="font-semibold">🟠 Stock dormant</span> — Le modèle est affiché &gt; 10% au-dessus de la cote EP. Le prix élevé bloque la vente. Action : ajuster le prix à la cote ou mettre en promotion.</p>
+                  <p><span className="font-semibold">🟡 Prix conforme mais demande faible</span> — Prix en ligne avec EP, mais le modèle ne tourne pas. Problème de demande locale ou de mise en avant. Action : repositionner en rayon ou en vitrine.</p>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Perte sèche & Faible rendement */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-[#1A1A1A]">📉 Modèles à surveiller — rentabilité</h3>
             {perteSeche.length===0&&faibleRendement.length===0?(
               <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
                 ✅ Aucun modèle à surveiller sur cette période. Bravo.
               </div>
             ):(
               <div className="space-y-5">
-                {/* Perte sèche */}
                 {perteSeche.length>0&&(
                   <SectionTable
                     title="🔴 Perte sèche"
@@ -1831,7 +1979,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                     ]}
                   />
                 )}
-                {/* Faible rendement */}
                 {faibleRendement.length>0&&(
                   <SectionTable
                     title={`🟡 Faible rendement (lents et peu rentables — délai > ${faibleDelaiLabel}j)`}
