@@ -722,10 +722,7 @@ export function getJournalContext(magasinNom: string): string {
     const MIN3=(s:ModelStats)=>s.qteVendue>=3;
     const rotSet=new Set(stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).map(s=>s.modele.toLowerCase()));
     const topRot=stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999)).slice(0,5).map(r=>`${r.modele} (${r.delaiMoyen}j)`).join(', ');
-    const topMarge=[...stats].filter(MIN3).sort((a,b)=>b.margeTotal-a.margeTotal).slice(0,5).map(m=>`${m.modele} (${m.margeTotal.toLocaleString('fr-FR')}€)`).join(', ');
     const pepites=[...stats].filter(MIN3).sort((a,b)=>b.margeTotal-a.margeTotal).filter(s=>rotSet.has(s.modele.toLowerCase())).slice(0,3).map(p=>p.modele).join(', ');
-    const perte=stats.filter(s=>MIN3(s)&&s.margeTotal<0).sort((a,b)=>a.margeTotal-b.margeTotal).slice(0,3).map(t=>t.modele).join(', ');
-    const faible=stats.filter(s=>MIN3(s)&&s.margeUnitaire<30&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.margeTotal>=0).slice(0,3).map(t=>t.modele).join(', ');
     const epMs=stats.filter(s=>s.epMoyen!=null&&s.epMoyen>0);
     const tqEP=epMs.reduce((s,m)=>s+m.qteVendue,0);
     const epVG=tqEP>0?Math.round(epMs.reduce((s,m)=>s+((m.pvMoyen-m.epMoyen!)/m.epMoyen!*100)*m.qteVendue,0)/tqEP*10)/10:null;
@@ -742,10 +739,34 @@ export function getJournalContext(magasinNom: string): string {
     const srcTotal=src.reduce((s,r)=>s+r.nbAchats,0);
     const srcTotalMarge=src.reduce((s,r)=>s+r.margeTotal,0);
     const srcLine=srcTotal>0?`Sourcing : ${srcPart?Math.round(srcPart.nbAchats/srcTotal*100):0}% comptoir (marge ${srcPart?.tauxMarge??0}%) / ${srcFour?Math.round(srcFour.nbAchats/srcTotal*100):0}% fournisseurs (marge ${srcFour?.tauxMarge??0}%). Total marge ${srcTotalMarge.toLocaleString('fr-FR')}€.`:'';
-    const fours=computeFournisseurs(stored.rows);
-    const foursLine=fours.length>0?`Top 3 fournisseurs en marge : ${fours.slice(0,3).map(f=>`${f.nom} (${f.margeTotal.toLocaleString('fr-FR')}€)`).join(', ')}.`:'';
     const achs=computeAcheteurs(stored.rows);
     const achLine=achs.length>0?`Acheteur meilleur taux marge : ${achs[0].nom} (${achs[0].tauxMarge}%).`:'';
+
+    // Performance par marque/plateforme — top 3 by marge
+    const marchGrp=new Map<string,{mt:number;nb:number}>();
+    for (const r of stored.rows) {
+      const mk=detectMarqueOuPlateforme(r.m,r.f);
+      const cur=marchGrp.get(mk)??{mt:0,nb:0};
+      marchGrp.set(mk,{mt:cur.mt+(r.pv-r.pa),nb:cur.nb+1});
+    }
+    const marchTop=Array.from(marchGrp.entries()).filter(([,v])=>v.nb>=5).sort((a,b)=>b[1].mt-a[1].mt).slice(0,3);
+    const marchLine=marchTop.length>0?`Performance par segment (top 3 marge) : ${marchTop.map(([mk,v])=>`${mk} (${v.mt.toLocaleString('fr-FR')}€)`).join(', ')}.`:'';
+
+    // Top coefficient d'écoulement
+    const coeffList=stats
+      .filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen>0)
+      .map(s=>({modele:s.modele,coeff:Math.round((s.margeTotal/s.delaiMoyen!)*10)/10}))
+      .filter(s=>s.coeff>0)
+      .sort((a,b)=>b.coeff-a.coeff)
+      .slice(0,5);
+    const coeffLine=coeffList.length>0?`Top coefficient d'écoulement : ${coeffList.map(s=>`${s.modele} (${s.coeff})`).join(', ')}.`:'';
+
+    // Flops
+    const flopsList=stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen>60&&s.ecartEP!==null&&Math.abs(s.ecartEP)>10)
+      .sort((a,b)=>(b.delaiMoyen??0)-(a.delaiMoyen??0));
+    const flopsLine=flopsList.length>0
+      ?`Flops (délai>60j, écart EP>±10%) : ${flopsList.length} modèles — top 3 : ${flopsList.slice(0,3).map(s=>`${s.modele} (${s.delaiMoyen}j, ${s.ecartEP!>0?'+':''}${s.ecartEP}%)`).join(', ')}.`
+      :'Flops : aucun modèle en alerte.';
 
     // Family-specific context
     const familyLines: string[] = [];
@@ -794,14 +815,12 @@ export function getJournalContext(magasinNom: string): string {
 
     return [
       `\nAnalyse journal ${magasinNom} · ${stored.rows.length.toLocaleString('fr-FR')} ventes (grades A/B/C) · ${period}.`,
-      `Top rotations (<30j, min 3 ventes) : ${topRot||'aucun'}.`,
-      `Top marges : ${topMarge||'aucun'}. Pépites locales : ${pepites||'aucune'}.`,
+      `Top rotations (<30j, min 3 ventes) : ${topRot||'aucun'}. Pépites locales : ${pepites||'aucune'}.`,
       epVG!=null?`Politique vente vs cote EP : écart ${fmtE(epVG)}.`:'',
       epAG!=null?`Politique achat vs cote EP : écart ${fmtE(epAG)}.`:'',
-      topBrands?`Marques dominantes : ${topBrands}.`:'',
-      srcLine, foursLine, achLine,
-      perte?`Modèles en perte sèche : ${perte}.`:'',
-      faible?`Modèles à faible rendement : ${faible}.`:'',
+      marchLine, coeffLine, flopsLine,
+      topBrands?`Segments dominants (volume) : ${topBrands}.`:'',
+      srcLine, achLine,
       ...familyLines,
     ].filter(Boolean).join('\n');
   } catch { return ''; }
@@ -1449,40 +1468,33 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     }
     return stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999));
   },[stats]);
-  const topMarge=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.margeTotal-a.margeTotal).slice(0,20),[stats]);
   const topVolume=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.qteVendue-a.qteVendue).slice(0,15),[stats]);
-  const coherenceEP=useMemo(()=>stats.filter(s=>MIN3(s)&&s.ecartEP!==null&&Math.abs(s.ecartEP)>10).sort((a,b)=>Math.abs(b.ecartEP!)-Math.abs(a.ecartEP!)),[stats]);
-  const perteSeche=useMemo(()=>stats.filter(s=>MIN3(s)&&s.margeTotal<0).sort((a,b)=>a.margeTotal-b.margeTotal),[stats]);
-  // Jewelry families rotate more slowly by nature → lower delay threshold
-  const faibleRendement=useMemo(()=>{
-    const delaiThreshold=(selectedFamily==='BOR'||selectedFamily==='BOPI'||selectedFamily==='BMAR'||selectedFamily==='BMON')?60:90;
-    return stats.filter(s=>MIN3(s)&&s.tauxMarge<20&&s.delaiMoyen!==null&&s.delaiMoyen>delaiThreshold&&s.margeTotal>=0).sort((a,b)=>a.tauxMarge-b.tauxMarge);
-  },[stats,selectedFamily]);
   const pepites=useMemo(()=>{
     const rotSet=new Set(topRotations.filter(r=>r.qteVendue>=5).map(r=>r.modele.toLowerCase()));
-    return topMarge.filter(m=>rotSet.has(m.modele.toLowerCase())).slice(0,5);
-  },[topRotations,topMarge]);
+    return [...stats].filter(MIN3).filter(m=>rotSet.has(m.modele.toLowerCase()))
+      .sort((a,b)=>b.margeTotal-a.margeTotal).slice(0,5);
+  },[topRotations,stats]);
 
-  const platformPerf=useMemo(()=>{
-    const fc=selectedFamily!=='all'?selectedFamily as FamilyCode:null;
-    if (!fc||!(['JCDR','JCON','JPOR'] as FamilyCode[]).includes(fc)) return [];
+  const marchePerf=useMemo(()=>{
+    if (selectedFamily==='BOR'||selectedFamily==='BOPI') return [];
+    if (selectedFamily==='all'&&detectedFamilies.length>0&&detectedFamilies.every(f=>f==='BOR'||f==='BOPI')) return [];
     const grp=new Map<string,{pvs:number[];pas:number[];dvs:number[]}>();
     for (const r of filteredRows) {
-      const plat=detectMarqueOuPlateforme(r.m,r.f);
-      if (!grp.has(plat)) grp.set(plat,{pvs:[],pas:[],dvs:[]});
-      const g=grp.get(plat)!;
+      const marque=detectMarqueOuPlateforme(r.m,r.f);
+      if (!grp.has(marque)) grp.set(marque,{pvs:[],pas:[],dvs:[]});
+      const g=grp.get(marque)!;
       g.pvs.push(r.pv); g.pas.push(r.pa);
       if (r.dv&&r.dv>0) g.dvs.push(r.dv);
     }
     const totalCA=filteredRows.reduce((s,r)=>s+r.pv,0);
     return Array.from(grp.entries())
       .filter(([,g])=>g.pvs.length>=5)
-      .map(([plat,g])=>{
+      .map(([marque,g])=>{
         const nb=g.pvs.length;
         const ca=g.pvs.reduce((s,v)=>s+v,0);
         const mt=g.pvs.reduce((s,v,i)=>s+v-g.pas[i],0);
         return {
-          plateforme:plat,nb,ca:Math.round(ca),mt:Math.round(mt),
+          marque,nb,ca:Math.round(ca),mt:Math.round(mt),
           pctCA:totalCA>0?Math.round(ca/totalCA*100):0,
           tauxMarge:ca>0?Math.round(mt/ca*100):0,
           delaiMoyen:g.dvs.length>0?Math.round(g.dvs.reduce((s,v)=>s+v,0)/g.dvs.length):null,
@@ -1490,22 +1502,19 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
         };
       })
       .sort((a,b)=>b.mt-a.mt);
-  },[filteredRows,selectedFamily]);
+  },[filteredRows,selectedFamily,detectedFamilies]);
 
-  const topEPErreurs=useMemo(()=>
-    stats.filter(s=>MIN3(s)&&s.epMoyen!=null&&s.ecartEP!==null&&s.ecartEP<-5)
-      .map(s=>({...s,potentielManque:Math.round(s.qteVendue*(s.epMoyen!-s.pvMoyen))}))
-      .sort((a,b)=>b.potentielManque-a.potentielManque)
-      .slice(0,10)
+  const topCoeff=useMemo(()=>
+    stats
+      .filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen>0)
+      .map(s=>({...s,coeff:Math.round((s.margeTotal/s.delaiMoyen!)*10)/10}))
+      .filter(s=>s.coeff>0)
+      .sort((a,b)=>b.coeff-a.coeff)
+      .slice(0,15)
   ,[stats]);
 
-  const totalPotentielManque=useMemo(()=>
-    stats.filter(s=>MIN3(s)&&s.epMoyen!=null&&s.ecartEP!==null&&s.ecartEP<-5)
-      .reduce((sum,s)=>sum+Math.round(s.qteVendue*(s.epMoyen!-s.pvMoyen)),0)
-  ,[stats]);
-
-  const modelsEnAlerte=useMemo(()=>
-    stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.ecartEP!==null)
+  const flops=useMemo(()=>
+    stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen>60&&s.ecartEP!==null&&Math.abs(s.ecartEP)>10)
       .sort((a,b)=>(b.delaiMoyen??0)-(a.delaiMoyen??0))
   ,[stats]);
 
@@ -1554,7 +1563,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
   const srcPart=sourcing.find(s=>s.canal.includes('Particulier'));
   const srcFour=sourcing.find(s=>s.canal.includes('Fournisseur'));
 
-  const showEP = selectedFamily==='all' || EP_FAMILIES.includes(selectedFamily as FamilyCode);
   const showGlobal=stored&&stats.length>0&&(hasEPVente||hasEPAchat||topBrands.length>0);
 
   function addToPAP() {
@@ -1576,7 +1584,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
   );
 
   const btnFilter=(active: boolean)=>`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${active?'bg-[#E30613] text-white':'bg-white border border-[#E0E0E0] text-[#6B7280] hover:border-[#E30613] hover:text-[#E30613]'}`;
-  const faibleDelaiLabel=(selectedFamily==='BOR'||selectedFamily==='BOPI'||selectedFamily==='BMAR'||selectedFamily==='BMON')?'60':'90';
 
   return (
     <div className="space-y-5">
@@ -1719,18 +1726,21 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             />
           )}
 
-          {/* Platform performance — JCDR/JCON/JPOR only */}
-          {platformPerf.length>0&&(
+          {/* Section 2: Performance par marque/plateforme */}
+          {marchePerf.length>0&&(
             <div className="space-y-2.5">
-              <h3 className="text-sm font-bold text-[#1A1A1A]">🎮 Performance par plateforme <span className="text-xs font-normal text-[#9CA3AF]">min 5 ventes · tri marge totale</span></h3>
+              <div>
+                <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Performance par marque/plateforme <span className="text-xs font-normal text-[#9CA3AF]">min 5 ventes · tri marge totale</span></h3>
+                <p className="text-xs text-[#9CA3AF] mt-0.5">Comparaison des segments dominants de la famille analysée</p>
+              </div>
               <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
                 <table className="text-xs w-full border-collapse">
-                  <thead><tr>{['Plateforme','Nb ventes','% du CA','Marge totale (€)','Taux marge (%)','Délai moyen (j)','PV moyen (€)'].map((l,i)=>(
+                  <thead><tr>{['Marque/Plateforme','Nb ventes','% du CA','Marge totale (€)','Taux marge (%)','Délai moyen (j)','PV moyen (€)'].map((l,i)=>(
                     <th key={i} className={i===0?TH:THR}>{l}</th>
                   ))}</tr></thead>
-                  <tbody>{platformPerf.map((p,i)=>(
+                  <tbody>{marchePerf.map((p,i)=>(
                     <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
-                      <td className={TD}><span className="font-medium">{p.plateforme}</span></td>
+                      <td className={TD}><span className="font-medium">{p.marque}</span></td>
                       <td className={TDR}>{p.nb}</td>
                       <td className={TDR}>{p.pctCA} %</td>
                       <td className={TDR}><span className={p.mt>0?'text-green-700 font-semibold':'text-red-600 font-semibold'}>{fmtK(p.mt)} €</span></td>
@@ -1741,11 +1751,11 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                   ))}</tbody>
                 </table>
               </div>
-              <p className="text-xs text-[#9CA3AF] italic px-1">La plateforme correspond à la marque détectée sur le modèle. Un délai moyen court et un taux de marge élevé indiquent une plateforme à prioriser à l&apos;achat.</p>
+              <p className="text-xs text-[#9CA3AF] italic px-1">💡 La marque ou plateforme avec le meilleur taux de marge et le délai le plus court est celle à prioriser au rachat comptoir.</p>
             </div>
           )}
 
-          {/* Sourcing */}
+          {/* Section 3: Sourcing */}
           {hasSourcingData&&(
             <div className="space-y-3">
               <h3 className="text-sm font-bold text-[#1A1A1A]">🛒 Sourcing : Particulier vs Fournisseur</h3>
@@ -1776,7 +1786,33 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             </div>
           )}
 
-          {/* Top Rotations */}
+          {/* Section 4: Performance acheteurs */}
+          {hasCollaborateurData&&acheteurs.length>0&&(
+            <div className="space-y-2.5">
+              <h3 className="text-sm font-bold text-[#1A1A1A]">👥 Performance acheteurs magasin <span className="text-xs font-normal text-[#9CA3AF]">achats comptoir · min 5 achats</span></h3>
+              <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
+                <table className="text-xs w-full border-collapse">
+                  <thead><tr>{['Acheteur','Nb achats','Val. achats (€)','Marge totale (€)','Taux marge (%)','Écart EP achat (%)','Délai moyen (j)'].map((l,i)=>(
+                    <th key={i} className={i===0?TH:THR}>{l}</th>
+                  ))}</tr></thead>
+                  <tbody>{acheteurs.map((a,i)=>(
+                    <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                      <td className={TD}><span className="font-medium">{a.nom}</span></td>
+                      <td className={TDR}>{a.nbAchats}</td>
+                      <td className={TDR}>{fmtK(a.valeurAchats)} €</td>
+                      <td className={TDR}>{fmtK(a.margeTotal)} €</td>
+                      <td className={TDR}><span className={a.tauxMarge>=40?'text-green-600 font-semibold':a.tauxMarge<30?'text-orange-500':''}>{a.tauxMarge} %</span></td>
+                      <td className={TDR}>{a.ecartEPAchat!==null?<span className={Math.abs(a.ecartEPAchat)<=5?'text-green-600':'text-orange-500'}>{fmtE(a.ecartEPAchat)}</span>:'—'}</td>
+                      <td className={TDR}>{a.delaiMoyen!==null?`${a.delaiMoyen} j`:'—'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <p className="text-xs text-[#9CA3AF] italic px-1">Ces données aident à identifier les acheteurs qui appliquent le mieux la VPD et qui maîtrisent la cote EasyPrice.</p>
+            </div>
+          )}
+
+          {/* Section 5: Top Rotations */}
           <SectionTable
             title={`⚡ TOP ROTATIONS (délai moyen < ${selectedFamily!=='all'&&['BOR','BOPI','BMAR','BMON'].includes(selectedFamily)?'90':'30'} jours)`}
             cnt={`${topRotations.length} modèle${topRotations.length!==1?'s':''} · min 3 ventes`}
@@ -1799,52 +1835,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             ):null}
           />
 
-          {/* TOP 10 Erreurs Prix EasyPrice */}
-          {showEP&&hasEPVente&&(
-            <div className="space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <h3 className="text-sm font-bold text-[#1A1A1A]">🚨 TOP 10 ERREURS PRIX EASYPRICE <span className="text-xs font-normal text-[#9CA3AF]">écart EP &lt; -5% · min 3 ventes</span></h3>
-                {totalPotentielManque>0&&<span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1">Manque à gagner total : {fmtK(totalPotentielManque)} €</span>}
-              </div>
-              {topEPErreurs.length>0?(
-                <>
-                  <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
-                    <table className="text-xs w-full border-collapse">
-                      <thead><tr>{['Modèle','Qté','PV moyen (€)','Cote EP (€)','Écart EP (%)','Potentiel manqué (€)'].map((l,i)=>(
-                        <th key={i} className={i===0?TH:THR}>{l}</th>
-                      ))}</tr></thead>
-                      <tbody>{topEPErreurs.map((s,i)=>(
-                        <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
-                          <td className={TD}>{modeleCol(s)}</td>
-                          <td className={TDR}>{s.qteVendue}</td>
-                          <td className={TDR}>{fmtK(s.pvMoyen)} €</td>
-                          <td className={TDR}>{s.epMoyen!=null?`${fmtK(s.epMoyen)} €`:'—'}</td>
-                          <td className={TDR}><span className="text-red-600 font-semibold">{fmtE(s.ecartEP!)}</span></td>
-                          <td className={TDR}><span className="text-red-700 font-bold">{fmtK(s.potentielManque)} €</span></td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                  {topEPErreurs.length>=3&&(
-                    <div className="flex flex-wrap gap-3 text-xs">
-                      <span className="bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5 text-orange-700">
-                        <strong>Top 3 concentration :</strong> {Math.round(topEPErreurs.slice(0,3).reduce((s,r)=>s+r.potentielManque,0)/Math.max(totalPotentielManque,1)*100)}% du manque à gagner
-                      </span>
-                      <span className="bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 text-red-700">
-                        <strong>{stats.filter(s=>MIN3(s)&&s.epMoyen!=null&&s.ecartEP!==null&&s.ecartEP<-5).length} modèles</strong> vendus sous la cote EasyPrice (tous modèles confondus)
-                      </span>
-                    </div>
-                  )}
-                </>
-              ):(
-                <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
-                  ✅ Aucun modèle vendu significativement sous la cote EasyPrice sur cette période.
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Top Volume */}
+          {/* Section 6: Top Volume */}
           <SectionTable title="📦 TOP VENTES EN VOLUME" cnt={`Top ${topVolume.length} · min 3 ventes`}
             rows={topVolume}
             cols={[
@@ -1857,177 +1848,85 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             ]}
           />
 
-          {/* Fournisseurs */}
-          {hasFournisseurData&&fournisseurs.length>0&&(
+          {/* Section 7: Top coefficient d'écoulement */}
+          {topCoeff.length>0&&(
             <div className="space-y-2.5">
-              <h3 className="text-sm font-bold text-[#1A1A1A]">🏪 Top fournisseurs externes <span className="text-xs font-normal text-[#9CA3AF]">min 3 produits</span></h3>
+              <div>
+                <h3 className="text-sm font-bold text-[#1A1A1A]">💎 Top coefficient d&apos;écoulement <span className="text-xs font-normal text-[#9CA3AF]">min 3 ventes · marge totale ÷ délai moyen</span></h3>
+                <p className="text-xs text-[#9CA3AF] mt-0.5">Les modèles qui rapportent le plus de marge par jour mobilisé</p>
+              </div>
               <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
                 <table className="text-xs w-full border-collapse">
-                  <thead><tr>{['Fournisseur','Nb produits','Val. achats (€)','Marge totale (€)','Taux marge (%)','Délai moyen (j)'].map((l,i)=>(
+                  <thead><tr>{['Modèle','Famille/Segment','Qté','Marge unit. (€)','Délai moyen (j)','Coefficient'].map((l,i)=>(
                     <th key={i} className={i===0?TH:THR}>{l}</th>
                   ))}</tr></thead>
-                  <tbody>{fournisseurs.map((f,i)=>(
+                  <tbody>{topCoeff.map((s,i)=>(
                     <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
-                      <td className={TD}><span className="font-medium">{f.nom}</span></td>
-                      <td className={TDR}>{f.nbProduits}</td>
-                      <td className={TDR}>{fmtK(f.valeurAchats)} €</td>
-                      <td className={TDR}><span className={f.margeTotal>0?'text-green-700 font-semibold':'text-red-600 font-semibold'}>{fmtK(f.margeTotal)} €</span></td>
-                      <td className={TDR}>{f.tauxMarge} %</td>
-                      <td className={TDR}>{f.delaiMoyen!==null?`${f.delaiMoyen} j`:'—'}</td>
+                      <td className={TD}>{modeleCol(s)}</td>
+                      <td className={TDR}>{s.famille||'—'}</td>
+                      <td className={TDR}>{s.qteVendue}</td>
+                      <td className={TDR}>{fmtK(s.margeUnitaire)} €</td>
+                      <td className={TDR}>{s.delaiMoyen!==null?`${s.delaiMoyen} j`:'—'}</td>
+                      <td className={TDR}><span className="font-bold text-[#E30613]">{s.coeff}</span></td>
                     </tr>
                   ))}</tbody>
                 </table>
               </div>
+              <p className="text-xs text-[#9CA3AF] italic px-1">💡 Le coefficient d&apos;écoulement croise marge et vitesse de rotation. Plus il est élevé, plus le produit rapporte de marge par jour de stock immobilisé. Indicateur synthétique de la vraie rentabilité d&apos;un modèle.</p>
             </div>
           )}
 
-          {/* Acheteurs */}
-          {hasCollaborateurData&&acheteurs.length>0&&(
-            <div className="space-y-2.5">
-              <h3 className="text-sm font-bold text-[#1A1A1A]">👥 Performance acheteurs magasin <span className="text-xs font-normal text-[#9CA3AF]">achats comptoir · min 5 achats</span></h3>
-              <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
-                <table className="text-xs w-full border-collapse">
-                  <thead><tr>{['Acheteur','Nb achats','Val. achats (€)','Marge totale (€)','Taux marge (%)','Écart EP achat (%)','Délai moyen (j)'].map((l,i)=>(
-                    <th key={i} className={i===0?TH:THR}>{l}</th>
-                  ))}</tr></thead>
-                  <tbody>{acheteurs.map((a,i)=>(
-                    <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
-                      <td className={TD}><span className="font-medium">{a.nom}</span></td>
-                      <td className={TDR}>{a.nbAchats}</td>
-                      <td className={TDR}>{fmtK(a.valeurAchats)} €</td>
-                      <td className={TDR}>{fmtK(a.margeTotal)} €</td>
-                      <td className={TDR}><span className={a.tauxMarge>=40?'text-green-600 font-semibold':a.tauxMarge<30?'text-orange-500':''}>{a.tauxMarge} %</span></td>
-                      <td className={TDR}>{a.ecartEPAchat!==null?<span className={Math.abs(a.ecartEPAchat)<=5?'text-green-600':'text-orange-500'}>{fmtE(a.ecartEPAchat)}</span>:'—'}</td>
-                      <td className={TDR}>{a.delaiMoyen!==null?`${a.delaiMoyen} j`:'—'}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-              {acheteurs.length>0&&(
-                <p className="text-xs text-[#9CA3AF] italic px-1">Ces données aident à identifier les acheteurs qui appliquent le mieux la VPD et qui maîtrisent la cote EasyPrice.</p>
-              )}
+          {/* Section 8: Flops */}
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-bold text-[#1A1A1A]">🔴 Flops — produits lents avec écart prix EasyPrice <span className="text-xs font-normal text-[#9CA3AF]">délai &gt; 60j · EP renseignée · écart &gt; ±10% · min 3 ventes</span></h3>
+              <p className="text-xs text-[#9CA3AF] mt-0.5">Modèles dont le délai dépasse 60 jours et dont le prix s&apos;écarte de la cote réseau</p>
             </div>
-          )}
-
-          {/* ⚠️ Modèles en alerte — délai long + lecture EP */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-[#1A1A1A]">⚠️ Modèles en alerte — délai long + lecture EP <span className="text-xs font-normal text-[#9CA3AF]">délai &gt; 90j · EP renseignée · min 3 ventes</span></h3>
-            {modelsEnAlerte.length===0?(
+            {flops.length===0?(
               <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
-                ✅ Aucun modèle en alerte (délai &gt; 90j avec EP renseignée) sur cette période.
+                ✅ Aucun flop détecté sur cette période. Bravo.
               </div>
             ):(
               <>
                 <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
                   <table className="text-xs w-full border-collapse">
-                    <thead><tr>{['Modèle','Qté','Délai moy. (j)','PV moyen (€)','Cote EP (€)','Écart EP (%)','Verdict métier'].map((l,i)=>(
+                    <thead><tr>{['Modèle','Plateforme/Marque','Qté','Délai moyen (j)','PV moyen (€)','Cote EP (€)','Écart %'].map((l,i)=>(
                       <th key={i} className={i===0?TH:THR}>{l}</th>
                     ))}</tr></thead>
-                    <tbody>{modelsEnAlerte.map((s,i)=>{
-                      const ecart=s.ecartEP!;
-                      const verdict=ecart<=-10
-                        ?{icon:'🔴',label:'Vendeur contraint de brader',cls:'text-red-600 font-semibold'}
-                        :ecart>=10
-                          ?{icon:'🟠',label:'Stock dormant',cls:'text-orange-500 font-semibold'}
-                          :{icon:'🟡',label:'Prix conforme mais demande faible',cls:'text-yellow-600 font-semibold'};
-                      return (
-                        <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
-                          <td className={TD}>{modeleCol(s)}</td>
-                          <td className={TDR}>{s.qteVendue}</td>
-                          <td className={TDR}><span className="text-orange-500 font-semibold">{s.delaiMoyen} j</span></td>
-                          <td className={TDR}>{fmtK(s.pvMoyen)} €</td>
-                          <td className={TDR}>{s.epMoyen!=null?`${fmtK(s.epMoyen)} €`:'—'}</td>
-                          <td className={TDR}><span className={ecart<0?'text-red-600 font-semibold':'text-orange-500 font-semibold'}>{fmtE(ecart)}</span></td>
-                          <td className={TDR}><span className={verdict.cls}>{verdict.icon} {verdict.label}</span></td>
-                        </tr>
-                      );
-                    })}</tbody>
+                    <tbody>{flops.map((s,i)=>(
+                      <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                        <td className={TD}>{modeleCol(s)}</td>
+                        <td className={TDR}>{detectMarqueOuPlateforme(s.modele,s.famille)||s.famille||'—'}</td>
+                        <td className={TDR}>{s.qteVendue}</td>
+                        <td className={TDR}><span className="text-orange-500 font-semibold">{s.delaiMoyen} j</span></td>
+                        <td className={TDR}>{fmtK(s.pvMoyen)} €</td>
+                        <td className={TDR}>{s.epMoyen!=null?`${fmtK(s.epMoyen)} €`:'—'}</td>
+                        <td className={TDR}>
+                          <span className={s.ecartEP!<0
+                            ?'bg-red-100 text-red-700 font-semibold px-1.5 py-0.5 rounded'
+                            :'bg-orange-100 text-orange-700 font-semibold px-1.5 py-0.5 rounded'
+                          }>{fmtE(s.ecartEP!)}</span>
+                        </td>
+                      </tr>
+                    ))}</tbody>
                   </table>
                 </div>
-                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-1.5 text-xs text-[#1A1A1A]">
-                  <p className="font-semibold text-blue-800">📖 Comment lire ce tableau ?</p>
-                  <p><span className="font-semibold">🔴 Vendeur contraint de brader</span> — Le modèle se vend &gt; 10% sous la cote EP. Probable pression de vendre vite. Action : revoir la politique de dépréciation ou former le vendeur.</p>
-                  <p><span className="font-semibold">🟠 Stock dormant</span> — Le modèle est affiché &gt; 10% au-dessus de la cote EP. Le prix élevé bloque la vente. Action : ajuster le prix à la cote ou mettre en promotion.</p>
-                  <p><span className="font-semibold">🟡 Prix conforme mais demande faible</span> — Prix en ligne avec EP, mais le modèle ne tourne pas. Problème de demande locale ou de mise en avant. Action : repositionner en rayon ou en vitrine.</p>
-                </div>
+                <p className="text-xs text-[#6B7280]">
+                  📊 <strong className="text-[#1A1A1A]">{flops.length}</strong> modèle{flops.length!==1?'s':''} en alerte sur la période — dont{' '}
+                  <strong className="text-[#1A1A1A]">{flops.filter(s=>s.ecartEP!<0).length}</strong> sous-évalué{flops.filter(s=>s.ecartEP!<0).length!==1?'s':''} (écart négatif) et{' '}
+                  <strong className="text-[#1A1A1A]">{flops.filter(s=>s.ecartEP!>0).length}</strong> sur-évalué{flops.filter(s=>s.ecartEP!>0).length!==1?'s':''} (écart positif).
+                </p>
               </>
             )}
           </div>
 
-          {/* Perte sèche & Faible rendement */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-[#1A1A1A]">📉 Modèles à surveiller — rentabilité</h3>
-            {perteSeche.length===0&&faibleRendement.length===0?(
-              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-medium">
-                ✅ Aucun modèle à surveiller sur cette période. Bravo.
-              </div>
-            ):(
-              <div className="space-y-5">
-                {perteSeche.length>0&&(
-                  <SectionTable
-                    title="🔴 Perte sèche"
-                    cnt={`${perteSeche.length} modèle${perteSeche.length!==1?'s':''} · min 3 ventes`}
-                    alert="Ces modèles vous font perdre de l'argent sur la période. À investiguer en priorité : prix d'achat trop élevé, prix de vente cassé, ou problème de grading."
-                    rows={perteSeche}
-                    cols={[
-                      {label:'Modèle',render:modeleCol},
-                      {label:'Qté',right:true,render:s=>s.qteVendue},
-                      {label:'PA moy.',right:true,render:s=>`${fmtK(s.paMoyen)} €`},
-                      {label:'PV moy.',right:true,render:s=>`${fmtK(s.pvMoyen)} €`},
-                      {label:'Marge unit.',right:true,render:s=><span className="text-red-600 font-semibold">{fmtK(s.margeUnitaire)} €</span>},
-                      {label:'Marge totale',right:true,render:s=><span className="text-red-600 font-semibold">{fmtK(s.margeTotal)} €</span>},
-                    ]}
-                  />
-                )}
-                {faibleRendement.length>0&&(
-                  <SectionTable
-                    title={`🟡 Faible rendement (lents et peu rentables — délai > ${faibleDelaiLabel}j)`}
-                    cnt={`${faibleRendement.length} modèle${faibleRendement.length!==1?'s':''} · min 3 ventes`}
-                    alert={`Ces modèles cumulent deux faiblesses : taux de marge sous les 20% ET rotation lente (plus de ${faibleDelaiLabel} jours). Ils mobilisent du cash sans rapporter beaucoup. À arbitrer : soit augmenter la marge (prix achat / prix vente), soit éviter d'en acheter au comptoir.`}
-                    rows={faibleRendement}
-                    cols={[
-                      {label:'Modèle',render:modeleCol},
-                      {label:'Qté',right:true,render:s=>s.qteVendue},
-                      {label:'Délai moyen',right:true,render:s=>s.delaiMoyen!==null?<span className="text-orange-500">{s.delaiMoyen} j</span>:'—'},
-                      {label:'Taux marge',right:true,render:s=><span className="text-orange-500">{s.tauxMarge} %</span>},
-                      {label:'Marge unit.',right:true,render:s=>`${fmtK(s.margeUnitaire)} €`},
-                      {label:'Marge totale',right:true,render:s=>`${fmtK(s.margeTotal)} €`},
-                    ]}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Cohérence EP — hidden for BOR/BOPI/BMAR/BMON */}
-          {showEP&&hasEPVente&&(
-            <SectionTable
-              title="💡 Cohérence prix EasyPrice"
-              cnt={coherenceEP.length>0?`${coherenceEP.length} modèle${coherenceEP.length!==1?'s':''} avec écart > 10% · min 3 ventes`:undefined}
-              alert="Seuls les modèles avec un écart absolu > 10% vs la cote réseau sont affichés."
-              rows={coherenceEP}
-              cols={[
-                {label:'Modèle',render:modeleCol},
-                {label:'Qté',right:true,render:s=>s.qteVendue},
-                {label:'PV moyen',right:true,render:s=>`${fmtK(s.pvMoyen)} €`},
-                {label:'Cote EP (B)',right:true,render:s=>s.epMoyen!=null?`${fmtK(s.epMoyen)} €`:'—'},
-                {label:'Écart %',right:true,render:s=>s.ecartEP===null?'—':<span className={s.ecartEP<0?'text-red-600 font-semibold':'text-orange-500 font-semibold'}>{fmtE(s.ecartEP)}</span>},
-                {label:'Statut',render:s=>s.ecartEP===null?'—':s.ecartEP<0?<span className="text-red-600 font-semibold">🔴 Sous-évalué</span>:<span className="text-orange-500 font-semibold">🟠 Sur-évalué</span>},
-              ]}
-              emptyMsg="✓ Aucun écart significatif (> 10%) vs cote EasyPrice sur cette période."
-            />
-          )}
-
-          {/* Recommandations */}
+          {/* Section 9: Recommandations */}
           <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-4">
             <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Recommandations stratégiques</h3>
             <ul className="space-y-2.5 text-sm">
               <li><span className="font-semibold text-[#1A1A1A]">⚡ Rotation rapide (&lt; 30j, 🟢 ou ✅) :</span>{' '}<span className="text-[#6B7280]">{topRotations.filter(r=>r.qteVendue>=5).slice(0,5).map(r=>`${r.modele} (${r.delaiMoyen}j)`).join(', ')||'Aucun modèle fiable sur cette période.'}</span></li>
-              <li><span className="font-semibold text-[#1A1A1A]">💰 Plus forte marge cumulée :</span>{' '}<span className="text-[#6B7280]">{topMarge.slice(0,5).map(m=>`${m.modele} (${fmtK(m.margeTotal)} €)`).join(', ')||'Aucune donnée.'}</span></li>
               <li><span className="font-semibold text-[#E30613]">💎 Pépites locales :</span>{' '}<span className="text-[#6B7280]">{pepites.length>0?pepites.map(p=>p.modele).join(', '):'Aucune pépite détectée — élargissez la période.'}</span></li>
-              {perteSeche.length>0&&<li><span className="font-semibold text-red-600">🔴 Perte sèche :</span>{' '}<span className="text-[#6B7280]">{perteSeche.slice(0,3).map(t=>t.modele).join(', ')}</span></li>}
-              {faibleRendement.length>0&&<li><span className="font-semibold text-yellow-600">🟡 Faible rendement :</span>{' '}<span className="text-[#6B7280]">{faibleRendement.slice(0,3).map(t=>t.modele).join(', ')}</span></li>}
-              {coherenceEP.length>0&&showEP&&<li><span className="font-semibold text-[#1A1A1A]">💡 Écarts prix EP (&gt; 10%) :</span>{' '}<span className="text-[#6B7280]">{coherenceEP.slice(0,3).map(e=>`${e.modele} (${fmtE(e.ecartEP!)})`).join(', ')}</span></li>}
+              {flops.length>0&&<li><span className="font-semibold text-red-600">🔴 Flops à traiter en priorité :</span>{' '}<span className="text-[#6B7280]">{flops.slice(0,3).map(f=>`${f.modele} (${f.delaiMoyen}j, ${fmtE(f.ecartEP!)})`).join(', ')}</span></li>}
             </ul>
             <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg px-4 py-3 text-xs text-[#1A1A1A]">
               <strong>Action prioritaire :</strong> intégrer les pépites locales fiables dans votre gamme prioritaire. Croisez avec le module <strong>Couverture de gamme</strong>.
