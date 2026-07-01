@@ -61,13 +61,16 @@ export function getVisionContext(magasinNom: string): string {
     const currentMonth = new Date().toISOString().slice(0, 7);
     const os = localStorage.getItem(`objectifs_${magasinNom}_${currentMonth}`);
     if (os) {
-      const obj = JSON.parse(os) as { familles: Array<{ famille: string; margeCible: number; tauxMarge: number; margeRealisee: number }>; promoRedist: number };
+      const obj = JSON.parse(os) as { familles: Array<{ famille: string; margeCible: number; tauxMarge: number; stockInitial?: number; margeRealisee: number }>; promoRedist: number };
       if (obj.familles?.length) {
         const lines = obj.familles
           .filter(f => f.famille && f.margeCible > 0)
           .map(f => {
             const avanc = f.margeCible > 0 ? Math.round(f.margeRealisee / f.margeCible * 100) : 0;
-            return `  - ${f.famille} : cible ${f.margeCible.toLocaleString('fr-FR')}€ · réalisé ${f.margeRealisee.toLocaleString('fr-FR')}€ (${avanc}%)`;
+            const stockCible = f.tauxMarge > 0 ? Math.round(f.margeCible / (f.tauxMarge / 100)) : 0;
+            const besoin = stockCible > 0 ? Math.max(0, stockCible - (f.stockInitial ?? 0)) : 0;
+            const besoinStr = stockCible > 0 ? ` · besoin sourcing: ${besoin > 0 ? '+' + besoin.toLocaleString('fr-FR') + '€' : 'couvert'}` : '';
+            return `  - ${f.famille} : cible ${f.margeCible.toLocaleString('fr-FR')}€ · réalisé ${f.margeRealisee.toLocaleString('fr-FR')}€ (${avanc}%)${besoinStr}`;
           });
         if (lines.length) parts.push(`Objectifs mensuels (${currentMonth}) :\n${lines.join('\n')}`);
       }
@@ -99,6 +102,7 @@ interface ObjFamille {
   famille: string;
   margeCible: number;
   tauxMarge: number;
+  stockInitial: number;
   margeRealisee: number;
 }
 
@@ -139,7 +143,7 @@ function savePAPActions(magasinNom: string, actions: PAPAction[]) {
 }
 
 function defaultRows(): ObjFamille[] {
-  return DEFAULT_FAMILLES.map(f => ({ id: uid(), famille: f.famille, tauxMarge: f.tauxMarge, margeCible: 0, margeRealisee: 0 }));
+  return DEFAULT_FAMILLES.map(f => ({ id: uid(), famille: f.famille, tauxMarge: f.tauxMarge, margeCible: 0, stockInitial: 0, margeRealisee: 0 }));
 }
 
 export default function Objectifs({ magasinNom }: Props) {
@@ -178,7 +182,7 @@ export default function Objectifs({ magasinNom }: Props) {
       const s = localStorage.getItem(key);
       if (s) {
         const parsed = JSON.parse(s) as ObjData;
-        setFamilles(parsed.familles ?? defaultRows());
+        setFamilles((parsed.familles ?? defaultRows()).map(f => ({ ...f, stockInitial: f.stockInitial ?? 0 })));
         setPromoRedist(parsed.promoRedist ?? 30);
       } else {
         setFamilles(defaultRows());
@@ -225,7 +229,7 @@ export default function Objectifs({ magasinNom }: Props) {
   }
 
   function addFamille() {
-    const next = [...familles, { id: uid(), famille: '', tauxMarge: 40, margeCible: 0, margeRealisee: 0 }];
+    const next = [...familles, { id: uid(), famille: '', tauxMarge: 40, margeCible: 0, stockInitial: 0, margeRealisee: 0 }];
     setFamilles(next);
     saveObj(next, promoRedist);
   }
@@ -246,6 +250,11 @@ export default function Objectifs({ magasinNom }: Props) {
     return Math.round(f.margeCible / (f.tauxMarge / 100));
   }
 
+  function besoinSourcing(f: ObjFamille): number {
+    const cible = stockNecessaire(f);
+    return Math.max(0, cible - (f.stockInitial || 0));
+  }
+
   function avancement(f: ObjFamille): number {
     if (f.margeCible <= 0) return 0;
     return Math.round((f.margeRealisee / f.margeCible) * 100);
@@ -261,11 +270,11 @@ export default function Objectifs({ magasinNom }: Props) {
   const totalBudgetPromo = familles.reduce((s, f) => s + budgetPromo(f), 0);
 
   const statusMsg = totalCible === 0 ? null
-    : totalAvancement >= 100
-      ? { msg: 'Objectif atteint — budget promo disponible !', cls: 'bg-green-50 border-green-300 text-green-700', icon: '🎉' }
+    : totalAvancement >= 90
+      ? { msg: 'Objectif quasiment atteint — budget promo disponible !', cls: 'bg-green-50 border-green-300 text-green-700', icon: '🟢' }
       : totalAvancement >= 50
-        ? { msg: 'En bonne voie — continuez', cls: 'bg-blue-50 border-blue-200 text-blue-700', icon: '📈' }
-        : { msg: 'En retard — relancez les ventes', cls: 'bg-orange-50 border-orange-200 text-orange-600', icon: '⚠' };
+        ? { msg: 'En bonne voie — continuez l\'effort', cls: 'bg-orange-50 border-orange-200 text-orange-600', icon: '🟠' }
+        : { msg: 'En retard — relancez les ventes et le sourcing', cls: 'bg-red-50 border-red-200 text-red-700', icon: '🔴' };
 
   const ic = 'bg-white border border-[#E0E0E0] rounded-md px-2 py-1.5 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]';
   const tasCls = 'w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613] resize-none';
@@ -417,7 +426,9 @@ export default function Objectifs({ magasinNom }: Props) {
                   <th className="text-left px-3 py-2.5 font-semibold text-[#6B7280]">Famille</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge cible (€)</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Taux marge (%)</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock nécessaire</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock initial (€)</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock cible (€)</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Besoin sourcing NET</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge réalisée (€)</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Avancement</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Budget promo (€)</th>
@@ -426,7 +437,8 @@ export default function Objectifs({ magasinNom }: Props) {
               </thead>
               <tbody className="divide-y divide-[#E0E0E0]">
                 {familles.map(f => {
-                  const stock = stockNecessaire(f);
+                  const stockCible = stockNecessaire(f);
+                  const besoin = besoinSourcing(f);
                   const avanc = avancement(f);
                   const promo = budgetPromo(f);
                   return (
@@ -457,8 +469,26 @@ export default function Objectifs({ magasinNom }: Props) {
                           placeholder="40"
                         />
                       </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          value={f.stockInitial || ''}
+                          onChange={e => updateFamille(f.id, 'stockInitial', parseFloat(e.target.value) || 0)}
+                          className={`${ic} w-24 text-right`}
+                          placeholder="0"
+                        />
+                      </td>
                       <td className="px-3 py-2 text-right font-medium text-[#1A1A1A]">
-                        {stock > 0 ? stock.toLocaleString('fr-FR') + ' €' : '—'}
+                        {stockCible > 0 ? stockCible.toLocaleString('fr-FR') + ' €' : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className={`font-semibold ${
+                          besoin === 0 && stockCible > 0 ? 'text-green-600'
+                          : besoin > 0 ? 'text-orange-600'
+                          : 'text-[#9CA3AF]'
+                        }`}>
+                          {stockCible > 0 ? (besoin > 0 ? `+${besoin.toLocaleString('fr-FR')} €` : '✓ Couvert') : '—'}
+                        </span>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <input
@@ -471,9 +501,9 @@ export default function Objectifs({ magasinNom }: Props) {
                       </td>
                       <td className="px-3 py-2 text-right">
                         <span className={`font-bold ${
-                          avanc >= 100 ? 'text-green-600'
-                          : avanc >= 50 ? 'text-blue-600'
-                          : avanc > 0 ? 'text-orange-500'
+                          avanc >= 90 ? 'text-green-600'
+                          : avanc >= 50 ? 'text-orange-500'
+                          : avanc > 0 ? 'text-red-600'
                           : 'text-[#9CA3AF]'
                         }`}>
                           {f.margeCible > 0 ? `${avanc}%` : '—'}
@@ -489,7 +519,7 @@ export default function Objectifs({ magasinNom }: Props) {
                           <button onClick={() => {
                             const current = loadPAPActions(magasinNom);
                             const e = new Date(); e.setDate(e.getDate() + 14);
-                            const action: PAPAction = { id: String(Date.now()), titre: `Objectifs — Booster la famille ${f.famille} (${avanc}% objectif)`, axe: 'Commerce' as ActionAxe, pilote: 'Franchisé', copilote: '', description: `Avancement ${avanc}% sur la cible de marge ${f.margeCible.toLocaleString('fr-FR')}€. Accélérer le sourcing et les ventes sur cette famille.`, echeance: e.toISOString().slice(0, 10), priorite: avanc < 50 ? 1 : 2, gain: Math.round(f.margeCible - f.margeRealisee), statut: 'À faire' as StoredStatut };
+                            const action: PAPAction = { id: String(Date.now()), titre: `Objectifs — Booster la famille ${f.famille} (${avanc}% objectif)`, axe: 'Commerce' as ActionAxe, pilote: 'Franchisé', copilote: '', description: `Avancement ${avanc}% sur la cible de marge ${f.margeCible.toLocaleString('fr-FR')}€. Besoin sourcing NET : ${besoin > 0 ? besoin.toLocaleString('fr-FR') + ' €' : 'couvert'}. Accélérer le sourcing et les ventes sur cette famille.`, echeance: e.toISOString().slice(0, 10), priorite: avanc < 50 ? 1 : 2, gain: Math.round(f.margeCible - f.margeRealisee), statut: 'À faire' as StoredStatut };
                             savePAPActions(magasinNom, [...current, action]);
                           }} className="text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap transition-colors">+ PAP</button>
                         )}
@@ -522,9 +552,9 @@ export default function Objectifs({ magasinNom }: Props) {
             </div>
             <div className="text-center">
               <div className={`text-xl font-black ${
-                totalAvancement >= 100 ? 'text-green-600'
-                : totalAvancement >= 50 ? 'text-blue-600'
-                : totalAvancement > 0 ? 'text-orange-500'
+                totalAvancement >= 90 ? 'text-green-600'
+                : totalAvancement >= 50 ? 'text-orange-500'
+                : totalAvancement > 0 ? 'text-red-600'
                 : 'text-[#9CA3AF]'
               }`}>
                 {totalCible > 0 ? `${totalAvancement}%` : '—'}
