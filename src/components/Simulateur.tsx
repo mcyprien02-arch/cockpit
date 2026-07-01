@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { PAPAction } from '@/types';
 import ZonesModule from './ZonesModule';
 
@@ -19,11 +19,6 @@ interface EquipeStore {
   caAnnuel: number;
   tauxMarge: number;
   msSeuilPct: number;
-}
-
-interface RhStore {
-  departs: number;
-  effectifMoyen: number | null;
 }
 
 function uid() { return Math.random().toString(36).slice(2); }
@@ -45,18 +40,6 @@ function migrateContrat(old: string): string {
   return MAP[old] ?? old;
 }
 
-function caColor(v: number) {
-  if (v >= 200000 && v <= 300000) return 'text-green-600';
-  if ((v >= 150000 && v < 200000) || (v > 300000 && v <= 400000)) return 'text-orange-500';
-  return 'text-red-600';
-}
-
-function margeColor(v: number) {
-  if (v > 90000) return 'text-green-600';
-  if (v >= 60000) return 'text-orange-500';
-  return 'text-red-600';
-}
-
 export function getSimulateurContext(magasinNom: string): string {
   try {
     const equipeKey = `equipe_${magasinNom}`;
@@ -74,7 +57,7 @@ export function getSimulateurContext(magasinNom: string): string {
     const msPct = ca > 0 ? (totalMS / ca) * 100 : 0;
     let rhCtx = '';
     if (rh) {
-      const rhData = JSON.parse(rh) as RhStore;
+      const rhData = JSON.parse(rh) as { departs: number; effectifMoyen: number | null };
       const eff = rhData.effectifMoyen ?? totalEtp;
       const turnover = eff > 0 ? (rhData.departs / eff) * 100 : 0;
       if (rhData.departs > 0) rhCtx = ` | Turnover: ${turnover.toFixed(0)}% (${rhData.departs} départs / ${eff.toFixed(1)} ETP moy)`;
@@ -84,9 +67,163 @@ export function getSimulateurContext(magasinNom: string): string {
   } catch { return ''; }
 }
 
+// ── Scénarios RH sub-component ───────────────────────────────────────────────
+
+interface ScenarioRHProps {
+  magasinNom: string;
+  totalMasseSal: number;
+  caAnnuel: number;
+  tauxMarge: number;
+  onAddAction?: (action: PAPAction) => void;
+}
+
+function ScenarioRH({ magasinNom, totalMasseSal, caAnnuel, tauxMarge, onAddAction }: ScenarioRHProps) {
+  const [scenContrat, setScenContrat] = useState('CDI 35h');
+  const [scenSalaireStr, setScenSalaireStr] = useState('');
+  const [scenMois, setScenMois] = useState(12);
+
+  const [benchData, setBenchData] = useState<{ caHT: number; totalCharges: number } | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`benchmark_franchise_${magasinNom}`);
+      if (!raw) return;
+      const d = JSON.parse(raw) as { ca_ht?: number; charges?: Record<string, number> };
+      const caHT = d.ca_ht ?? 0;
+      const charges = d.charges ?? {};
+      const total = Object.values(charges).reduce((s, v) => s + (Number(v) || 0), 0);
+      setBenchData({ caHT, totalCharges: total });
+    } catch { /* ignore */ }
+  }, [magasinNom]);
+
+  const isCDD = scenContrat === 'CDD';
+  const scenDef = CONTRAT_DEFS.find(d => d.key === scenContrat);
+  const scenHMois = scenDef && scenDef.hSemaine > 0 ? Math.round(scenDef.hSemaine * 52 / 12 * 100) / 100 : 0;
+  const scenSalaire = parseFloat(scenSalaireStr) || 0;
+
+  const scenCoutAnnuel = isCDD
+    ? scenHMois * scenSalaire * scenMois * 1.42
+    : scenHMois * scenSalaire * 12 * 1.42;
+
+  const caRef = (benchData?.caHT && benchData.caHT > 0) ? benchData.caHT : caAnnuel;
+  const totalChargesExt = benchData?.totalCharges ?? 0;
+  const margeEuros = caRef * (tauxMarge / 100);
+  const hasCharges = totalChargesExt > 0;
+
+  const ebeAvant = hasCharges ? margeEuros - totalChargesExt - totalMasseSal : null;
+  const ebeApres = hasCharges && scenCoutAnnuel > 0 ? margeEuros - totalChargesExt - (totalMasseSal + scenCoutAnnuel) : null;
+
+  const msPctAvant = caRef > 0 ? (totalMasseSal / caRef) * 100 : 0;
+  const msPctApres = caRef > 0 && scenCoutAnnuel > 0 ? ((totalMasseSal + scenCoutAnnuel) / caRef) * 100 : 0;
+  const ebePctApres = caRef > 0 && ebeApres !== null ? (ebeApres / caRef) * 100 : null;
+
+  const inputCls = 'bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]';
+
+  return (
+    <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-[#1A1A1A]">🧮 Scénario de recrutement</h3>
+        <p className="text-xs text-[#6B7280] mt-0.5">Simulez l&apos;impact d&apos;un recrutement sur votre masse salariale et votre EBE.</p>
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        <div>
+          <label className="text-xs text-[#6B7280] block mb-1">Type de contrat</label>
+          <select
+            value={scenContrat}
+            onChange={e => setScenContrat(e.target.value)}
+            className={`${inputCls} w-44`}
+          >
+            {CONTRAT_DEFS.filter(d => d.key !== 'Autre' && d.key !== 'Stagiaire').map(d => (
+              <option key={d.key} value={d.key}>{d.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-[#6B7280] block mb-1">Salaire horaire brut (€/h)</label>
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={scenSalaireStr}
+            onChange={e => setScenSalaireStr(e.target.value)}
+            placeholder="ex : 12,50"
+            className={`${inputCls} w-32`}
+          />
+        </div>
+        {isCDD && (
+          <div>
+            <label className="text-xs text-[#6B7280] block mb-1">Durée (mois)</label>
+            <input
+              type="number"
+              min={1}
+              max={36}
+              value={scenMois}
+              onChange={e => setScenMois(parseInt(e.target.value) || 12)}
+              className={`${inputCls} w-24`}
+            />
+          </div>
+        )}
+      </div>
+
+      {scenSalaire > 0 && scenCoutAnnuel > 0 && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-[#F9FAFB] rounded-xl px-4 py-3 text-center">
+              <div className="text-lg font-black text-[#1A1A1A]">{Math.round(scenCoutAnnuel).toLocaleString('fr-FR')} €</div>
+              <div className="text-xs text-[#6B7280]">Coût chargé {isCDD ? `(${scenMois} mois)` : 'annuel'}</div>
+            </div>
+            <div className="bg-[#F9FAFB] rounded-xl px-4 py-3 text-center">
+              <div className={`text-lg font-black ${msPctApres > 18 ? 'text-red-600' : msPctApres > 15 ? 'text-orange-500' : 'text-green-600'}`}>
+                {caRef > 0 ? `${msPctAvant.toFixed(1)}% → ${msPctApres.toFixed(1)}%` : '—'}
+              </div>
+              <div className="text-xs text-[#6B7280]">Masse salariale % CA</div>
+            </div>
+            <div className="bg-[#F9FAFB] rounded-xl px-4 py-3 text-center">
+              <div className={`text-lg font-black ${ebePctApres !== null ? (ebePctApres < 4 ? 'text-red-600' : ebePctApres < 6.96 ? 'text-orange-500' : 'text-green-600') : 'text-[#9CA3AF]'}`}>
+                {ebePctApres !== null ? `${ebePctApres.toFixed(1)}%` : '—'}
+              </div>
+              <div className="text-xs text-[#6B7280]">EBE estimé après recrutement</div>
+            </div>
+          </div>
+
+          <div className={`rounded-xl px-4 py-3 text-sm border ${msPctApres > 15 ? 'bg-orange-50 border-orange-200' : 'bg-green-50 border-green-200'}`}>
+            {caRef > 0 ? (
+              <p className={msPctApres > 15 ? 'text-orange-700' : 'text-green-700'}>
+                Ce recrutement ferait passer votre masse salariale de <strong>{msPctAvant.toFixed(1)}%</strong> à <strong>{msPctApres.toFixed(1)}%</strong> du CA.
+                {ebeAvant !== null && ebeApres !== null ? (
+                  <> Votre EBE passerait de <strong>{Math.round(ebeAvant).toLocaleString('fr-FR')} €</strong> à <strong>{Math.round(ebeApres).toLocaleString('fr-FR')} €</strong>
+                  {ebePctApres !== null ? ` (${ebePctApres.toFixed(1)}% du CA vs médiane réseau 6,96%)` : ''}.
+                  </>
+                ) : (
+                  <> Saisissez vos charges dans le Benchmark pour calculer l&apos;impact sur l&apos;EBE.</>
+                )}
+              </p>
+            ) : (
+              <p className="text-[#6B7280]">Saisissez le CA annuel dans le Simulateur pour calculer l&apos;impact.</p>
+            )}
+          </div>
+
+          {onAddAction && msPctApres > 15 && caRef > 0 && (
+            <button onClick={() => {
+              const d = new Date(); d.setDate(d.getDate() + 30);
+              onAddAction({ id: String(Date.now()), titre: `Scénario RH — recrutement ${scenContrat} à ${scenSalaire} €/h`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Recrutement simulé : ${scenContrat}, ${scenSalaire} €/h, coût chargé ${isCDD ? scenMois + ' mois' : 'annuel'} = ${Math.round(scenCoutAnnuel).toLocaleString('fr-FR')} €. Masse salariale : ${msPctAvant.toFixed(1)}% → ${msPctApres.toFixed(1)}% du CA.${ebeApres !== null ? ` EBE estimé : ${Math.round(ebeApres).toLocaleString('fr-FR')} €.` : ''} Vérifier l'impact sur la rentabilité avant de valider.`, echeance: d.toISOString().slice(0, 10), priorite: 2, gain: 0, statut: 'À faire' });
+            }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ Ajouter au PAP</button>
+          )}
+        </div>
+      )}
+
+      {scenSalaire === 0 && (
+        <p className="text-xs text-[#9CA3AF] italic">Renseignez un salaire horaire pour voir l&apos;impact simulé.</p>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }: Props) {
   const equipeKey = `equipe_${magasinNom}`;
-  const rhKey = `rh_${magasinNom}`;
 
   const [equipeStore, setEquipeStore] = useState<EquipeStore>(() => {
     try {
@@ -100,20 +237,6 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
       return { rows: [], caAnnuel: 0, tauxMarge: 38, msSeuilPct: 15 };
     } catch { return { rows: [], caAnnuel: 0, tauxMarge: 38, msSeuilPct: 15 }; }
   });
-
-  const [rhStore, setRhStore] = useState<RhStore>(() => {
-    try {
-      const s = typeof window !== 'undefined' ? localStorage.getItem(rhKey) : null;
-      return s ? JSON.parse(s) as RhStore : { departs: 0, effectifMoyen: null };
-    } catch { return { departs: 0, effectifMoyen: null }; }
-  });
-
-  const [showExplain, setShowExplain] = useState(false);
-
-  function saveRhStore(rh: RhStore) {
-    setRhStore(rh);
-    localStorage.setItem(rhKey, JSON.stringify(rh));
-  }
 
   function saveEquipeStore(store: EquipeStore) {
     setEquipeStore(store);
@@ -147,18 +270,8 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
   const totalHeures = equipe.reduce((s, e) => s + e.heures, 0);
   const totalEtp = totalHeures / 151.67;
   const masseSalPct = caAnnuel > 0 ? (totalMasseSal / caAnnuel) * 100 : 0;
-  const ratioCAEtp = totalEtp > 0 && caAnnuel > 0 ? caAnnuel / totalEtp : 0;
-  const caParEtp = totalEtp > 0 && caAnnuel > 0 ? caAnnuel / totalEtp : 0;
-  const margeParEtp = totalEtp > 0 && caAnnuel > 0 ? (caAnnuel * tauxMarge / 100) / totalEtp : 0;
-
-  // Référence réseau : 1 ETP / 250k€ CA
-  const etpOptimal = caAnnuel > 0 ? Math.round(caAnnuel / 250000) : 0;
   const msBudgetMax = caAnnuel > 0 ? Math.round(caAnnuel * msSeuilPct / 100) : 0;
   const msEcart = msBudgetMax > 0 ? Math.round(totalMasseSal - msBudgetMax) : 0;
-
-  const effectifMoyenDisplay = rhStore.effectifMoyen !== null ? rhStore.effectifMoyen : totalEtp;
-  const turnover = effectifMoyenDisplay > 0 ? (rhStore.departs / effectifMoyenDisplay) * 100 : 0;
-  const turnoverColor = turnover <= 15 ? 'text-green-600' : turnover <= 30 ? 'text-orange-500' : 'text-red-600';
 
   const inputCls = 'bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]';
 
@@ -236,82 +349,6 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
               const e = new Date(); e.setDate(e.getDate() + 14);
               onAddAction({ id: String(Date.now()), titre: `Simulateur — Masse salariale à ${masseSalPct.toFixed(1)}% du CA (cible ≤ ${msSeuilPct}%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Masse salariale actuelle : ${masseSalPct.toFixed(1)}% du CA (${Math.round(totalMasseSal).toLocaleString('fr-FR')} €). Budget max (${msSeuilPct}%) : ${msBudgetMax.toLocaleString('fr-FR')} €. Surcoût estimé : ${msEcart.toLocaleString('fr-FR')} €. Analyser les plannings et les contrats pour réduire l'écart.`, echeance: e.toISOString().slice(0, 10), priorite: masseSalPct > msSeuilPct + 3 ? 1 : 2, gain: msEcart, statut: 'À faire' });
             }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
-          </div>
-        )}
-
-        {/* KPIs équipe — row 2 */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
-            <div className={`text-2xl font-black ${caParEtp > 0 ? caColor(caParEtp) : 'text-[#6B7280]'}`}>
-              {caParEtp > 0 ? `${(caParEtp / 1000).toFixed(0)}k€` : '—'}
-            </div>
-            <div className="text-xs text-[#6B7280]">CA par ETP</div>
-            <div className="text-xs text-[#9CA3AF]">benchmark 250k€ · vert 200-300k</div>
-          </div>
-          <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
-            <div className={`text-2xl font-black ${margeParEtp > 0 ? margeColor(margeParEtp) : 'text-[#6B7280]'}`}>
-              {margeParEtp > 0 ? `${(margeParEtp / 1000).toFixed(0)}k€` : '—'}
-            </div>
-            <div className="text-xs text-[#6B7280]">Marge brute par ETP</div>
-            <div className="text-xs text-[#9CA3AF]">vert &gt;90k · orange 60-90k · rouge &lt;60k</div>
-          </div>
-          <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
-            <div className={`text-2xl font-black ${
-              etpOptimal === 0 ? 'text-[#6B7280]'
-              : Math.abs(totalEtp - etpOptimal) <= 0.5 ? 'text-green-600'
-              : totalEtp < etpOptimal - 0.5 ? 'text-orange-500'
-              : 'text-orange-500'
-            }`}>
-              {etpOptimal > 0 ? etpOptimal : '—'}
-            </div>
-            <div className="text-xs text-[#6B7280]">ETP cible réseau</div>
-            <div className="text-xs text-[#9CA3AF]">
-              {etpOptimal > 0 && totalEtp > 0
-                ? totalEtp < etpOptimal - 0.5 ? `actuel ${totalEtp.toFixed(1)} — sous-dim.`
-                  : totalEtp > etpOptimal + 0.5 ? `actuel ${totalEtp.toFixed(1)} — sur-dim.`
-                  : `actuel ${totalEtp.toFixed(1)} — OK`
-                : '1 ETP / 250k€ CA'}
-            </div>
-          </div>
-        </div>
-
-        {/* Alerte dimensionnement */}
-        {caAnnuel > 0 && totalEtp > 0 && (
-          <div className={`rounded-xl px-4 py-3 text-sm border ${
-            ratioCAEtp > 400000 ? 'bg-orange-50 border-orange-200' :
-            ratioCAEtp < 180000 ? 'bg-orange-50 border-orange-200' :
-            'bg-green-50 border-green-300'
-          }`}>
-            {ratioCAEtp > 400000 ? (
-              <p className="text-orange-700">
-                <span className="font-semibold">⚠ Équipe probablement sous-dimensionnée</span><br />
-                Vous avez {totalEtp.toFixed(1)} ETP pour {caAnnuel.toLocaleString('fr-FR')} € de CA, soit 1 ETP pour {Math.round(ratioCAEtp).toLocaleString('fr-FR')} €.<br />
-                Benchmark réseau : 1 ETP pour 250 000 €.<br />
-                Pour votre CA, il faudrait environ <strong>{Math.round(caAnnuel / 250000)}</strong> ETP.
-              </p>
-            ) : ratioCAEtp < 180000 ? (
-              <p className="text-orange-700">
-                <span className="font-semibold">⚠ Équipe probablement sur-dimensionnée</span><br />
-                Vous avez {totalEtp.toFixed(1)} ETP pour {caAnnuel.toLocaleString('fr-FR')} € de CA, soit 1 ETP pour {Math.round(ratioCAEtp).toLocaleString('fr-FR')} €.<br />
-                Benchmark réseau : 1 ETP pour 250 000 €.<br />
-                Pour votre CA, <strong>{Math.round(caAnnuel / 250000)}</strong> ETP suffiraient théoriquement.
-              </p>
-            ) : (
-              <p className="text-green-700">✓ Dimensionnement équipe cohérent avec le CA</p>
-            )}
-            <p className="text-xs text-[#6B7280] mt-2">Note : ces seuils sont indicatifs. Un magasin centre-ville avec forte saisonnalité peut justifier plus d&apos;ETP qu&apos;un magasin périphérique.</p>
-            {onAddAction && (ratioCAEtp > 400000 || ratioCAEtp < 180000) && (
-              <button onClick={() => {
-                const e = new Date(); e.setDate(e.getDate() + 14);
-                const titre = ratioCAEtp > 400000
-                  ? `Simulateur — Dimensionnement équipe insuffisant (${totalEtp.toFixed(1)} ETP pour ${caAnnuel.toLocaleString('fr-FR')} €)`
-                  : `Simulateur — Masse salariale sur-dimensionnée (${masseSalPct.toFixed(1)}% du CA)`;
-                const description = ratioCAEtp > 400000
-                  ? `CA/ETP = ${Math.round(ratioCAEtp).toLocaleString('fr-FR')} € vs benchmark 250 000 €. Envisager un recrutement pour absorber la charge.`
-                  : `${totalEtp.toFixed(1)} ETP pour ${caAnnuel.toLocaleString('fr-FR')} € CA. CA/ETP = ${Math.round(ratioCAEtp).toLocaleString('fr-FR')} € vs benchmark 250 000 €. Analyser les contrats à faible charge.`;
-                onAddAction({ id: String(Date.now()), titre, axe: 'Management', pilote: 'Franchisé', copilote: '', description, echeance: e.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
-              }} className="mt-2 text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
-            )}
           </div>
         )}
 
@@ -398,83 +435,8 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
         <p className="text-xs text-[#6B7280]">Coût chargé = salaire brut × heures × 12 × 1.42 (charges patronales estimées France)</p>
       </div>
 
-      {/* Indicateurs RH — Turnover */}
-      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4 space-y-3">
-        <h3 className="text-sm font-bold text-[#1A1A1A]">📊 Indicateurs RH</h3>
-        <div className="flex flex-wrap gap-4">
-          <div>
-            <label className="text-xs text-[#6B7280] block mb-1">Départs sur 12 mois</label>
-            <input
-              type="number"
-              min={0}
-              value={rhStore.departs || ''}
-              onChange={e => saveRhStore({ ...rhStore, departs: parseInt(e.target.value) || 0 })}
-              placeholder="0"
-              className={`${inputCls} w-28`}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-[#6B7280] block mb-1">Effectif moyen (ETP) <span className="text-[#9CA3AF]">— auto si vide</span></label>
-            <input
-              type="number"
-              min={0}
-              step={0.1}
-              value={rhStore.effectifMoyen !== null ? rhStore.effectifMoyen : ''}
-              onChange={e => {
-                const v = e.target.value;
-                saveRhStore({ ...rhStore, effectifMoyen: v === '' ? null : parseFloat(v) || null });
-              }}
-              placeholder={totalEtp > 0 ? totalEtp.toFixed(1) : '—'}
-              className={`${inputCls} w-28`}
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="bg-[#F5F5F5] rounded-xl px-4 py-3 text-center min-w-[100px]">
-            <div className={`text-2xl font-black ${rhStore.departs > 0 ? turnoverColor : 'text-[#6B7280]'}`}>
-              {rhStore.departs > 0 ? `${turnover.toFixed(0)}%` : '—'}
-            </div>
-            <div className="text-xs text-[#6B7280]">Turnover</div>
-            <div className="text-xs text-[#9CA3AF]">vert &lt;15 · orange 15-30 · rouge &gt;30</div>
-          </div>
-          {rhStore.departs > 0 && (
-            <p className="text-xs text-[#6B7280] leading-relaxed">
-              {turnover <= 15
-                ? '✓ Turnover maîtrisé — stabilité de l\'équipe satisfaisante.'
-                : turnover <= 30
-                ? '⚠ Turnover élevé — attention à la fidélisation et aux coûts de recrutement.'
-                : '⚠ Turnover critique — fort impact sur la qualité de service et les coûts RH.'}
-            </p>
-          )}
-        </div>
-        {onAddAction && rhStore.departs > 0 && turnover > 30 && (
-          <button onClick={() => {
-            const d = new Date(); d.setDate(d.getDate() + 14);
-            onAddAction({ id: String(Date.now()), titre: `RH — Turnover critique à ${turnover.toFixed(0)}% (${rhStore.departs} départs)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Turnover sur 12 mois : ${turnover.toFixed(0)}% (${rhStore.departs} départs pour ${effectifMoyenDisplay.toFixed(1)} ETP moyen). Analyser les causes de départ et mettre en place un plan de fidélisation.`, echeance: d.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
-          }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
-        )}
-      </div>
-
-      {/* Explanations */}
-      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
-        <button
-          onClick={() => setShowExplain(!showExplain)}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm text-[#6B7280] hover:text-[#1A1A1A] hover:bg-[#F5F5F5] transition-colors"
-        >
-          <span className="font-medium">Comment sont calculés les chiffres ?</span>
-          <span className="text-xs">{showExplain ? '▲' : '▼'}</span>
-        </button>
-        {showExplain && (
-          <div className="border-t border-[#E0E0E0] px-4 py-4 text-xs text-[#6B7280] space-y-2 leading-relaxed">
-            <p><strong className="text-[#1A1A1A]">Masse salariale %</strong> = Coût salarial chargé annuel / CA annuel. Cible réseau : ≤15% (moyenne DAF toutes tranches confondues). Les magasins de moins de 800k€ CA affichent structurellement des ratios plus élevés en raison des charges fixes incompressibles.</p>
-            <p><strong className="text-[#1A1A1A]">Coût chargé</strong> = salaire brut × heures × 12 × 1.42 (charges patronales estimées France).</p>
-            <p><strong className="text-[#1A1A1A]">CA par ETP</strong> = CA annuel / nb ETP. Benchmark réseau : 250 000 €. Vert : 200-300k, orange : 150-200k ou 300-400k, rouge sinon.</p>
-            <p><strong className="text-[#1A1A1A]">Marge brute par ETP</strong> = (CA × taux de marge brute) / nb ETP. Vert : &gt;90k€, orange : 60-90k€, rouge : &lt;60k€.</p>
-            <p><strong className="text-[#1A1A1A]">Ratio CA/ETP</strong> = CA annuel / Nb ETP. Cible réseau : 250 000 € par ETP.</p>
-            <p><strong className="text-[#1A1A1A]">Exemple :</strong> pour un CA de 3 M€, il faut environ 12 ETP (fourchette 11-14 selon profil magasin).</p>
-          </div>
-        )}
-      </div>
+      {/* ══ Scénarios RH ══ */}
+      <ScenarioRH magasinNom={magasinNom} totalMasseSal={totalMasseSal} caAnnuel={caAnnuel} tauxMarge={tauxMarge} onAddAction={onAddAction} />
 
       <ZonesModule moduleKey="simulateur" />
     </div>
