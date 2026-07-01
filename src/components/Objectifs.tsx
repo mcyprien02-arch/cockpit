@@ -92,8 +92,8 @@ export function getVisionContext(magasinNom: string): string {
           .filter(f => f.famille && f.margeCible > 0)
           .map(f => {
             const avanc = f.margeCible > 0 ? Math.round(f.margeRealisee / f.margeCible * 100) : 0;
-            const margeRestante = Math.max(0, f.margeCible - f.margeRealisee);
-            const sourcingRestant = f.tauxMarge > 0 ? Math.round(margeRestante / (f.tauxMarge / 100)) : 0;
+            const t = f.tauxMarge / 100;
+            const sourcingRestant = f.tauxMarge > 0 ? Math.max(0, Math.round(f.margeCible / t - (f.stockInitial ?? 0) - f.margeRealisee / t)) : 0;
             const sourcingStr = f.margeRealisee >= f.margeCible
               ? ' · sourcing: objectif atteint ✓'
               : sourcingRestant > 0 ? ` · sourcing restant: +${sourcingRestant.toLocaleString('fr-FR')}€` : '';
@@ -104,8 +104,9 @@ export function getVisionContext(magasinNom: string): string {
           const totalCA = obj.familles.reduce((s, f) => f.tauxMarge > 0 ? s + f.margeCible / (f.tauxMarge / 100) : s, 0);
           const tauxPondere = totalCA > 0 ? Math.round((totalMarge / totalCA) * 1000) / 10 : 0;
           const sourcingRestantTotal = obj.familles.reduce((s, f) => {
-            const mr = Math.max(0, f.margeCible - f.margeRealisee);
-            return s + (f.tauxMarge > 0 ? Math.round(mr / (f.tauxMarge / 100)) : 0);
+            if (f.tauxMarge <= 0) return s;
+            const t = f.tauxMarge / 100;
+            return s + Math.max(0, Math.round(f.margeCible / t - (f.stockInitial ?? 0) - f.margeRealisee / t));
           }, 0);
           if (tauxPondere > 0) parts.push(`Taux de marge pondéré global : ${tauxPondere}%`);
           if (sourcingRestantTotal > 0) parts.push(`Sourcing restant ce mois : ${sourcingRestantTotal.toLocaleString('fr-FR')} €`);
@@ -246,6 +247,13 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
     setShowHistorique(true);
   }
 
+  function supprimerMoisHistorique(month: string) {
+    const next = historique.filter(h => h.month !== month);
+    setHistorique(next);
+    localStorage.setItem(`objectifs_history_${magasinNom}`, JSON.stringify(next));
+    if (expandedMonth === month) setExpandedMonth(null);
+  }
+
   // ── Calculs ────────────────────────────────────────────────────────────────
 
   function stockNecessaire(f: ObjFamille): number {
@@ -253,11 +261,12 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
     return Math.round(f.margeCible / (f.tauxMarge / 100));
   }
 
-  // Sourcing restant = stock à acheter pour réaliser la marge encore manquante
+  // Sourcing restant = Besoin total − Stock initial − CA équivalent déjà réalisé
+  // Formule : margeCible/tauxMarge − stockInitial − margeRealisee/tauxMarge
   function sourcingRestant(f: ObjFamille): number {
     if (f.margeCible <= 0 || f.tauxMarge <= 0) return 0;
-    const margeRestante = Math.max(0, f.margeCible - f.margeRealisee);
-    return Math.round(margeRestante / (f.tauxMarge / 100));
+    const t = f.tauxMarge / 100;
+    return Math.max(0, Math.round(f.margeCible / t - f.stockInitial - f.margeRealisee / t));
   }
 
   function avancement(f: ObjFamille): number {
@@ -620,21 +629,30 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                 const isOpen = expandedMonth === h.month;
                 return (
                   <div key={h.month}>
-                    <button
-                      onClick={() => setExpandedMonth(isOpen ? null : h.month)}
-                      className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-[#FAFAFA] transition-colors"
-                    >
-                      <span className="text-sm font-semibold text-[#1A1A1A] w-20 shrink-0">{fmtMonth(h.month)}</span>
-                      <span className="text-xs text-[#6B7280]">Cible : {h.totalCible.toLocaleString('fr-FR')} €</span>
-                      <span className="text-xs text-[#6B7280]">Réalisé : {h.totalRealisee.toLocaleString('fr-FR')} €</span>
-                      <span className={`text-xs font-bold ml-auto ${atteint ? 'text-green-600' : pct >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
-                        {atteint ? '✓ Atteint' : `${pct}%`}
-                      </span>
-                      <span className="text-xs text-[#9CA3AF] shrink-0">
-                        Clôturé le {new Date(h.clotureLe).toLocaleDateString('fr-FR')}
-                      </span>
-                      <span className="text-[#9CA3AF] text-xs">{isOpen ? '▲' : '▼'}</span>
-                    </button>
+                    <div className="flex items-center hover:bg-[#FAFAFA] transition-colors">
+                      <button
+                        onClick={() => setExpandedMonth(isOpen ? null : h.month)}
+                        className="flex-1 flex items-center gap-4 px-4 py-3 text-left"
+                      >
+                        <span className="text-sm font-semibold text-[#1A1A1A] w-20 shrink-0">{fmtMonth(h.month)}</span>
+                        <span className="text-xs text-[#6B7280]">Cible : {h.totalCible.toLocaleString('fr-FR')} €</span>
+                        <span className="text-xs text-[#6B7280]">Réalisé : {h.totalRealisee.toLocaleString('fr-FR')} €</span>
+                        <span className={`text-xs font-bold ml-auto ${atteint ? 'text-green-600' : pct >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                          {atteint ? '✓ Atteint' : `${pct}%`}
+                        </span>
+                        <span className="text-xs text-[#9CA3AF] shrink-0">
+                          Clôturé le {new Date(h.clotureLe).toLocaleDateString('fr-FR')}
+                        </span>
+                        <span className="text-[#9CA3AF] text-xs">{isOpen ? '▲' : '▼'}</span>
+                      </button>
+                      <button
+                        onClick={() => supprimerMoisHistorique(h.month)}
+                        title="Supprimer cet entrée"
+                        className="px-3 py-3 text-[#9CA3AF] hover:text-red-500 transition-colors shrink-0"
+                      >
+                        🗑
+                      </button>
+                    </div>
                     {isOpen && (
                       <div className="bg-[#FAFAFA] border-t border-[#F0F0F0] px-4 py-3">
                         <table className="w-full text-xs">
