@@ -455,7 +455,7 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
             <p><strong className="text-[#1A1A1A]">Masse salariale %</strong> = Coût salarial chargé annuel / CA annuel. Cible réseau : ≤15% (moyenne DAF toutes tranches confondues). Les magasins de moins de 800k€ CA affichent structurellement des ratios plus élevés en raison des charges fixes incompressibles.</p>
             <p><strong className="text-[#1A1A1A]">Coût chargé</strong> = salaire brut × heures × 12 × 1.42 (charges patronales estimées France).</p>
             <p><strong className="text-[#1A1A1A]">CA par ETP</strong> = CA annuel / nb ETP. Benchmark réseau : 250 000 €. Vert : 200-300k, orange : 150-200k ou 300-400k, rouge sinon.</p>
-            <p><strong className="text-[#1A1A1A]">Marge par ETP</strong> = (CA × taux marge) / nb ETP. Vert : &gt;90k€, orange : 60-90k€, rouge : &lt;60k€.</p>
+            <p><strong className="text-[#1A1A1A]">Marge brute par ETP</strong> = (CA × taux de marge brute) / nb ETP. Vert : &gt;90k€, orange : 60-90k€, rouge : &lt;60k€.</p>
             <p><strong className="text-[#1A1A1A]">Ratio CA/ETP</strong> = CA annuel / Nb ETP. Cible réseau : 250 000 € par ETP.</p>
             <p><strong className="text-[#1A1A1A]">Exemple :</strong> pour un CA de 3 M€, il faut environ 12 ETP (fourchette 11-14 selon profil magasin).</p>
           </div>
