@@ -1887,6 +1887,19 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     return result;
   },[stats,gammes]);
 
+  const pepitesPrioritaires=useMemo(()=>
+    stats
+      .filter(s=>
+        s.qteVendue>=5 &&
+        s.delaiMoyen!==null &&
+        s.delaiMoyen<seuilRotationRapide.seuil &&
+        s.margeUnitaire>30 &&
+        pepiteLocaleSet.has(s.modele.toLowerCase())
+      )
+      .sort((a,b)=>(b.margeTotal/(b.delaiMoyen??Infinity))-(a.margeTotal/(a.delaiMoyen??Infinity)))
+      .slice(0,10)
+  ,[stats,pepiteLocaleSet,seuilRotationRapide]);
+
   // Weighted avg EP gaps per table
   const rotEcartPA =useMemo(()=>wAvg(topRotations,s=>s.ecartEPA),[topRotations]);
   const rotEcartPV =useMemo(()=>wAvg(topRotations,s=>s.ecartEP), [topRotations]);
@@ -2369,6 +2382,64 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                 </table>
               </div>
               <p className="text-xs text-[#9CA3AF] italic px-1">Ces données aident à identifier les acheteurs qui appliquent le mieux la VPD et qui maîtrisent la cote EasyPrice.</p>
+            </div>
+          )}
+
+          {/* Pépites locales prioritaires */}
+          {stored&&(
+            <div className="border-l-4 border-[#E30613] bg-[#FFF8F8] rounded-r-xl px-5 py-4 space-y-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#1A1A1A]">💎 PÉPITES LOCALES PRIORITAIRES — modèles à intégrer en sourcing prioritaire</h3>
+                <p className="text-xs text-[#9CA3AF] mt-0.5">Critères : absente gamme réseau · ≥ 5 ventes · délai &lt; {seuilRotationRapide.seuil}j · marge unit. &gt; 30€ — triés par coefficient (marge totale ÷ délai)</p>
+              </div>
+              {!hasAnyGamme?(
+                <p className="text-sm text-[#6B7280] italic">Importez la gamme réseau pour activer cette détection.</p>
+              ):pepitesPrioritaires.length===0?(
+                <p className="text-sm text-[#6B7280] italic">Pas de pépite locale prioritaire identifiée sur cette période.</p>
+              ):(
+                <div className="overflow-x-auto rounded-xl border border-[#FECACA]">
+                  <table className="text-xs w-full border-collapse">
+                    <thead><tr>
+                      {['#','Modèle','Qté','Délai','Marge unit.','Marge totale','Coeff','Action'].map((l,i)=>(
+                        <th key={i} className={i===0||i===1||i===7?TH:THR}>{l}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>{pepitesPrioritaires.map((s,i)=>{
+                      const coeff=s.delaiMoyen?Math.round((s.margeTotal/s.delaiMoyen)*10)/10:null;
+                      return (
+                        <tr key={i} className={i%2===0?'bg-white':'bg-[#FFF5F5]'}>
+                          <td className={TD}><span className="text-[#9CA3AF] font-medium">{i+1}</span></td>
+                          <td className={TD}>
+                            <span className="flex items-center gap-1 flex-wrap">
+                              <span className="font-medium">{s.modele}</span>
+                              <Badge qty={s.qteVendue}/>
+                              <span className="inline-flex items-center bg-green-100 text-green-700 border border-green-200 text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap">🌍 Pépite locale</span>
+                            </span>
+                          </td>
+                          <td className={TDR}>{s.qteVendue}</td>
+                          <td className={TDR}>{s.delaiMoyen}j</td>
+                          <td className={TDR}><span className="font-semibold text-green-700">{fmtK(s.margeUnitaire)} €</span></td>
+                          <td className={TDR}>{fmtK(s.margeTotal)} €</td>
+                          <td className={TDR}><span className="font-bold text-[#E30613]">{coeff??'—'}</span></td>
+                          <td className={TD}>
+                            {onAddAction&&(
+                              <button
+                                onClick={()=>{
+                                  const ech=new Date(); ech.setDate(ech.getDate()+7);
+                                  onAddAction({id:Math.random().toString(36).slice(2),titre:`Sourcing prioritaire : ${s.modele}`,axe:'Stock',pilote:'Acheteur principal',copilote:'',description:`Pépite locale absente gamme réseau — ${s.qteVendue} ventes en ${s.delaiMoyen}j, marge unit. ${fmtK(s.margeUnitaire)}€. À intégrer en sourcing comptoir et à remonter à l'animateur réseau.`,echeance:ech.toISOString().slice(0,10),priorite:1,gain:Math.round(s.margeUnitaire),statut:'À faire'});
+                                  setToast(`✓ Action ajoutée : ${s.modele}`);
+                                  setTimeout(()=>setToast(null),3000);
+                                }}
+                                className="px-2.5 py-1 bg-[#E30613] text-white text-[10px] font-semibold rounded-lg hover:bg-red-700 transition-colors whitespace-nowrap"
+                              >+ PAP</button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
