@@ -19,6 +19,8 @@ interface SanteIndicateur {
   key: SanteKey;
   label: string;
   cible: string;
+  moy: number | null;  // Moyenne réseau 2024
+  med: number | null;  // Médiane réseau 2024
   evaluate(v: number): SanteStatus;
   papDesc(v: number): string;
 }
@@ -90,17 +92,22 @@ interface ProfilThresholds {
   rcai_vert: number;           rcai_orange: number;           rcai_cible: string;
 }
 
+// Benchmark Financier 2025 — données réseau 2024 (Moy / Méd / Min / Max)
+// Taux Marge Nette / CA HT : 35,6% / 35,6% / 26,7% / 46,3%
+// Charges externes / CA HT : 11,9% / 11,5% / 7,4% / 19,0%
+// Charges de personnel / CA HT : 15,1% / 15,0% / 9,5% / 22,1%
+// EBE / CA HT : 6,76% / 6,96% / −4,5% / 13,1%
 const PROFILS_DAF: Array<{ key: string; label: string; description: string; thresholds: ProfilThresholds }> = [
   {
     key: 'standard',
     label: 'Standard réseau',
-    description: 'Référentiel DAF Easycash 2022 — tous magasins confondus',
+    description: 'Benchmark Financier 2025 — données réseau 2024',
     thresholds: {
-      taux_marge_net_vert: 38, taux_marge_net_orange: 36, taux_marge_net_cible: '38–39 %',
-      charges_ext_vert: 13,    charges_ext_orange: 14.9,  charges_ext_cible: '12–13 %',
-      masse_sal_vert: 15,      masse_sal_orange: 17,       masse_sal_cible: '≤ 15 %',
-      ebe_vert: 8,             ebe_orange: 5,              ebe_cible: '≥ 8 %',
-      rcai_vert: 5,            rcai_orange: 3,             rcai_cible: '≥ 5 %',
+      taux_marge_net_vert: 35,  taux_marge_net_orange: 31,  taux_marge_net_cible: 'Moy. 35,6 % | Méd. 35,6 %',
+      charges_ext_vert: 11.5,   charges_ext_orange: 14,     charges_ext_cible: 'Moy. 11,9 % | Méd. 11,5 %',
+      masse_sal_vert: 15,       masse_sal_orange: 18,        masse_sal_cible: 'Moy. 15,1 % | Méd. 15,0 %',
+      ebe_vert: 7,              ebe_orange: 4,               ebe_cible: 'Moy. 6,8 % | Méd. 7,0 %',
+      rcai_vert: 5,             rcai_orange: 3,              rcai_cible: '≥ 5 % (données 2024 non publiées)',
     },
   },
 ];
@@ -111,6 +118,7 @@ function buildSanteIndicateurs(t: ProfilThresholds): SanteIndicateur[] {
       key: 'taux_marge_net',
       label: 'Taux de marge brute (% CA TTC)',
       cible: t.taux_marge_net_cible,
+      moy: 35.6, med: 35.6,
       evaluate(v) { return v >= t.taux_marge_net_vert ? 'vert' : v >= t.taux_marge_net_orange ? 'orange' : 'rouge'; },
       papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.taux_marge_net_cible}. Marge brute = (CA TTC − coût d'achat marchandises) / CA TTC — avant charges d'exploitation. Pistes : mix rayon, EasyPrice, sourcing, ventes complémentaires, démarque.`; },
     },
@@ -118,6 +126,7 @@ function buildSanteIndicateurs(t: ProfilThresholds): SanteIndicateur[] {
       key: 'charges_externes',
       label: 'Charges externes (loyer inclus) — % du CA HT',
       cible: t.charges_ext_cible,
+      moy: 11.9, med: 11.5,
       evaluate(v) { return v <= t.charges_ext_vert ? 'vert' : v <= t.charges_ext_orange ? 'orange' : 'rouge'; },
       papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.charges_ext_cible}. Voir la section Détail charges externes ci-dessous pour identifier les postes en écart.`; },
     },
@@ -125,6 +134,7 @@ function buildSanteIndicateurs(t: ProfilThresholds): SanteIndicateur[] {
       key: 'masse_salariale',
       label: 'Masse salariale (rémunération franchisé incluse) — % du CA HT',
       cible: t.masse_sal_cible,
+      moy: 15.1, med: 15.0,
       evaluate(v) { return v <= t.masse_sal_vert ? 'vert' : v <= t.masse_sal_orange ? 'orange' : 'rouge'; },
       papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.masse_sal_cible}. Référence : 1 salarié par tranche de 250 K€ de CA. Voir le module Simulateur équipe pour la modélisation.`; },
     },
@@ -132,6 +142,7 @@ function buildSanteIndicateurs(t: ProfilThresholds): SanteIndicateur[] {
       key: 'ebe',
       label: 'EBE — % du CA HT',
       cible: t.ebe_cible,
+      moy: 6.76, med: 6.96,
       evaluate(v) { return v >= t.ebe_vert ? 'vert' : v >= t.ebe_orange ? 'orange' : 'rouge'; },
       papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.ebe_cible}. L'EBE dépend directement du taux de marge brute, des charges externes et de la masse salariale. Identifier le levier prioritaire.`; },
     },
@@ -139,6 +150,7 @@ function buildSanteIndicateurs(t: ProfilThresholds): SanteIndicateur[] {
       key: 'rcai',
       label: 'Résultat courant avant impôts (RCAI) — % du CA HT',
       cible: t.rcai_cible,
+      moy: null, med: null,
       evaluate(v) { return v >= t.rcai_vert ? 'vert' : v >= t.rcai_orange ? 'orange' : 'rouge'; },
       papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.rcai_cible}. Le RCAI intègre charges financières et amortissements. Vérifier l'endettement et le niveau d'amortissement.`; },
     },
@@ -707,7 +719,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
         >
           <div>
             <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Santé financière globale</h3>
-            <p className="text-xs text-[#6B7280] mt-0.5">Les 5 indicateurs cibles de la DAF Easycash 2022 — votre tableau de bord macro</p>
+            <p className="text-xs text-[#6B7280] mt-0.5">Les 5 indicateurs cibles de la DAF Easycash 2024 — votre tableau de bord macro</p>
           </div>
           <div className="flex items-center gap-3 ml-4 shrink-0">
             {santeSummary.nbSaisied > 0 && (
@@ -792,9 +804,26 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
                             </div>
                           ) : (
                             <div className="flex items-center justify-end gap-1.5 group">
-                              <span className="font-medium text-[#374151]">{customCibles[ind.key] ?? ind.cible}</span>
-                              {customCibles[ind.key] && (
-                                <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 shrink-0">Perso</span>
+                              {customCibles[ind.key] ? (
+                                <>
+                                  <span className="font-medium text-[#374151]">{customCibles[ind.key]}</span>
+                                  <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 shrink-0">Perso</span>
+                                </>
+                              ) : ind.moy !== null && ind.med !== null ? (
+                                <div className="text-right">
+                                  <div className="font-medium text-[#374151] whitespace-nowrap">
+                                    <span className="text-[#9CA3AF]">Moy.</span>{' '}{ind.moy.toFixed(ind.moy % 1 === 0 ? 0 : 2).replace('.', ',')} %
+                                    <span className="mx-1.5 text-[#D1D5DB]">|</span>
+                                    <span className="text-[#9CA3AF]">Méd.</span>{' '}{ind.med.toFixed(ind.med % 1 === 0 ? 0 : 2).replace('.', ',')} %
+                                  </div>
+                                  {Math.abs(ind.moy - ind.med) > 0.5 && (
+                                    <div className="text-[10px] text-amber-600 italic mt-0.5 whitespace-nowrap">
+                                      ℹ️ Écart moy./méd. : quelques magasins atypiques
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="font-medium text-[#374151]">{ind.cible}</span>
                               )}
                               <button
                                 onClick={() => startEditCible(ind.key)}
@@ -862,16 +891,17 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
               </div>
             )}
 
-            {/* Références DAF 2022 */}
+            {/* Références DAF 2024 */}
             <div className="bg-[#F9FAFB] border border-[#E0E0E0] rounded-xl px-4 py-3 space-y-1.5">
-              <p className="text-xs font-semibold text-[#374151]">📋 Références DAF Easycash 2022 (à titre indicatif) :</p>
+              <p className="text-xs font-semibold text-[#374151]">📋 Données réseau 2024 — Benchmark Financier Easycash :</p>
               <ul className="text-xs text-[#6B7280] space-y-0.5 list-none">
+                <li>• CA HT — Moy. 2,06 M€ | Méd. 1,99 M€ | Min. 0,99 M€ | Max. 4,11 M€</li>
+                <li>• MN HT — Moy. 725 k€ | Méd. 689 k€ | Min. 350 k€ | Max. 1 279 k€</li>
+                <li>• EBE — Moy. 145 k€ | Méd. 131 k€ | Min. −60 k€ | Max. 441 k€</li>
                 <li>• 1 salarié par tranche de 250 K€ de CA annuel (référence ETP)</li>
                 <li>• Stock total recommandé : &lt; 250 K€ pour la plupart des magasins</li>
                 <li>• Stock âgé : &lt; 30 % du stock total (seuil d&apos;alerte)</li>
                 <li>• Démarque (connue + inconnue) : &lt; 3 % du CA annuel</li>
-                <li>• CA TTC moyen réseau 2022 : 2 077 349 € — Médiane : 1 921 295 €</li>
-                <li>• Marge brute HT moyenne : 34,3 % — Médiane : 33,5 %</li>
               </ul>
             </div>
           </div>
