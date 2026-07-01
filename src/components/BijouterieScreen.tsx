@@ -216,6 +216,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
   const [papAdded,       setPapAdded]       = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
   const [bijTab,       setBijTab]       = useState<BijInnerTab>('analyse');
+  const [showDebug18k, setShowDebug18k] = useState(false);
 
   function addToPAP(key: string, titre: string, description: string) {
     if (!onAddAction) return;
@@ -538,6 +539,39 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
       .sort((a,b)=>b.dv-a.dv);
   },[filteredRows]);
 
+  const debug18kVitrine = useMemo(()=>{
+    // All Vitrine rows for 18 carats (750) — i.e. filteredRows (fonte already excluded) with titre 18k
+    const rows = filteredRows.filter(r => r.titre === '18 carats (750)');
+    const poidsNullRows  = rows.filter(r => r.poids == null);
+    const poids0Rows     = rows.filter(r => r.poids === 0);
+    const pa0Rows        = rows.filter(r => r.pa === 0);
+    const withPoidsRows  = rows.filter(r => r.poids != null && r.poids > 0);
+    // How buildAgg actually computes prixMoyen:
+    const totalPA_all    = rows.reduce((s, r) => s + r.pa, 0);       // includes rows with poids=null!
+    const totalPoids     = withPoidsRows.reduce((s, r) => s + (r.poids ?? 0), 0);
+    const paMoyenBuildAgg = totalPoids > 0 ? Math.round(totalPA_all / totalPoids * 100) / 100 : null;
+    // Correct version (only rows where poids>0)
+    const totalPA_valid  = withPoidsRows.reduce((s, r) => s + r.pa, 0);
+    const paMoyenCorrige  = totalPoids > 0 ? Math.round(totalPA_valid / totalPoids * 100) / 100 : null;
+    const lines = rows.map(r => ({
+      lib:   r.lib,
+      poids: r.poids,
+      pa:    r.pa,
+      pag:   r.poids != null && r.poids > 0 ? Math.round(r.pa / r.poids * 100) / 100 : null,
+    })).sort((a, b) => {
+      if (a.pag == null && b.pag == null) return 0;
+      if (a.pag == null) return 1;
+      if (b.pag == null) return -1;
+      return a.pag - b.pag;
+    });
+    return { total: rows.length, poidsNullCount: poidsNullRows.length, poids0Count: poids0Rows.length,
+      pa0Count: pa0Rows.length, withPoidsCount: withPoidsRows.length,
+      totalPA_all: Math.round(totalPA_all * 100) / 100,
+      totalPA_valid: Math.round(totalPA_valid * 100) / 100,
+      totalPoids: Math.round(totalPoids * 100) / 100,
+      paMoyenBuildAgg, paMoyenCorrige, lines };
+  }, [filteredRows]);
+
   useEffect(()=>{
     if (!overview||!magasinNom) return;
     const tresGenereux18k=byAcheteurParTitre.find(g=>g.titreKey==='18 carats (750)')?.acheteurs.filter(a=>a.tag==='tres_genereux')||[];
@@ -823,6 +857,70 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
               </table>
             </div>
           </div>
+
+          {/* 🔬 DEBUG — PA moyen Vitrine 18 carats (750) */}
+          {filteredRows.some(r => r.titre === '18 carats (750)') && (
+            <div className="border-2 border-dashed border-orange-300 rounded-xl overflow-hidden bg-orange-50">
+              <button
+                onClick={() => setShowDebug18k(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-2.5 text-left"
+              >
+                <span className="text-xs font-bold text-orange-800">🔬 DEBUG — PA moyen Vitrine · 18 carats (750/1000)</span>
+                <span className="text-xs text-orange-600">{showDebug18k ? '▲ Fermer' : '▼ Ouvrir'}</span>
+              </button>
+              {showDebug18k && (
+                <div className="px-4 pb-4 space-y-3 border-t border-orange-200">
+                  {/* Stats résumé */}
+                  <div className="font-mono text-[11px] text-orange-900 space-y-1 pt-3">
+                    <div><strong>Total lignes 18k Vitrine :</strong> {debug18kVitrine.total}</div>
+                    <div><strong>Lignes avec poids extrait (poids &gt; 0) :</strong> {debug18kVitrine.withPoidsCount} → INCLUSES dans le calcul du poids total</div>
+                    <div><strong>Lignes sans poids (poids = null) :</strong> {debug18kVitrine.poidsNullCount} → poids EXCLUS du total poids, mais PA INCLUS dans la somme VA ⚠️</div>
+                    <div><strong>Lignes poids = 0 :</strong> {debug18kVitrine.poids0Count} → EXCLUES du poids total</div>
+                    <div><strong>Lignes PA = 0 :</strong> {debug18kVitrine.pa0Count}</div>
+                    <hr className="border-orange-200 my-1" />
+                    <div><strong>Somme PA — toutes lignes :</strong> {debug18kVitrine.totalPA_all} € (ce que buildAgg utilise comme numérateur)</div>
+                    <div><strong>Somme PA — lignes avec poids seulement :</strong> {debug18kVitrine.totalPA_valid} €</div>
+                    <div><strong>Somme poids — lignes avec poids &gt; 0 :</strong> {debug18kVitrine.totalPoids} g</div>
+                    <hr className="border-orange-200 my-1" />
+                    <div className="text-red-800"><strong>PA moyen affiché (buildAgg) :</strong> {debug18kVitrine.paMoyenBuildAgg ?? '—'} €/g = {debug18kVitrine.totalPA_all}€ (toutes lignes) / {debug18kVitrine.totalPoids}g (lignes avec poids)</div>
+                    <div className="text-green-800"><strong>PA moyen corrigé (lignes avec poids uniquement) :</strong> {debug18kVitrine.paMoyenCorrige ?? '—'} €/g = {debug18kVitrine.totalPA_valid}€ / {debug18kVitrine.totalPoids}g</div>
+                    {debug18kVitrine.paMoyenBuildAgg !== debug18kVitrine.paMoyenCorrige && (
+                      <div className="text-red-700 font-bold">⚠️ Écart détecté entre les deux méthodes — les lignes sans poids biaisent la moyenne affichée !</div>
+                    )}
+                  </div>
+                  {/* Table de toutes les lignes */}
+                  <div className="overflow-x-auto">
+                    <table className="text-[10px] font-mono w-full border-collapse border border-orange-200">
+                      <thead>
+                        <tr className="bg-orange-100">
+                          <th className="px-2 py-1 text-left border border-orange-200">#</th>
+                          <th className="px-2 py-1 text-left border border-orange-200">Libellé</th>
+                          <th className="px-2 py-1 text-right border border-orange-200">Poids extrait (g)</th>
+                          <th className="px-2 py-1 text-right border border-orange-200">Achat_prix (€)</th>
+                          <th className="px-2 py-1 text-right border border-orange-200">PA/g (€/g)</th>
+                          <th className="px-2 py-1 text-left border border-orange-200">Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {debug18kVitrine.lines.map((l, i) => (
+                          <tr key={i} className={l.poids == null ? 'bg-red-50' : l.pa === 0 ? 'bg-yellow-50' : i % 2 === 0 ? 'bg-white' : 'bg-orange-50/40'}>
+                            <td className="px-2 py-0.5 border border-orange-100 text-orange-400">{i + 1}</td>
+                            <td className="px-2 py-0.5 border border-orange-100 max-w-[240px] truncate" title={l.lib}>{l.lib}</td>
+                            <td className="px-2 py-0.5 border border-orange-100 text-right">{l.poids != null ? l.poids : '⚠️ null'}</td>
+                            <td className="px-2 py-0.5 border border-orange-100 text-right">{l.pa}</td>
+                            <td className="px-2 py-0.5 border border-orange-100 text-right font-bold">{l.pag != null ? l.pag : '—'}</td>
+                            <td className="px-2 py-0.5 border border-orange-100 text-[9px]">
+                              {l.poids == null ? '❌ poids null → PA compté dans VA mais poids ignoré' : l.pa === 0 ? '⚠️ PA=0' : '✓'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* B — Performance par type de bijou */}
           <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-3">
