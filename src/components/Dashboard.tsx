@@ -279,8 +279,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
       )}
 
       {/* Histoire du magasin */}
-      {data.nom && (
-        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
           <button
             onClick={() => setShowHistoire(!showHistoire)}
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F5F5F5] transition-colors"
@@ -374,17 +373,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
             </div>
           )}
         </div>
-      )}
-
-      {!data.nom && !showModal && (
-        <div className="text-center py-16">
-          <div className="text-5xl mb-3">🏪</div>
-          <p className="text-[#6B7280]">Configurez votre magasin pour commencer.</p>
-          <button onClick={() => setShowModal(true)} className="mt-4 px-5 py-2.5 rounded-xl font-bold text-sm uppercase tracking-wide bg-[#E30613] text-white hover:bg-[#B8050F]">
-            Saisir mes données
-          </button>
-        </div>
-      )}
 
       {data.nom && (
         <>
