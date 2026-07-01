@@ -3,29 +3,9 @@
 import { useState, useEffect } from 'react';
 import { getJournalSourcingData, type SourcingModele } from './JournalAchatVente';
 import ZonesModule from './ZonesModule';
+import { lbcUrl, vintedUrl } from '@/lib/sourcingUrls';
 
 interface Props { magasinNom: string; }
-
-function cleanKeyword(modele: string): string {
-  return modele
-    .replace(/[/\\()[\]{}|#@!?*+,;:.~<>^$&%"'`]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function lbcUrl(modele: string, prixMax: number | null): string {
-  const kw = encodeURIComponent(cleanKeyword(modele));
-  let url = `https://www.leboncoin.fr/recherche?text=${kw}`;
-  if (prixMax != null && prixMax > 0) url += `&price=0-${Math.round(prixMax)}`;
-  return url;
-}
-
-function vintedUrl(modele: string, prixMax: number | null): string {
-  const kw = encodeURIComponent(cleanKeyword(modele));
-  let url = `https://www.vinted.fr/catalog?search_text=${kw}`;
-  if (prixMax != null && prixMax > 0) url += `&price_to=${Math.round(prixMax)}`;
-  return url;
-}
 
 function SourcingRow({ m }: { m: SourcingModele }) {
   return (

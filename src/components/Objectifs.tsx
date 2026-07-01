@@ -12,16 +12,18 @@ interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void;
 interface ObjFamille {
   id: string;
   famille: string;
-  margeCible: number;
-  tauxMarge: number;
+  poidsMarge: number;      // % de la marge annuelle (source : intranet réseau)
+  tauxMarge: number;       // % taux brut (pour calcul sourcing)
   stockInitial: number;
-  delaiRotation: number; // 0 = non renseigné, stock informatif uniquement
+  delaiRotation: number;   // 0 = non renseigné
   margeRealisee: number;
+  ecartReporte: number;    // déficit reporté du mois précédent
 }
 
 interface ObjData {
   familles: ObjFamille[];
   promoRedist: number;
+  objectifMargeAnnuel: number;
 }
 
 interface HistoriqueMonth {
@@ -34,6 +36,7 @@ interface HistoriqueMonth {
     margeRealisee: number;
     tauxMarge: number;
     stockInitial: number;
+    ecartReporte?: number;
   }>;
   clotureLe: string;
 }
@@ -53,7 +56,7 @@ function uid() { return Math.random().toString(36).slice(2); }
 function defaultRows(): ObjFamille[] {
   return DEFAULT_FAMILLES.map(f => ({
     id: uid(), famille: f.famille, tauxMarge: f.tauxMarge,
-    margeCible: 0, stockInitial: 0, delaiRotation: 0, margeRealisee: 0,
+    poidsMarge: 0, ecartReporte: 0, stockInitial: 0, delaiRotation: 0, margeRealisee: 0,
   }));
 }
 
@@ -63,6 +66,59 @@ function fmtMonth(m: string): string {
   return `${names[parseInt(mo, 10) - 1]} ${y}`;
 }
 
+function getNextMonthStr(m: string): string {
+  const [y, mo] = m.split('-').map(Number);
+  const d = new Date(y, mo, 1); // mo as-is overflows Dec→Jan correctly
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// ── Computed helpers ──────────────────────────────────────────────────────────
+
+function margeAnnuelFamille(f: ObjFamille, annuel: number): number {
+  if (annuel <= 0 || f.poidsMarge <= 0) return 0;
+  return Math.round(annuel * f.poidsMarge / 100);
+}
+
+function margeMensuelleTheorique(f: ObjFamille, annuel: number): number {
+  if (annuel <= 0 || f.poidsMarge <= 0) return 0;
+  return Math.round(annuel * f.poidsMarge / 100 / 12);
+}
+
+function margeMensuelleEffective(f: ObjFamille, annuel: number): number {
+  const theo = margeMensuelleTheorique(f, annuel);
+  if (theo <= 0) return 0;
+  return theo + Math.round(f.ecartReporte || 0);
+}
+
+function stockNecessaire(f: ObjFamille, annuel: number): number {
+  const cible = margeMensuelleEffective(f, annuel);
+  if (f.tauxMarge <= 0 || cible <= 0) return 0;
+  return Math.round(cible / (f.tauxMarge / 100));
+}
+
+function sourcingRestant(f: ObjFamille, annuel: number): number {
+  const cible = margeMensuelleEffective(f, annuel);
+  if (cible <= 0 || f.tauxMarge <= 0) return 0;
+  const t = f.tauxMarge / 100;
+  const base = Math.round((cible - f.margeRealisee) / t);
+  if (f.stockInitial > 0 && f.delaiRotation > 0) {
+    const part = Math.min(1, 30 / f.delaiRotation);
+    return Math.max(0, Math.round(base - f.stockInitial * part));
+  }
+  return Math.max(0, base);
+}
+
+function avancement(f: ObjFamille, annuel: number): number {
+  const cible = margeMensuelleEffective(f, annuel);
+  if (cible <= 0) return 0;
+  return Math.round((f.margeRealisee / cible) * 100);
+}
+
+function budgetPromo(f: ObjFamille, annuel: number, promoRedist: number): number {
+  const cible = margeMensuelleEffective(f, annuel);
+  return Math.max(0, Math.round((f.margeRealisee - cible) * promoRedist / 100));
+}
+
 // ── AI context export ─────────────────────────────────────────────────────────
 
 export function getVisionContext(magasinNom: string): string {
@@ -70,7 +126,6 @@ export function getVisionContext(magasinNom: string): string {
   try {
     const parts: string[] = [];
 
-    // Histoire du magasin (objectifsPerso + visionLongTerme)
     const hs = localStorage.getItem(`histoire_${magasinNom}`);
     if (hs) {
       const h = JSON.parse(hs) as { objectifsPerso?: string; visionLongTerme?: string };
@@ -78,52 +133,49 @@ export function getVisionContext(magasinNom: string): string {
       if (h.visionLongTerme?.trim()) parts.push(`Vision long terme (3 ans) : ${h.visionLongTerme}`);
     }
 
-    // CA annuel cible
+    const annuelRaw = localStorage.getItem(`objectif_marge_annuel_${magasinNom}`);
+    const annuel = annuelRaw ? parseFloat(annuelRaw) || 0 : 0;
+    if (annuel > 0) parts.push(`Objectif marge annuel : ${annuel.toLocaleString('fr-FR')} €`);
+
     const caRaw = localStorage.getItem(`ca_annuel_${magasinNom}`);
     if (caRaw) {
       const ca = parseFloat(caRaw);
       if (ca > 0) parts.push(`CA annuel cible : ${ca.toLocaleString('fr-FR')} €`);
     }
 
-    // Objectifs mensuels (mois courant)
     const currentMonth = new Date().toISOString().slice(0, 7);
     const os = localStorage.getItem(`objectifs_${magasinNom}_${currentMonth}`);
     if (os) {
       const obj = JSON.parse(os) as ObjData;
+      const ann = obj.objectifMargeAnnuel || annuel;
       if (obj.familles?.length) {
         const delais = getDelaiMoyenParFamille(magasinNom);
-        const calcSourcing = (f: ObjFamille): number => {
-          if (f.tauxMarge <= 0) return 0;
-          const t = f.tauxMarge / 100;
-          const base = Math.round((f.margeCible - f.margeRealisee) / t);
-          if (f.stockInitial > 0 && (f.delaiRotation ?? 0) > 0) {
-            return Math.max(0, Math.round(base - f.stockInitial * Math.min(1, 30 / f.delaiRotation)));
-          }
-          return Math.max(0, base);
-        };
+        const calcSrc = (f: ObjFamille): number => sourcingRestant(f, ann);
         const lines = obj.familles
-          .filter(f => f.famille && f.margeCible > 0)
+          .filter(f => f.famille && margeMensuelleEffective(f, ann) > 0)
           .map(f => {
-            const avanc = f.margeCible > 0 ? Math.round(f.margeRealisee / f.margeCible * 100) : 0;
-            const src = calcSourcing(f);
-            const sourcingStr = f.margeRealisee >= f.margeCible
+            const cible = margeMensuelleEffective(f, ann);
+            const avanc = cible > 0 ? Math.round(f.margeRealisee / cible * 100) : 0;
+            const src = calcSrc(f);
+            const sourcingStr = f.margeRealisee >= cible
               ? ' · sourcing: objectif atteint ✓'
               : src > 0 ? ` · sourcing restant: +${src.toLocaleString('fr-FR')}€` : '';
-            return `  - ${f.famille} : cible ${f.margeCible.toLocaleString('fr-FR')}€ · réalisé ${f.margeRealisee.toLocaleString('fr-FR')}€ (${avanc}%)${sourcingStr}`;
+            const ecartStr = f.ecartReporte > 0 ? ` · écart reporté: +${Math.round(f.ecartReporte).toLocaleString('fr-FR')}€` : '';
+            return `  - ${f.famille} : cible ${cible.toLocaleString('fr-FR')}€ · réalisé ${f.margeRealisee.toLocaleString('fr-FR')}€ (${avanc}%)${ecartStr}${sourcingStr}`;
           });
+        void delais;
         if (lines.length) {
-          const totalMarge = obj.familles.reduce((s, f) => s + (f.margeCible || 0), 0);
-          const totalCA = obj.familles.reduce((s, f) => f.tauxMarge > 0 ? s + f.margeCible / (f.tauxMarge / 100) : s, 0);
+          const totalMarge = obj.familles.reduce((s, f) => s + margeMensuelleEffective(f, ann), 0);
+          const totalCA = obj.familles.reduce((s, f) => f.tauxMarge > 0 ? s + margeMensuelleEffective(f, ann) / (f.tauxMarge / 100) : s, 0);
           const tauxPondere = totalCA > 0 ? Math.round((totalMarge / totalCA) * 1000) / 10 : 0;
-          const sourcingRestantTotal = obj.familles.reduce((s, f) => s + calcSourcing(f), 0);
+          const sourcingTotal = obj.familles.reduce((s, f) => s + sourcingRestant(f, ann), 0);
           if (tauxPondere > 0) parts.push(`Taux de marge pondéré global : ${tauxPondere}%`);
-          if (sourcingRestantTotal > 0) parts.push(`Sourcing restant ce mois : ${sourcingRestantTotal.toLocaleString('fr-FR')} €`);
+          if (sourcingTotal > 0) parts.push(`Sourcing restant ce mois : ${sourcingTotal.toLocaleString('fr-FR')} €`);
           parts.push(`Objectifs mensuels (${currentMonth}) :\n${lines.join('\n')}`);
         }
       }
     }
 
-    // Active PAP actions
     const as_ = localStorage.getItem(`ec_actions_${magasinNom}`);
     if (as_) {
       const acts = JSON.parse(as_) as PAPAction[];
@@ -148,36 +200,28 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
   const today = new Date();
   const defaultMonth = today.toISOString().slice(0, 7);
 
-  // CA annuel cible
-  const [caAnnuelCible, setCaAnnuelCible] = useState<number>(() => {
-    if (typeof window === 'undefined') return 0;
-    return parseFloat(localStorage.getItem(`ca_annuel_${magasinNom}`) || '0') || 0;
-  });
-
-  // Objectifs du mois
+  const [objectifMargeAnnuel, setObjectifMargeAnnuel] = useState<number>(0);
+  const [caAnnuelCible, setCaAnnuelCible] = useState<number>(0);
   const [month, setMonth] = useState(defaultMonth);
   const [promoRedist, setPromoRedist] = useState(30);
   const [familles, setFamilles] = useState<ObjFamille[]>(defaultRows());
-
-  // Historique des mois clos
   const [historique, setHistorique] = useState<HistoriqueMonth[]>([]);
   const [showHistorique, setShowHistorique] = useState(false);
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
   const [confirmCloture, setConfirmCloture] = useState(false);
-
-  // Délais moyens par famille issus du Journal achat-vente (FamilyCode → jours | null)
   const [delaisParFamille, setDelaisParFamille] = useState<Record<string, number | null>>({});
+
   useEffect(() => {
     if (magasinNom) setDelaisParFamille(getDelaiMoyenParFamille(magasinNom));
   }, [magasinNom]);
 
-  // Reload CA cible when magasin changes
   useEffect(() => {
     if (!magasinNom) return;
+    const annRaw = localStorage.getItem(`objectif_marge_annuel_${magasinNom}`);
+    setObjectifMargeAnnuel(parseFloat(annRaw || '0') || 0);
     setCaAnnuelCible(parseFloat(localStorage.getItem(`ca_annuel_${magasinNom}`) || '0') || 0);
   }, [magasinNom]);
 
-  // Load historique when magasin changes
   useEffect(() => {
     if (!magasinNom) return;
     try {
@@ -186,15 +230,23 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
     } catch { setHistorique([]); }
   }, [magasinNom]);
 
-  // Load objectifs when month or magasin changes
   useEffect(() => {
     try {
       const key = `objectifs_${magasinNom}_${month}`;
       const s = localStorage.getItem(key);
       if (s) {
         const parsed = JSON.parse(s) as ObjData;
-        setFamilles((parsed.familles ?? defaultRows()).map(f => ({ ...f, stockInitial: f.stockInitial ?? 0, delaiRotation: f.delaiRotation ?? 0 })));
+        setFamilles((parsed.familles ?? defaultRows()).map(f => ({
+          ...f,
+          poidsMarge: f.poidsMarge ?? 0,
+          ecartReporte: f.ecartReporte ?? 0,
+          stockInitial: f.stockInitial ?? 0,
+          delaiRotation: f.delaiRotation ?? 0,
+        })));
         setPromoRedist(parsed.promoRedist ?? 30);
+        if (parsed.objectifMargeAnnuel) {
+          setObjectifMargeAnnuel(parsed.objectifMargeAnnuel);
+        }
       } else {
         setFamilles(defaultRows());
         setPromoRedist(30);
@@ -206,130 +258,115 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
-  function updateCaAnnuelCible(v: number) {
-    setCaAnnuelCible(v);
-    if (magasinNom) localStorage.setItem(`ca_annuel_${magasinNom}`, String(v));
+  function saveObj(f: ObjFamille[], p: number, ann: number) {
+    localStorage.setItem(`objectifs_${magasinNom}_${month}`, JSON.stringify({ familles: f, promoRedist: p, objectifMargeAnnuel: ann } as ObjData));
   }
 
-  function saveObj(f: ObjFamille[], p: number) {
-    localStorage.setItem(`objectifs_${magasinNom}_${month}`, JSON.stringify({ familles: f, promoRedist: p } as ObjData));
+  function updateObjectifMargeAnnuel(v: number) {
+    setObjectifMargeAnnuel(v);
+    localStorage.setItem(`objectif_marge_annuel_${magasinNom}`, String(v));
+    saveObj(familles, promoRedist, v);
+  }
+
+  function updateCaAnnuelCible(v: number) {
+    setCaAnnuelCible(v);
+    localStorage.setItem(`ca_annuel_${magasinNom}`, String(v));
   }
 
   function updateFamille(id: string, field: keyof ObjFamille, value: string | number) {
     const next = familles.map(f => f.id === id ? { ...f, [field]: value } : f);
     setFamilles(next);
-    saveObj(next, promoRedist);
+    saveObj(next, promoRedist, objectifMargeAnnuel);
   }
 
   function addFamille() {
-    const next = [...familles, { id: uid(), famille: '', tauxMarge: 40, margeCible: 0, stockInitial: 0, delaiRotation: 0, margeRealisee: 0 }];
+    const next = [...familles, { id: uid(), famille: '', tauxMarge: 40, poidsMarge: 0, ecartReporte: 0, stockInitial: 0, delaiRotation: 0, margeRealisee: 0 }];
     setFamilles(next);
-    saveObj(next, promoRedist);
+    saveObj(next, promoRedist, objectifMargeAnnuel);
   }
 
   function delFamille(id: string) {
     const next = familles.filter(f => f.id !== id);
     setFamilles(next);
-    saveObj(next, promoRedist);
+    saveObj(next, promoRedist, objectifMargeAnnuel);
   }
 
   function updatePromo(p: number) {
     setPromoRedist(p);
-    saveObj(familles, p);
+    saveObj(familles, p, objectifMargeAnnuel);
   }
 
   function cloturerMois() {
-    const totCible = familles.reduce((s, f) => s + (f.margeCible || 0), 0);
+    const totCible = familles.reduce((s, f) => s + margeMensuelleEffective(f, objectifMargeAnnuel), 0);
     const totRealisee = familles.reduce((s, f) => s + (f.margeRealisee || 0), 0);
     const record: HistoriqueMonth = {
-      month,
-      totalCible: totCible,
-      totalRealisee: totRealisee,
+      month, totalCible: totCible, totalRealisee: totRealisee,
       familles: familles.map(f => ({
         famille: f.famille,
-        margeCible: f.margeCible,
+        margeCible: margeMensuelleEffective(f, objectifMargeAnnuel),
         margeRealisee: f.margeRealisee,
         tauxMarge: f.tauxMarge,
         stockInitial: f.stockInitial,
-        delaiRotation: f.delaiRotation,
+        ecartReporte: f.ecartReporte,
       })),
       clotureLe: new Date().toISOString().slice(0, 10),
     };
-    const next = [record, ...historique.filter(h => h.month !== month)].slice(0, 36);
-    setHistorique(next);
-    localStorage.setItem(`objectifs_history_${magasinNom}`, JSON.stringify(next));
+    const nextHist = [record, ...historique.filter(h => h.month !== month)].slice(0, 36);
+    setHistorique(nextHist);
+    localStorage.setItem(`objectifs_history_${magasinNom}`, JSON.stringify(nextHist));
+
+    // Forward ecarts to next month
+    const nextMonth = getNextMonthStr(month);
+    const nextKey = `objectifs_${magasinNom}_${nextMonth}`;
+    let nextFamilles: ObjFamille[] = defaultRows();
+    try {
+      const existing = localStorage.getItem(nextKey);
+      if (existing) {
+        const parsed = JSON.parse(existing) as ObjData;
+        nextFamilles = parsed.familles ?? defaultRows();
+      }
+    } catch { /* ignore */ }
+
+    const nextFamillesWithEcart = nextFamilles.map(nf => {
+      const curr = familles.find(cf => cf.famille === nf.famille);
+      if (!curr) return nf;
+      const effectif = margeMensuelleEffective(curr, objectifMargeAnnuel);
+      const ecart = Math.max(0, effectif - (curr.margeRealisee || 0));
+      return { ...nf, ecartReporte: ecart, poidsMarge: nf.poidsMarge || curr.poidsMarge };
+    });
+
+    const nextData: ObjData = { familles: nextFamillesWithEcart, promoRedist, objectifMargeAnnuel };
+    localStorage.setItem(nextKey, JSON.stringify(nextData));
+
     setConfirmCloture(false);
     setShowHistorique(true);
   }
 
-  function supprimerMoisHistorique(month: string) {
-    const next = historique.filter(h => h.month !== month);
+  function supprimerMoisHistorique(m: string) {
+    const next = historique.filter(h => h.month !== m);
     setHistorique(next);
     localStorage.setItem(`objectifs_history_${magasinNom}`, JSON.stringify(next));
-    if (expandedMonth === month) setExpandedMonth(null);
+    if (expandedMonth === m) setExpandedMonth(null);
   }
 
-  // ── Calculs ────────────────────────────────────────────────────────────────
+  // ── Computed ────────────────────────────────────────────────────────────────
 
-  function stockNecessaire(f: ObjFamille): number {
-    if (f.tauxMarge <= 0 || f.margeCible <= 0) return 0;
-    return Math.round(f.margeCible / (f.tauxMarge / 100));
-  }
+  const totalPoidsMarge = familles.reduce((s, f) => s + (f.poidsMarge || 0), 0);
+  const poidsAlert = totalPoidsMarge > 0 && Math.abs(totalPoidsMarge - 100) > 0.5;
 
-  // Délai effectif : saisie manuelle en priorité.
-  // Auto-Journal visible en hint mais n'entre pas dans le calcul si le champ est vide.
-  function getDelaiInfo(f: ObjFamille): { delai: number | null; partPct: number | null; autoDelai: number | null } {
-    const autoDelai = (() => {
-      if (!f.famille) return null;
-      const fc = detectFamilyCode(f.famille);
-      if (fc === 'UNKNOWN') return null;
-      return delaisParFamille[fc] ?? null;
-    })();
-    if (f.delaiRotation > 0) {
-      return { delai: f.delaiRotation, partPct: Math.min(100, Math.round((30 / f.delaiRotation) * 100)), autoDelai };
-    }
-    // Champ vide → stock informatif uniquement, pas de pondération
-    return { delai: null, partPct: null, autoDelai };
-  }
-
-  // Sourcing restant = (margeCible − margeRealisee) / tauxMarge
-  // Stock pondéré uniquement si delaiRotation > 0 (saisi manuellement)
-  function sourcingRestant(f: ObjFamille): number {
-    if (f.margeCible <= 0 || f.tauxMarge <= 0) return 0;
-    const t = f.tauxMarge / 100;
-    const base = Math.round((f.margeCible - f.margeRealisee) / t);
-    if (f.stockInitial > 0 && f.delaiRotation > 0) {
-      const part = Math.min(1, 30 / f.delaiRotation);
-      return Math.max(0, Math.round(base - f.stockInitial * part));
-    }
-    return Math.max(0, base);
-  }
-
-  function avancement(f: ObjFamille): number {
-    if (f.margeCible <= 0) return 0;
-    return Math.round((f.margeRealisee / f.margeCible) * 100);
-  }
-
-  function budgetPromo(f: ObjFamille): number {
-    return Math.max(0, Math.round((f.margeRealisee - f.margeCible) * promoRedist / 100));
-  }
-
-  const totalCible = familles.reduce((s, f) => s + (f.margeCible || 0), 0);
+  const totalCible = familles.reduce((s, f) => s + margeMensuelleEffective(f, objectifMargeAnnuel), 0);
   const totalRealisee = familles.reduce((s, f) => s + (f.margeRealisee || 0), 0);
   const totalAvancement = totalCible > 0 ? Math.round((totalRealisee / totalCible) * 100) : 0;
-  const totalBudgetPromo = familles.reduce((s, f) => s + budgetPromo(f), 0);
-  const totalSourcingRestant = familles.reduce((s, f) => s + sourcingRestant(f), 0);
+  const totalSourcingRestant = familles.reduce((s, f) => s + sourcingRestant(f, objectifMargeAnnuel), 0);
+  const totalBudgetPromo = familles.reduce((s, f) => s + budgetPromo(f, objectifMargeAnnuel, promoRedist), 0);
   const objetifAtteint = totalCible > 0 && totalRealisee >= totalCible;
+  const totalEcartReporte = familles.reduce((s, f) => s + (f.ecartReporte || 0), 0);
 
-  // Pour la synthèse annuelle : stock total à acheter chaque mois (base cible, sans stockInitial)
-  const totalCAcible = familles.reduce((s, f) => s + stockNecessaire(f), 0);
+  const totalCAcible = familles.reduce((s, f) => s + stockNecessaire(f, objectifMargeAnnuel), 0);
   const tauxMargePondere = totalCAcible > 0 ? Math.round((totalCible / totalCAcible) * 1000) / 10 : 0;
   const besoinSourcingAnnuel = Math.round(totalCAcible * 12);
-
-  const caAnnuel = caAnnuelCible || 0;
-  const margeAnnuelleProjetee = caAnnuel > 0 && tauxMargePondere > 0
-    ? Math.round(caAnnuel * tauxMargePondere / 100)
-    : 0;
+  const margeAnnuelleProjetee = caAnnuelCible > 0 && tauxMargePondere > 0
+    ? Math.round(caAnnuelCible * tauxMargePondere / 100) : 0;
 
   const statusMsg = totalCible === 0 ? null
     : objetifAtteint
@@ -339,12 +376,48 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
         : { msg: 'En retard — relancez les ventes et le sourcing', cls: 'bg-red-50 border-red-200 text-red-700', icon: '🔴' };
 
   const isMonthArchived = historique.some(h => h.month === month);
-  const hasData = familles.some(f => f.margeCible > 0);
+  const hasData = totalCible > 0 || familles.some(f => f.margeRealisee > 0);
 
   const ic = 'bg-white border border-[#E0E0E0] rounded-md px-2 py-1.5 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]';
 
   return (
     <div className="space-y-6">
+
+      {/* ── OBJECTIF ANNUEL GLOBAL ───────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5">
+        <h2 className="text-lg font-bold text-[#1A1A1A] mb-1">🎯 Objectifs mensuels — {magasinNom || 'Magasin'}</h2>
+        <p className="text-xs text-[#6B7280] mb-4">Saisir l&apos;objectif global annuel et les poids marge par famille (source : intranet réseau). Les objectifs mensuels sont calculés automatiquement.</p>
+
+        <div className="flex flex-wrap gap-6 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-[#374151] mb-1">Objectif marge annuel global (€)</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                value={objectifMargeAnnuel || ''}
+                onChange={e => updateObjectifMargeAnnuel(parseFloat(e.target.value) || 0)}
+                className="border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm w-44 focus:outline-none focus:border-[#E30613]"
+                placeholder="Ex : 600000"
+              />
+              <span className="text-sm text-[#6B7280] font-semibold">€</span>
+            </div>
+            {objectifMargeAnnuel > 0 && (
+              <p className="text-xs text-[#6B7280] mt-1">
+                → <span className="font-semibold text-[#1A1A1A]">{Math.round(objectifMargeAnnuel / 12).toLocaleString('fr-FR')} €</span>/mois (base théorique)
+              </p>
+            )}
+          </div>
+
+          {poidsAlert && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+              <span className="text-sm">⚠️</span>
+              <p className="text-xs text-amber-800 font-semibold">
+                Somme des poids marge : <strong>{totalPoidsMarge.toFixed(1)}%</strong> — doit être égale à 100 %.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── OBJECTIFS MENSUELS ────────────────────────────────────────────────── */}
       <div className="space-y-5">
@@ -352,18 +425,12 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h2 className="text-lg font-bold text-[#1A1A1A]">📅 Objectifs mensuels</h2>
-            <p className="text-xs text-[#6B7280] mt-0.5">Mes objectifs de marge pour le mois en cours — {magasinNom || 'Magasin'}</p>
+            <h3 className="text-sm font-bold text-[#1A1A1A]">📅 Mois en cours</h3>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <label className="text-xs text-[#6B7280]">Mois</label>
-              <input
-                type="month"
-                value={month}
-                onChange={e => setMonth(e.target.value)}
-                className={ic}
-              />
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)} className={ic} />
             </div>
             <div className="flex items-center gap-1">
               <label className="text-xs text-[#6B7280]">Redistrib. promo</label>
@@ -396,16 +463,19 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
         {confirmCloture && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
             <p className="text-sm text-orange-800">
-              <strong>Clôturer {fmtMonth(month)} ?</strong> Les données seront archivées dans l&apos;historique. Vous pouvez continuer à modifier ce mois après clôture.
+              <strong>Clôturer {fmtMonth(month)} ?</strong> Les données seront archivées. Les déficits non atteints seront reportés au mois suivant.
             </p>
             <div className="flex gap-2 shrink-0">
-              <button onClick={cloturerMois} className="text-xs font-semibold px-3 py-1.5 bg-[#E30613] text-white rounded-lg hover:bg-[#B8050F] transition-colors">
-                Confirmer
-              </button>
-              <button onClick={() => setConfirmCloture(false)} className="text-xs px-3 py-1.5 border border-[#E0E0E0] rounded-lg text-[#6B7280] hover:bg-[#F5F5F5] transition-colors">
-                Annuler
-              </button>
+              <button onClick={cloturerMois} className="text-xs font-semibold px-3 py-1.5 bg-[#E30613] text-white rounded-lg hover:bg-[#B8050F] transition-colors">Confirmer</button>
+              <button onClick={() => setConfirmCloture(false)} className="text-xs px-3 py-1.5 border border-[#E0E0E0] rounded-lg text-[#6B7280] hover:bg-[#F5F5F5] transition-colors">Annuler</button>
             </div>
+          </div>
+        )}
+
+        {/* Écart reporté banner */}
+        {totalEcartReporte > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-xs text-blue-800">
+            📥 <strong>{totalEcartReporte.toLocaleString('fr-FR')} € de déficit reporté</strong> du mois précédent, réparti sur les familles concernées.
           </div>
         )}
 
@@ -417,145 +487,140 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
           </div>
         )}
 
-        {/* Stock initial info band — référence début de mois */}
-        {familles.some(f => f.stockInitial > 0) && (
-          <div className="bg-[#F9FAFB] border border-[#E0E0E0] rounded-xl px-4 py-2.5 text-xs text-[#6B7280]">
-            📦 <strong className="text-[#374151]">Stock initial du mois :</strong>{' '}
-            {familles.filter(f => f.stockInitial > 0).map(f => `${f.famille} ${f.stockInitial.toLocaleString('fr-FR')} €`).join(' · ')}
-            {' '}<span className="italic">(référence, ne réduit pas le sourcing restant)</span>
-          </div>
-        )}
-
         {/* Table */}
         <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-xs" style={{ minWidth: '1050px' }}>
               <thead>
                 <tr className="bg-[#F5F5F5] border-b border-[#E0E0E0]">
                   <th className="text-left px-3 py-2.5 font-semibold text-[#6B7280]">Famille</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge cible (€)</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Taux marge (%)</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock initial (€)</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Délai rotation (j)</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock cible (€)</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge réalisée (€)</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Avancement</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280] bg-orange-50">Sourcing restant ↓</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Budget promo (€)</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#6B7280]">Poids<br/>marge %</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#9CA3AF] bg-[#EBEBEB]">Obj. annuel €</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#9CA3AF] bg-[#EBEBEB]">Obj. mens.<br/>théo. €</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-blue-500 bg-blue-50">Écart<br/>reporté €</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#1A1A1A] bg-[#EBEBEB]">Obj. mens.<br/>effectif €</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#6B7280]">Taux<br/>marge %</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#6B7280]">Stock<br/>initial €</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#6B7280]">Délai<br/>rotation j</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#6B7280]">Marge<br/>réalisée €</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#6B7280]">Avan.</th>
+                  <th className="text-right px-2 py-2.5 font-semibold text-[#6B7280] bg-orange-50">Sourcing<br/>restant ↓</th>
                   <th className="px-2 py-2.5"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E0E0E0]">
                 {familles.map(f => {
-                  const stockCible = stockNecessaire(f);
-                  const sourcing = sourcingRestant(f);
-                  const delaiInfo = getDelaiInfo(f);
-                  const avanc = avancement(f);
-                  const promo = budgetPromo(f);
-                  const atteint = f.margeCible > 0 && f.margeRealisee >= f.margeCible;
+                  const theo = margeMensuelleTheorique(f, objectifMargeAnnuel);
+                  const effectif = margeMensuelleEffective(f, objectifMargeAnnuel);
+                  const annuelF = margeAnnuelFamille(f, objectifMargeAnnuel);
+                  const src = sourcingRestant(f, objectifMargeAnnuel);
+                  const avanc = avancement(f, objectifMargeAnnuel);
+                  const atteint = effectif > 0 && f.margeRealisee >= effectif;
+                  const autoDelai = (() => {
+                    if (!f.famille) return null;
+                    const fc = detectFamilyCode(f.famille);
+                    if (fc === 'UNKNOWN') return null;
+                    return delaisParFamille[fc] ?? null;
+                  })();
                   return (
                     <tr key={f.id} className={`hover:bg-[#FAFAFA] ${atteint ? 'bg-green-50/30' : ''}`}>
+                      {/* Famille */}
                       <td className="px-3 py-2">
-                        <input
-                          value={f.famille}
-                          onChange={e => updateFamille(f.id, 'famille', e.target.value)}
-                          className={`${ic} w-32`}
-                          placeholder="Famille"
-                        />
+                        <input value={f.famille} onChange={e => updateFamille(f.id, 'famille', e.target.value)} className={`${ic} w-28`} placeholder="Famille" />
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <input
-                          type="number"
-                          value={f.margeCible || ''}
-                          onChange={e => updateFamille(f.id, 'margeCible', parseFloat(e.target.value) || 0)}
-                          className={`${ic} w-24 text-right`}
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <input
-                          type="number"
-                          value={f.tauxMarge || ''}
-                          onChange={e => updateFamille(f.id, 'tauxMarge', parseFloat(e.target.value) || 0)}
-                          className={`${ic} w-16 text-right`}
-                          placeholder="40"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <input
-                          type="number"
-                          value={f.stockInitial || ''}
-                          onChange={e => updateFamille(f.id, 'stockInitial', parseFloat(e.target.value) || 0)}
-                          className={`${ic} w-24 text-right`}
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex flex-col items-end gap-0.5">
+                      {/* Poids marge % */}
+                      <td className="px-2 py-2 text-right">
+                        <div className="flex items-center justify-end gap-0.5">
                           <input
                             type="number"
-                            value={f.delaiRotation || ''}
-                            onChange={e => updateFamille(f.id, 'delaiRotation', parseFloat(e.target.value) || 0)}
-                            className={`${ic} w-16 text-right`}
-                            placeholder="—"
-                            min="1"
+                            min="0" max="100"
+                            value={f.poidsMarge || ''}
+                            onChange={e => updateFamille(f.id, 'poidsMarge', parseFloat(e.target.value) || 0)}
+                            className={`${ic} w-14 text-right`}
+                            placeholder="0"
                           />
+                          <span className="text-[#9CA3AF]">%</span>
+                        </div>
+                      </td>
+                      {/* Obj annuel auto */}
+                      <td className="px-2 py-2 text-right bg-[#F9FAFB] text-[#6B7280] font-medium">
+                        {annuelF > 0 ? `${annuelF.toLocaleString('fr-FR')} €` : '—'}
+                      </td>
+                      {/* Obj mensuel théorique auto */}
+                      <td className="px-2 py-2 text-right bg-[#F9FAFB] text-[#6B7280] font-medium">
+                        {theo > 0 ? `${theo.toLocaleString('fr-FR')} €` : '—'}
+                      </td>
+                      {/* Écart reporté */}
+                      <td className="px-2 py-2 text-right bg-blue-50">
+                        <span className={`font-semibold ${f.ecartReporte > 0 ? 'text-blue-600' : 'text-[#9CA3AF]'}`}>
+                          {f.ecartReporte > 0 ? `+${Math.round(f.ecartReporte).toLocaleString('fr-FR')} €` : '—'}
+                        </span>
+                      </td>
+                      {/* Obj mensuel effectif auto */}
+                      <td className="px-2 py-2 text-right bg-[#F9FAFB]">
+                        <span className="font-bold text-[#1A1A1A]">
+                          {effectif > 0 ? `${effectif.toLocaleString('fr-FR')} €` : '—'}
+                        </span>
+                      </td>
+                      {/* Taux marge */}
+                      <td className="px-2 py-2 text-right">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <input type="number" value={f.tauxMarge || ''} onChange={e => updateFamille(f.id, 'tauxMarge', parseFloat(e.target.value) || 0)} className={`${ic} w-14 text-right`} placeholder="40" />
+                          <span className="text-[#9CA3AF]">%</span>
+                        </div>
+                      </td>
+                      {/* Stock initial */}
+                      <td className="px-2 py-2 text-right">
+                        <input type="number" value={f.stockInitial || ''} onChange={e => updateFamille(f.id, 'stockInitial', parseFloat(e.target.value) || 0)} className={`${ic} w-20 text-right`} placeholder="0" />
+                      </td>
+                      {/* Délai rotation */}
+                      <td className="px-2 py-2 text-right">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <input type="number" value={f.delaiRotation || ''} onChange={e => updateFamille(f.id, 'delaiRotation', parseFloat(e.target.value) || 0)} className={`${ic} w-14 text-right`} placeholder="—" min="1" />
                           {f.delaiRotation > 0 && f.stockInitial > 0 && (
                             <span className="text-[10px] text-blue-600 leading-tight font-medium">
                               → {Math.min(100, Math.round(30 / f.delaiRotation * 100))}% du stock
                             </span>
                           )}
-                          {f.delaiRotation <= 0 && delaiInfo.autoDelai !== null && f.stockInitial > 0 && (
-                            <span className="text-[10px] text-[#9CA3AF] leading-tight italic">
-                              Journal : {delaiInfo.autoDelai}j
-                            </span>
+                          {f.delaiRotation <= 0 && autoDelai !== null && f.stockInitial > 0 && (
+                            <span className="text-[10px] text-[#9CA3AF] leading-tight italic">Journal : {autoDelai}j</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-right font-medium text-[#1A1A1A]">
-                        {stockCible > 0 ? stockCible.toLocaleString('fr-FR') + ' €' : '—'}
+                      {/* Marge réalisée */}
+                      <td className="px-2 py-2 text-right">
+                        <input type="number" value={f.margeRealisee || ''} onChange={e => updateFamille(f.id, 'margeRealisee', parseFloat(e.target.value) || 0)} className={`${ic} w-20 text-right`} placeholder="0" />
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <input
-                          type="number"
-                          value={f.margeRealisee || ''}
-                          onChange={e => updateFamille(f.id, 'margeRealisee', parseFloat(e.target.value) || 0)}
-                          className={`${ic} w-24 text-right`}
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right">
+                      {/* Avancement */}
+                      <td className="px-2 py-2 text-right">
                         <span className={`font-bold ${
                           atteint ? 'text-green-600'
                           : avanc >= 50 ? 'text-orange-500'
                           : avanc > 0 ? 'text-red-600'
                           : 'text-[#9CA3AF]'
                         }`}>
-                          {f.margeCible > 0 ? `${avanc}%` : '—'}
+                          {effectif > 0 ? `${avanc}%` : '—'}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right bg-orange-50/40">
+                      {/* Sourcing restant */}
+                      <td className="px-2 py-2 text-right bg-orange-50/40">
                         <span className={`font-semibold ${
                           atteint ? 'text-green-600'
-                          : sourcing > 0 ? 'text-orange-600'
+                          : src > 0 ? 'text-orange-600'
                           : 'text-[#9CA3AF]'
                         }`}>
-                          {f.margeCible <= 0 ? '—'
+                          {effectif <= 0 ? '—'
                             : atteint ? '✓ Atteint'
-                            : sourcing > 0 ? `+${sourcing.toLocaleString('fr-FR')} €`
+                            : src > 0 ? `+${src.toLocaleString('fr-FR')} €`
                             : '—'}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <span className={`font-semibold ${promo > 0 ? 'text-green-600' : 'text-[#9CA3AF]'}`}>
-                          {promo > 0 ? `+${promo.toLocaleString('fr-FR')} €` : '—'}
-                        </span>
-                      </td>
+                      {/* Actions */}
                       <td className="px-2 py-2 flex items-center gap-1">
-                        {f.margeCible > 0 && avanc < 80 && onAddAction && (
+                        {effectif > 0 && avanc < 80 && onAddAction && (
                           <button onClick={() => {
                             const e = new Date(); e.setDate(e.getDate() + 14);
-                            onAddAction({ id: String(Date.now()), titre: `Objectifs — Booster la famille ${f.famille} (${avanc}% objectif)`, axe: 'Commerce' as ActionAxe, pilote: 'Franchisé', copilote: '', description: `Avancement ${avanc}% sur la cible de marge ${f.margeCible.toLocaleString('fr-FR')}€. Sourcing restant : ${sourcing > 0 ? sourcing.toLocaleString('fr-FR') + ' €' : '0 (atteint)'}. Accélérer le sourcing et les ventes sur cette famille.`, echeance: e.toISOString().slice(0, 10), priorite: avanc < 50 ? 1 : 2, gain: Math.round(f.margeCible - f.margeRealisee), statut: 'À faire' as StoredStatut });
+                            onAddAction({ id: String(Date.now()), titre: `Objectifs — Booster la famille ${f.famille} (${avanc}% objectif)`, axe: 'Commerce' as ActionAxe, pilote: 'Franchisé', copilote: '', description: `Avancement ${avanc}% sur la cible mensuelle ${effectif.toLocaleString('fr-FR')} €. Sourcing restant : ${src > 0 ? src.toLocaleString('fr-FR') + ' €' : '0 (atteint)'}.`, echeance: e.toISOString().slice(0, 10), priorite: avanc < 50 ? 1 : 2, gain: Math.round(effectif - f.margeRealisee), statut: 'À faire' as StoredStatut });
                           }} className="text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap transition-colors">+ PAP</button>
                         )}
                         <button onClick={() => delFamille(f.id)} className="text-[#9CA3AF] hover:text-red-600 transition-colors">🗑</button>
@@ -567,9 +632,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
             </table>
           </div>
           <div className="px-3 py-2 border-t border-[#E0E0E0]">
-            <button onClick={addFamille} className="text-xs text-[#E30613] hover:text-[#B8050F] font-medium transition-colors">
-              + Ajouter une famille
-            </button>
+            <button onClick={addFamille} className="text-xs text-[#E30613] hover:text-[#B8050F] font-medium transition-colors">+ Ajouter une famille</button>
           </div>
         </div>
 
@@ -579,33 +642,22 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-xl font-black text-[#1A1A1A]">{totalCible.toLocaleString('fr-FR')} €</div>
-              <div className="text-xs text-[#6B7280] mt-0.5">Total marge cible</div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Objectif mensuel effectif</div>
+              {totalEcartReporte > 0 && <div className="text-[10px] text-blue-600 mt-0.5">dont +{totalEcartReporte.toLocaleString('fr-FR')} € reporté</div>}
             </div>
             <div className="text-center">
               <div className="text-xl font-black text-[#1A1A1A]">{totalRealisee.toLocaleString('fr-FR')} €</div>
               <div className="text-xs text-[#6B7280] mt-0.5">Marge réalisée</div>
             </div>
             <div className="text-center">
-              <div className={`text-xl font-black ${
-                objetifAtteint ? 'text-green-600'
-                : totalAvancement >= 50 ? 'text-orange-500'
-                : totalAvancement > 0 ? 'text-red-600'
-                : 'text-[#9CA3AF]'
-              }`}>
+              <div className={`text-xl font-black ${objetifAtteint ? 'text-green-600' : totalAvancement >= 50 ? 'text-orange-500' : totalAvancement > 0 ? 'text-red-600' : 'text-[#9CA3AF]'}`}>
                 {totalCible > 0 ? (objetifAtteint ? '✓ Atteint' : `${totalAvancement}%`) : '—'}
               </div>
               <div className="text-xs text-[#6B7280] mt-0.5">Avancement global</div>
             </div>
             <div className="text-center">
-              <div className={`text-xl font-black ${
-                objetifAtteint ? 'text-green-600'
-                : totalSourcingRestant > 0 ? 'text-orange-600'
-                : 'text-[#9CA3AF]'
-              }`}>
-                {totalCible <= 0 ? '—'
-                  : objetifAtteint ? '✓ 0 €'
-                  : totalSourcingRestant > 0 ? `+${totalSourcingRestant.toLocaleString('fr-FR')} €`
-                  : '—'}
+              <div className={`text-xl font-black ${objetifAtteint ? 'text-green-600' : totalSourcingRestant > 0 ? 'text-orange-600' : 'text-[#9CA3AF]'}`}>
+                {totalCible <= 0 ? '—' : objetifAtteint ? '✓ 0 €' : totalSourcingRestant > 0 ? `+${totalSourcingRestant.toLocaleString('fr-FR')} €` : '—'}
               </div>
               <div className="text-xs text-[#6B7280] mt-0.5">Sourcing restant</div>
             </div>
@@ -617,7 +669,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
             </div>
           )}
           <p className="text-[10px] text-[#9CA3AF] italic mt-2">
-            Sourcing restant = stock à acheter pour réaliser la marge encore manquante : (marge cible − marge réalisée) ÷ taux de marge brute. Diminue à chaque saisie.
+            Sourcing restant = (marge cible effectif − réalisée) ÷ taux de marge brute. Le déficit non atteint est reporté au mois suivant lors de la clôture.
           </p>
         </div>
 
@@ -658,7 +710,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
             </div>
           </div>
           <p className="text-[10px] text-[#9CA3AF] italic mt-3 border-t border-[#E0E0E0] pt-3">
-            Taux pondéré = marge cible / CA cible (mix familles). Budget sourcing = stock mensuel cible × 12. Marge annuelle = CA annuel cible × taux pondéré.
+            Taux pondéré = marge cible / CA cible (mix familles). Budget sourcing = stock mensuel cible × 12. Marge projetée = CA annuel × taux pondéré.
           </p>
         </div>
       </div>
@@ -681,7 +733,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
         {showHistorique && (
           <div className="border-t border-[#E0E0E0] divide-y divide-[#F0F0F0]">
             {historique.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-[#6B7280] italic">Aucun mois clôturé pour l&apos;instant. Utilisez le bouton &quot;Clôturer le mois&quot; pour archiver un mois.</p>
+              <p className="px-4 py-4 text-sm text-[#6B7280] italic">Aucun mois clôturé. Utilisez le bouton &quot;Clôturer le mois&quot; pour archiver.</p>
             ) : (
               historique.map(h => {
                 const pct = h.totalCible > 0 ? Math.round(h.totalRealisee / h.totalCible * 100) : 0;
@@ -700,18 +752,13 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                         <span className={`text-xs font-bold ml-auto ${atteint ? 'text-green-600' : pct >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
                           {atteint ? '✓ Atteint' : `${pct}%`}
                         </span>
-                        <span className="text-xs text-[#9CA3AF] shrink-0">
-                          Clôturé le {new Date(h.clotureLe).toLocaleDateString('fr-FR')}
-                        </span>
+                        <span className="text-xs text-[#9CA3AF] shrink-0">Clôturé le {new Date(h.clotureLe).toLocaleDateString('fr-FR')}</span>
                         <span className="text-[#9CA3AF] text-xs">{isOpen ? '▲' : '▼'}</span>
                       </button>
                       <button
                         onClick={() => supprimerMoisHistorique(h.month)}
-                        title="Supprimer cet entrée"
                         className="px-3 py-3 text-[#9CA3AF] hover:text-red-500 transition-colors shrink-0"
-                      >
-                        🗑
-                      </button>
+                      >🗑</button>
                     </div>
                     {isOpen && (
                       <div className="bg-[#FAFAFA] border-t border-[#F0F0F0] px-4 py-3">
@@ -723,6 +770,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                               <th className="text-right py-1 font-semibold">Réalisé (€)</th>
                               <th className="text-right py-1 font-semibold">Avancement</th>
                               <th className="text-right py-1 font-semibold">Écart (€)</th>
+                              <th className="text-right py-1 font-semibold text-blue-500">Reporté ↓</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#F0F0F0]">
@@ -734,11 +782,12 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                                   <td className="py-1.5 text-[#1A1A1A]">{f.famille || '—'}</td>
                                   <td className="py-1.5 text-right">{f.margeCible.toLocaleString('fr-FR')} €</td>
                                   <td className="py-1.5 text-right">{f.margeRealisee.toLocaleString('fr-FR')} €</td>
-                                  <td className={`py-1.5 text-right font-semibold ${fpct >= 100 ? 'text-green-600' : fpct >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
-                                    {fpct}%
-                                  </td>
+                                  <td className={`py-1.5 text-right font-semibold ${fpct >= 100 ? 'text-green-600' : fpct >= 50 ? 'text-orange-500' : 'text-red-600'}`}>{fpct}%</td>
                                   <td className={`py-1.5 text-right font-semibold ${ecart >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                     {ecart >= 0 ? '+' : ''}{ecart.toLocaleString('fr-FR')} €
+                                  </td>
+                                  <td className="py-1.5 text-right text-blue-600 font-semibold">
+                                    {f.ecartReporte && f.ecartReporte > 0 ? `+${Math.round(f.ecartReporte).toLocaleString('fr-FR')} €` : '—'}
                                   </td>
                                 </tr>
                               );

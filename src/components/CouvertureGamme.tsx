@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import type { PAPAction } from '@/types';
 import ZonesModule from './ZonesModule';
+import { lbcUrl, vintedUrl } from '@/lib/sourcingUrls';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -371,22 +372,44 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
             const rang = i + 1;
             const numColor = rang === 1 ? 'text-[#E30613]' : rang === 2 ? 'text-orange-500' : rang === 3 ? 'text-yellow-600' : 'text-[#6B7280]';
             return (
-              <div key={f.id} className="flex items-start justify-between gap-2 text-sm">
-                <div className="flex items-start gap-2 flex-1">
-                  <span className={`font-black text-base w-6 flex-shrink-0 ${numColor}`}>#{rang}</span>
-                  <span className="text-[#1A1A1A] leading-snug">
-                    <strong>{f.famille || '—'}</strong> : investir{' '}
-                    <strong className="text-orange-600">{f.manque.toLocaleString('fr-FR')} €</strong>
-                    {f.poidsMarge > 0 && (
-                      <> (poids marge {f.poidsMarge}%, marge {f.tauxMarge}%, rotation {f.delaiVente}j)</>
-                    )}
-                  </span>
+              <div key={f.id} className="space-y-1.5">
+                <div className="flex items-start justify-between gap-2 text-sm">
+                  <div className="flex items-start gap-2 flex-1">
+                    <span className={`font-black text-base w-6 flex-shrink-0 ${numColor}`}>#{rang}</span>
+                    <span className="text-[#1A1A1A] leading-snug">
+                      <strong>{f.famille || '—'}</strong> : investir{' '}
+                      <strong className="text-orange-600">{f.manque.toLocaleString('fr-FR')} €</strong>
+                      {f.poidsMarge > 0 && (
+                        <> (poids marge {f.poidsMarge}%, marge {f.tauxMarge}%, rotation {f.delaiVente}j)</>
+                      )}
+                    </span>
+                  </div>
+                  {onAddAction && (
+                    <button onClick={() => {
+                      const e = new Date(); e.setDate(e.getDate() + 14);
+                      onAddAction({ id: String(Date.now()), titre: `Gamme — Investir en ${f.famille || '—'} (manque ${f.manque.toLocaleString('fr-FR')} €)`, axe: 'Stock', pilote: 'Franchisé', copilote: '', description: `Couverture de gamme insuffisante sur ${f.famille}. Investissement prioritaire #${rang} : ${f.manque.toLocaleString('fr-FR')} € (marge ${f.tauxMarge}%, rotation ${f.delaiVente}j).`, echeance: e.toISOString().slice(0, 10), priorite: rang <= 2 ? 1 : 2, gain: 0, statut: 'À faire' });
+                    }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
+                  )}
                 </div>
-                {onAddAction && (
-                  <button onClick={() => {
-                    const e = new Date(); e.setDate(e.getDate() + 14);
-                    onAddAction({ id: String(Date.now()), titre: `Gamme — Investir en ${f.famille || '—'} (manque ${f.manque.toLocaleString('fr-FR')} €)`, axe: 'Stock', pilote: 'Franchisé', copilote: '', description: `Couverture de gamme insuffisante sur ${f.famille}. Investissement prioritaire #${rang} : ${f.manque.toLocaleString('fr-FR')} € (marge ${f.tauxMarge}%, rotation ${f.delaiVente}j).`, echeance: e.toISOString().slice(0, 10), priorite: rang <= 2 ? 1 : 2, gain: 0, statut: 'À faire' });
-                  }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
+                {f.famille && (
+                  <div className="flex gap-1.5 pl-8">
+                    <a
+                      href={lbcUrl(f.famille, f.manque)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-[#E0E0E0] bg-white hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700 text-[#374151] transition-colors whitespace-nowrap"
+                    >
+                      🔍 Leboncoin
+                    </a>
+                    <a
+                      href={vintedUrl(f.famille, f.manque)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-[#E0E0E0] bg-white hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 text-[#374151] transition-colors whitespace-nowrap"
+                    >
+                      🔍 Vinted
+                    </a>
+                  </div>
                 )}
               </div>
             );

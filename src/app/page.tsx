@@ -7,29 +7,27 @@ import Dashboard from '@/components/Dashboard';
 import PlanAction from '@/components/PlanAction';
 import Objectifs from '@/components/Objectifs';
 import CouvertureGamme from '@/components/CouvertureGamme';
-import Simulateur from '@/components/Simulateur';
 import Competences from '@/components/Competences';
 import AssistantIA from '@/components/AssistantIA';
 import Routines from '@/components/Routines';
 import JournalAchatVente from '@/components/JournalAchatVente';
 import BijouterieScreen from '@/components/BijouterieScreen';
-import BenchmarkFinancier from '@/components/BenchmarkFinancier';
+import Financier from '@/components/Financier';
 import SourcingWeb from '@/components/SourcingWeb';
 import { detectSpiral } from '@/lib/spiral';
 
 const MAIN_TABS = [
   { id: 'dashboard',   label: 'Dashboard' },
   { id: 'objectifs',   label: '🎯 Objectifs' },
-  { id: 'plan',        label: "📋 Plan d'Action" },
   { id: 'journal',     label: '📊 Journal' },
   { id: 'bijouterie',  label: '💍 Bijouterie' },
   { id: 'sourcing',    label: '🌐 Sourcing Web' },
-  { id: 'benchmark',   label: '📊 Benchmark' },
+  { id: 'financier',   label: '💰 Financier' },
   { id: 'couverture',  label: '🗂 Gamme' },
   { id: 'routines',    label: '🔁 Routines' },
   { id: 'competences', label: '🎓 Compétences' },
-  { id: 'simulateur',  label: '💰 Simulateur' },
   { id: 'assistant',   label: '🤖 Assistant IA' },
+  { id: 'plan',        label: "📋 Plan d'Action" },
 ] as const;
 
 type TabId = typeof MAIN_TABS[number]['id'];
@@ -163,13 +161,12 @@ export default function App() {
         {tab === 'plan'        && <PlanAction        data={data} actions={actions} onSave={saveActions} />}
         {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} onNavigateToBijouterie={() => setTab('bijouterie')} />}
         {tab === 'bijouterie'  && <BijouterieScreen  magasinNom={currentNom} onNavigateToJournal={() => setTab('journal')} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'sourcing'    && <SourcingWeb        magasinNom={currentNom} />}
-        {tab === 'benchmark'   && <BenchmarkFinancier magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'routines'    && <Routines          magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'competences' && <Competences       magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'simulateur'  && <Simulateur        magasinNom={currentNom} isCriticalSpiral={isCritical} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'assistant'   && <AssistantIA       data={data} actions={actions} magasinNom={currentNom} />}
+        {tab === 'sourcing'    && <SourcingWeb  magasinNom={currentNom} />}
+        {tab === 'financier'   && <Financier    magasinNom={currentNom} isCriticalSpiral={isCritical} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'couverture'  && <CouvertureGamme magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'routines'    && <Routines     magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'competences' && <Competences  magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'assistant'   && <AssistantIA  data={data} actions={actions} magasinNom={currentNom} />}
       </main>
 
     </div>
