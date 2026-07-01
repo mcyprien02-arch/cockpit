@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import type { PAPAction } from '@/types';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -1004,6 +1005,8 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
           <p className="text-xs text-[#9CA3AF] mt-3 italic">Commencez à cocher des routines pour voir votre progression.</p>
         ) : null}
       </div>
+
+      <CommentaireConsultant moduleKey="routines" magasinNom={magasinNom} />
     </div>
   );
 }

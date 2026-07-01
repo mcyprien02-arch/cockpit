@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
+import CommentaireConsultant from './CommentaireConsultant';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1314,6 +1315,8 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
           )}
         </div>
       )}
+
+      <CommentaireConsultant moduleKey="benchmark" magasinNom={magasinNom} />
 
       {/* ── Clear data ── */}
       <div className="flex justify-end pt-2">

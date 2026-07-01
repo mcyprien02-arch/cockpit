@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { PAPAction } from '@/types';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -616,6 +617,8 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
           </div>
         </div>
       )}
+
+      <CommentaireConsultant moduleKey="competences" magasinNom={magasinNom} />
     </div>
   );
 }

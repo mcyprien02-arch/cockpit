@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; }
 type Periode = 'all' | '3m' | '6m' | '12m';
@@ -2651,6 +2652,8 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
           </div>
         </div>
       )}
+
+      <CommentaireConsultant moduleKey="journal" magasinNom={magasinNom} />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { PAPAction } from '@/types';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props { magasinNom: string; isCriticalSpiral?: boolean; onAddAction?: (action: PAPAction) => void; }
 
@@ -474,6 +475,8 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
           </div>
         )}
       </div>
+
+      <CommentaireConsultant moduleKey="simulateur" magasinNom={magasinNom} />
     </div>
   );
 }

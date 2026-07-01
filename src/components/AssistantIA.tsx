@@ -8,6 +8,7 @@ import { getVisionContext } from '@/components/Objectifs';
 import { getBenchmarkContext } from '@/components/BenchmarkFinancier';
 import { getSimulateurContext } from '@/components/Simulateur';
 import { getHistoireContext } from '@/components/Dashboard';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props {
   data: MagasinData;
@@ -267,6 +268,8 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
           </ol>
         </div>
       )}
+
+      <CommentaireConsultant moduleKey="assistantia" magasinNom={magasinNom || ''} />
     </div>
   );
 }

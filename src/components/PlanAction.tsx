@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import type { MagasinData, PAPAction, ActionAxe, StoredStatut } from '@/types';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props {
   data: MagasinData;
@@ -498,6 +499,8 @@ export default function PlanAction({ data, actions, onSave }: Props) {
           </div>
         )}
       </div>
+
+      <CommentaireConsultant moduleKey="planaction" magasinNom={data.nom || ''} />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { PAPAction, ActionAxe, StoredStatut } from '@/types';
 import { getDelaiMoyenParFamille, detectFamilyCode } from './JournalAchatVente';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -754,6 +755,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
         )}
       </div>
 
+      <CommentaireConsultant moduleKey="objectifs" magasinNom={magasinNom} />
     </div>
   );
 }

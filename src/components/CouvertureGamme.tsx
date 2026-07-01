@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import type { PAPAction } from '@/types';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -404,6 +405,8 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
       <p className="text-xs text-[#9CA3AF] italic">
         Stock cible = Valeur de référence réseau × Qté par modèle. Stock actuel = Stock cible × Couverture. Score priorité = (Poids marge × Taux marge) / Délai vente. Estimations indicatives basées sur les valeurs saisies — ne constituent pas un engagement financier.
       </p>
+
+      <CommentaireConsultant moduleKey="gamme" magasinNom={magasinNom} />
     </div>
   );
 }

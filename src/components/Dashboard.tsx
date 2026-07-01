@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction, Phase } from '@/types';
 import { DEFAULT_DATA } from '@/types';
+import CommentaireConsultant from './CommentaireConsultant';
 
 interface Props {
   data: MagasinData;
@@ -392,6 +393,8 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
           )}
         </>
       )}
+
+      {data.nom && <CommentaireConsultant moduleKey="histoire" magasinNom={data.nom} />}
 
       {/* Modal — qualitative config only */}
       {showModal && (
