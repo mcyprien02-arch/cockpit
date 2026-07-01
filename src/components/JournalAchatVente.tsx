@@ -2273,6 +2273,40 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                 </button>
                 {trancheOpen&&(
                   <div className="px-4 py-4 border-t border-[#E0E0E0] space-y-3">
+                    {/* ── DEBUG DIAGNOSTIC ── temporaire ────────────────────────────── */}
+                    {(()=>{
+                      const tranchesDef=trancheFamily?getTranchesPrix(trancheFamily):[];
+                      const sommeTranches=trancheStats.reduce((s,t)=>s+t.nbVentes,0);
+                      const horsTransches=trancheRows.length-sommeTranches;
+                      const ecart=trancheRows.length-sommeTranches-horsTransches;
+                      const pvInvalid=trancheRows.filter(r=>!isFinite(r.pv)||r.pv<0).length;
+                      const sourcingTotal=sourcing.reduce((s,r)=>s+r.nbAchats,0);
+                      const topRotTotal=topRotations.reduce((s,t)=>s+t.qteVendue,0);
+                      return (
+                        <div className="border-2 border-amber-400 bg-amber-50 rounded-lg px-4 py-3 text-xs font-mono space-y-1.5">
+                          <p className="font-bold text-amber-800 text-sm">🔍 DEBUG — Diagnostic tranches prix (temporaire)</p>
+                          <p className="text-amber-900"><strong>ÉTAPE 1 — Famille détectée :</strong></p>
+                          <p className="pl-3 text-amber-900">trancheFamily = <strong className="text-amber-800">{String(trancheFamily)}</strong></p>
+                          <p className="pl-3 text-amber-900">Tranches appliquées ({tranchesDef.length}) : {tranchesDef.map(t=>t.label).join(' | ')}</p>
+                          <p className="text-amber-900"><strong>ÉTAPE 2 — Chaîne de filtrage :</strong></p>
+                          <p className="pl-3 text-amber-900">Lignes brutes (stored.rows) = <strong>{stored?.rows.length??'?'}</strong></p>
+                          <p className="pl-3 text-amber-900">Lignes filtrées (filteredRows) = <strong>{filteredRows.length}</strong></p>
+                          <p className="pl-3 text-amber-900">Lignes famille tranche (trancheRows) = <strong>{trancheRows.length}</strong></p>
+                          <p className="text-amber-900"><strong>ÉTAPE 3 — Répartition par tranche :</strong></p>
+                          {trancheStats.map((t,i)=>(
+                            <p key={i} className="pl-3 text-amber-900">{t.label} : <strong>{t.nbVentes}</strong> ventes</p>
+                          ))}
+                          <p className="pl-3 text-amber-900">Somme tranches = <strong>{sommeTranches}</strong></p>
+                          <p className="pl-3 text-amber-900">Hors tranches (PV hors bornes) = <strong className={horsTransches>0?'text-red-700':'text-amber-900'}>{horsTransches}</strong></p>
+                          {pvInvalid>0&&<p className="pl-3 text-red-700">⚠️ PV négatifs ou non-finis dans trancheRows : <strong>{pvInvalid}</strong></p>}
+                          <p className="text-amber-900"><strong>CONTRÔLE :</strong> {trancheRows.length} = {sommeTranches} + {horsTransches} → écart = <strong className={ecart!==0?'text-red-700':'text-green-700'}>{ecart}</strong> {ecart===0?'✅ OK':'❌ ANOMALIE DOUBLE-COMPTAGE'}</p>
+                          <p className="text-amber-900"><strong>ÉTAPE 4 — Vérif. croisée :</strong></p>
+                          <p className="pl-3 text-amber-900">sourcing.nbAchats total = <strong>{sourcingTotal}</strong></p>
+                          <p className="pl-3 text-amber-900">topRotations.qteVendue total = <strong>{topRotTotal}</strong></p>
+                        </div>
+                      );
+                    })()}
+                    {/* ── END DEBUG ─────────────────────────────────────────────────── */}
                     {withV.length===0?(
                       <p className="text-xs text-[#9CA3AF] italic">Aucune vente sur cette période pour cette famille.</p>
                     ):(
