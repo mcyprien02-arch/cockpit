@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
 import { lbcUrl, vintedUrl } from '@/lib/sourcingUrls';
 
@@ -10,16 +11,86 @@ interface GammeModele {
   id: string;
   produit: string;
   marque: string;
-  volumePct: number;   // % Volume réseau
-  easyPrice: number;   // EasyPrice €
+  volumePct: number;    // % Volume réseau
+  easyPrice: number;    // EasyPrice €
+  stockVendable: number; // Stock vendable réseau
 }
 
-// ── CSV parser ───────────────────────────────────────────────────────────────
+// ── Parsers ───────────────────────────────────────────────────────────────────
 
-function parseCSV(text: string): string[][] {
+function parseNum(s: string | number | undefined | null): number {
+  if (s === null || s === undefined || s === '') return 0;
+  if (typeof s === 'number') return isNaN(s) ? 0 : s;
+  const cleaned = String(s).replace(/\s/g, '').replace(/%$/, '').replace(/€$/, '');
+  const hasComma = cleaned.includes(',');
+  const hasDot   = cleaned.includes('.');
+  if (hasComma && hasDot) {
+    return cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')
+      ? parseFloat(cleaned.replace(/\./g, '').replace(',', '.'))
+      : parseFloat(cleaned.replace(/,/g, ''));
+  }
+  if (hasComma) return parseFloat(cleaned.replace(',', '.'));
+  return parseFloat(cleaned) || 0;
+}
+
+function normaliseHeader(h: string): string {
+  return String(h).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9%]/g, '');
+}
+
+function buildId(produit: string, marque: string): string {
+  return `${produit.toLowerCase().trim()}_${marque.toLowerCase().trim()}`.replace(/\s+/g, '_');
+}
+
+function rowsToModeles(rawRows: Array<Record<string, unknown>>): GammeModele[] {
+  if (rawRows.length === 0) return [];
+  // Detect columns from first row's keys
+  const keys = Object.keys(rawRows[0]);
+  const normKeys = keys.map(normaliseHeader);
+
+  const iP = normKeys.findIndex(h => h.includes('produit') || h.includes('modele') || h.includes('model') || h.includes('article'));
+  const iM = normKeys.findIndex(h => h.includes('marque') || h.includes('brand') || h.includes('fabricant'));
+  const iV = normKeys.findIndex(h => h.includes('volume') || (h.includes('%') && !h.includes('price') && !h.includes('marge') && !h.includes('stock')));
+  const iE = normKeys.findIndex(h => h.includes('easyprice') || h.includes('easy'));
+  const iS = normKeys.findIndex(h => h.includes('stockvendable') || h.includes('stock'));
+
+  // Fallbacks: if EasyPrice not found, try generic price/prix
+  const iE2 = iE >= 0 ? iE : normKeys.findIndex(h => h.includes('price') || h.includes('prix'));
+
+  const colP = keys[iP >= 0 ? iP : 0];
+  const colM = keys[iM >= 0 ? iM : 1];
+  const colV = keys[iV >= 0 ? iV : 2];
+  const colE = keys[iE2 >= 0 ? iE2 : 3];
+  const colS = iS >= 0 ? keys[iS] : null;
+
+  const models: GammeModele[] = [];
+  const seenIds = new Set<string>();
+
+  rawRows.forEach((r, i) => {
+    const produit = String(r[colP] ?? '').trim();
+    if (!produit) return;
+    const marque        = String(r[colM] ?? '').trim();
+    const volumePct     = parseNum(r[colV] as string | number | null | undefined);
+    const easyPrice     = parseNum(r[colE] as string | number | null | undefined);
+    const stockVendable = colS ? parseNum(r[colS] as string | number | null | undefined) : 0;
+    const id = buildId(produit, marque);
+    const uniqueId = seenIds.has(id) ? `${id}_${i}` : id;
+    seenIds.add(uniqueId);
+    models.push({ id: uniqueId, produit, marque, volumePct, easyPrice, stockVendable });
+  });
+  return models;
+}
+
+function parseCSVToRows(text: string): Array<Record<string, unknown>> {
   const lines = text.trim().split(/\r?\n/);
-  const sep = (lines[0].match(/;/g) ?? []).length > (lines[0].match(/,/g) ?? []).length ? ';' : ',';
-  return lines.map(line => {
+  if (lines.length < 2) return [];
+  // Auto-detect separator: check tabs first (common in TSV exports), then ; vs ,
+  const firstLine = lines[0];
+  const sep = firstLine.includes('\t') ? '\t'
+    : (firstLine.match(/;/g) ?? []).length > (firstLine.match(/,/g) ?? []).length ? ';' : ',';
+
+  function splitLine(line: string): string[] {
     const cells: string[] = [];
     let cur = '';
     let inQ = false;
@@ -30,79 +101,34 @@ function parseCSV(text: string): string[][] {
     }
     cells.push(cur.trim());
     return cells;
-  });
-}
-
-function parseNum(s: string): number {
-  // Handle "5,87%" → 5.87, "1 200,50" → 1200.5, "1200.50" → 1200.5
-  const cleaned = s.replace(/\s/g, '').replace(/%$/, '');
-  // If both . and , present, the one that appears last is the decimal separator
-  const hasComma = cleaned.includes(',');
-  const hasDot = cleaned.includes('.');
-  if (hasComma && hasDot) {
-    const lastComma = cleaned.lastIndexOf(',');
-    const lastDot = cleaned.lastIndexOf('.');
-    if (lastComma > lastDot) {
-      return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
-    }
-    return parseFloat(cleaned.replace(/,/g, ''));
   }
-  if (hasComma) return parseFloat(cleaned.replace(',', '.'));
-  return parseFloat(cleaned);
-}
 
-function buildId(produit: string, marque: string): string {
-  return `${produit.toLowerCase().trim()}_${marque.toLowerCase().trim()}`.replace(/\s+/g, '_');
-}
-
-function parseGamme(text: string): GammeModele[] {
-  const rows = parseCSV(text);
-  if (rows.length < 2) return [];
-  const header = rows[0].map(h => h.toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // remove accents
-    .replace(/[^a-z0-9%]/g, ''));
-
-  const iP = header.findIndex(h => h.includes('produit') || h.includes('modele') || h.includes('model') || h.includes('article'));
-  const iM = header.findIndex(h => h.includes('marque') || h.includes('brand') || h.includes('fabricant'));
-  const iV = header.findIndex(h => h.includes('volume') || (h.includes('%') && !h.includes('price') && !h.includes('marge')));
-  const iE = header.findIndex(h => h.includes('easyprice') || h.includes('easy') || h.includes('price') || h.includes('prix'));
-
-  const colProduit = iP >= 0 ? iP : 0;
-  const colMarque  = iM >= 0 ? iM : 1;
-  const colVolume  = iV >= 0 ? iV : 2;
-  const colPrice   = iE >= 0 ? iE : 3;
-
-  const models: GammeModele[] = [];
-  const seenIds = new Set<string>();
-
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
-    if (!r || r.every(c => !c)) continue;
-    const produit = (r[colProduit] ?? '').trim();
-    const marque  = (r[colMarque]  ?? '').trim();
-    if (!produit) continue;
-    const volumePct = parseNum(r[colVolume] ?? '0') || 0;
-    const easyPrice = parseNum(r[colPrice]  ?? '0') || 0;
-    const id = buildId(produit, marque);
-    const uniqueId = seenIds.has(id) ? `${id}_${i}` : id;
-    seenIds.add(uniqueId);
-    models.push({ id: uniqueId, produit, marque, volumePct, easyPrice });
+  const headers = splitLine(lines[0]);
+  const rows: Array<Record<string, unknown>> = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitLine(lines[i]);
+    if (cells.every(c => !c)) continue;
+    const row: Record<string, unknown> = {};
+    headers.forEach((h, j) => { row[h] = cells[j] ?? ''; });
+    rows.push(row);
   }
-  return models;
+  return rows;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
-  const [gamme, setGamme]   = useState<GammeModele[]>([]);
-  const [stock, setStock]   = useState<Record<string, boolean>>({});
-  const [filter, setFilter] = useState<'all' | 'manquant' | 'enstock'>('all');
-  const [search, setSearch] = useState('');
+  const [gamme, setGamme]         = useState<GammeModele[]>([]);
+  const [stock, setStock]         = useState<Record<string, boolean>>({});
+  const [importDate, setImportDate] = useState<string | null>(null);
+  const [filter, setFilter]       = useState<'all' | 'manquant' | 'enstock'>('all');
+  const [search, setSearch]       = useState('');
   const [importError, setImportError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const gammeKey = `gamme_reseau_${magasinNom}`;
-  const stockKey = `gamme_stock_${magasinNom}`;
+  const gammeKey  = `gamme_reseau_${magasinNom}`;
+  const stockKey  = `gamme_stock_${magasinNom}`;
+  const dateKey   = `gamme_date_${magasinNom}`;
 
   useEffect(() => {
     try {
@@ -113,13 +139,20 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
       const s = localStorage.getItem(stockKey);
       if (s) setStock(JSON.parse(s) as Record<string, boolean>);
     } catch { /* ignore */ }
-  }, [magasinNom, gammeKey, stockKey]);
+    try {
+      const d = localStorage.getItem(dateKey);
+      if (d) setImportDate(d);
+    } catch { /* ignore */ }
+  }, [magasinNom, gammeKey, stockKey, dateKey]);
 
   function saveGamme(g: GammeModele[], s: Record<string, boolean>) {
+    const now = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     setGamme(g);
     setStock(s);
+    setImportDate(now);
     localStorage.setItem(gammeKey, JSON.stringify(g));
     localStorage.setItem(stockKey, JSON.stringify(s));
+    localStorage.setItem(dateKey, now);
   }
 
   function toggleStock(id: string) {
@@ -128,38 +161,61 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
     localStorage.setItem(stockKey, JSON.stringify(next));
   }
 
+  function applyParsed(parsed: GammeModele[]) {
+    if (parsed.length === 0) {
+      setImportError('Aucun modèle détecté. Vérifiez le format du fichier (colonnes : Produit, Marque, % Volume réseau, EasyPrice).');
+      return;
+    }
+    // Merge: keep existing toggles by model id (stable key = produit+marque)
+    const nextStock: Record<string, boolean> = {};
+    parsed.forEach(m => { nextStock[m.id] = stock[m.id] ?? false; });
+    saveGamme(parsed, nextStock);
+  }
+
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setImportError('');
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const text = ev.target?.result as string;
-        const parsed = parseGamme(text);
-        if (parsed.length === 0) {
-          setImportError('Aucun modèle détecté. Vérifiez le format du fichier (colonnes : Produit, Marque, % Volume réseau, EasyPrice).');
-          return;
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+
+    if (ext === 'xlsx' || ext === 'xls') {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const data = ev.target?.result as ArrayBuffer;
+          const wb = XLSX.read(data, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+          applyParsed(rowsToModeles(rawRows));
+        } catch {
+          setImportError('Erreur de lecture XLSX. Vérifiez que le fichier n\'est pas protégé.');
         }
-        // Merge: keep existing stock toggles for models with same id
-        const nextStock: Record<string, boolean> = {};
-        parsed.forEach(m => {
-          nextStock[m.id] = stock[m.id] ?? false;
-        });
-        saveGamme(parsed, nextStock);
-      } catch {
-        setImportError('Erreur de lecture du fichier. Utilisez un fichier CSV (séparateur , ou ;).');
-      }
-    };
-    reader.readAsText(file, 'UTF-8');
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      // CSV / TSV / TXT
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const text = ev.target?.result as string;
+          const rows = parseCSVToRows(text);
+          applyParsed(rowsToModeles(rows));
+        } catch {
+          setImportError('Erreur de lecture du fichier. Utilisez un fichier CSV ou XLSX.');
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
+    }
     e.target.value = '';
   }
 
   function clearGamme() {
     setGamme([]);
     setStock({});
+    setImportDate(null);
     localStorage.removeItem(gammeKey);
     localStorage.removeItem(stockKey);
+    localStorage.removeItem(dateKey);
   }
 
   // ── Derived ─────────────────────────────────────────────────────────────────
@@ -209,7 +265,7 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
         <div>
           <h3 className="text-sm font-bold text-[#1A1A1A]">📥 Importer la gamme réseau</h3>
           <p className="text-xs text-[#6B7280] mt-0.5">
-            Fichier CSV avec colonnes : <strong>Produit</strong>, <strong>Marque</strong>, <strong>% Volume réseau</strong>, <strong>EasyPrice (€)</strong>. Séparateur , ou ; détecté automatiquement.
+            Fichier <strong>.xlsx</strong> ou <strong>.csv</strong> — colonnes attendues : <strong>Produit</strong>, <strong>Marque</strong>, <strong>% Volume réseau</strong>, <strong>EasyPrice (€)</strong>, <strong>Stock vendable</strong>.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -217,7 +273,7 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
             onClick={() => fileRef.current?.click()}
             className="text-sm font-semibold bg-[#E30613] text-white hover:bg-[#B8050F] rounded-lg px-4 py-2 transition-colors"
           >
-            {gamme.length > 0 ? '↺ Mettre à jour la gamme' : '+ Importer la gamme réseau'}
+            {gamme.length > 0 ? '↺ Mettre à jour la gamme' : '📂 Importer la gamme réseau (.xlsx ou .csv)'}
           </button>
           {gamme.length > 0 && (
             <button
@@ -230,12 +286,15 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,.txt"
+            accept=".xlsx,.xls,.csv,.txt"
             onChange={handleFile}
             className="hidden"
           />
           {gamme.length > 0 && (
-            <span className="text-xs text-[#6B7280]">{totalModeles} modèle{totalModeles > 1 ? 's' : ''} importé{totalModeles > 1 ? 's' : ''}</span>
+            <span className="text-xs text-[#6B7280]">
+              {totalModeles} modèle{totalModeles > 1 ? 's' : ''} chargé{totalModeles > 1 ? 's' : ''}
+              {importDate && <> · importé le {importDate}</>}
+            </span>
           )}
         </div>
         {importError && (
@@ -248,7 +307,7 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
           <div className="text-4xl mb-3">🗂</div>
           <p className="text-sm font-semibold text-[#1A1A1A]">Aucune gamme importée</p>
           <p className="text-xs text-[#6B7280] mt-2">
-            Importez le fichier CSV de la gamme réseau (Produit, Marque, % Volume réseau, EasyPrice) pour commencer.
+            Importez le fichier XLSX ou CSV de la gamme réseau (Produit, Marque, % Volume réseau, EasyPrice, Stock vendable) pour commencer.
           </p>
         </div>
       ) : (
@@ -363,12 +422,13 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-[#E0E0E0] bg-[#F5F5F5] text-[#6B7280]">
-                    <th className="text-left px-3 py-2 font-semibold">Produit</th>
+                    <th className="text-left px-3 py-2 font-semibold">Modèle</th>
                     <th className="text-left px-3 py-2 font-semibold">Marque</th>
-                    <th className="text-right px-3 py-2 font-semibold">% Volume</th>
-                    <th className="text-right px-3 py-2 font-semibold">EasyPrice</th>
-                    <th className="text-center px-3 py-2 font-semibold">Stock</th>
-                    <th className="px-3 py-2"></th>
+                    <th className="text-right px-3 py-2 font-semibold">% Volume réseau</th>
+                    <th className="text-right px-3 py-2 font-semibold">EasyPrice (€)</th>
+                    <th className="text-right px-3 py-2 font-semibold">Stock réseau</th>
+                    <th className="text-center px-3 py-2 font-semibold">Statut</th>
+                    <th className="px-3 py-2 font-semibold">Sourcing</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#F0F0F0]">
@@ -387,6 +447,9 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
                         </td>
                         <td className="px-3 py-2.5 text-right text-[#374151]">
                           {m.easyPrice > 0 ? `${m.easyPrice.toLocaleString('fr-FR')} €` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-[#6B7280]">
+                          {m.stockVendable > 0 ? m.stockVendable.toLocaleString('fr-FR') : '—'}
                         </td>
                         <td className="px-3 py-2.5 text-center">
                           <button
@@ -409,7 +472,7 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
                                 rel="noopener noreferrer"
                                 className="text-[10px] px-2 py-0.5 rounded border border-[#E0E0E0] bg-white hover:bg-orange-50 hover:text-orange-700 text-[#6B7280] transition-colors whitespace-nowrap"
                               >
-                                LBC
+                                🔍 LBC
                               </a>
                               <a
                                 href={vintedUrl(m.produit, m.easyPrice || null)}
@@ -417,7 +480,7 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
                                 rel="noopener noreferrer"
                                 className="text-[10px] px-2 py-0.5 rounded border border-[#E0E0E0] bg-white hover:bg-teal-50 hover:text-teal-700 text-[#6B7280] transition-colors whitespace-nowrap"
                               >
-                                Vinted
+                                🔍 Vinted
                               </a>
                             </div>
                           )}
@@ -435,7 +498,7 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
           </div>
 
           <p className="text-[10px] text-[#9CA3AF] italic">
-            Couverture pondérée = % volume réseau des modèles en stock / % volume réseau total. Investissement minimum = EasyPrice × 1 unité par modèle manquant.
+            Couverture pondérée = Σ(% Volume réseau des modèles En stock) / Σ(% Volume réseau total). Investissement min. = Σ(EasyPrice des modèles Manquants) × 1 unité.
           </p>
         </>
       )}
