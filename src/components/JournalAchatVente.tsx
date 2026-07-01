@@ -47,6 +47,7 @@ export interface ModelStats {
   modele: string; famille: string; qteVendue: number; delaiMoyen: number|null;
   margeUnitaire: number; margeTotal: number; caTotal: number; paMoyen: number; pvMoyen: number;
   tauxMarge: number; epMoyen: number|null; epaMoyen: number|null; ecartEP: number|null; ecartEPA: number|null;
+  coeff?: number;
 }
 interface SourcingStats { canal: string; nbAchats: number; valeurAchats: number; valeurVentes: number; margeTotal: number; tauxMarge: number; delaiMoyen: number|null; }
 interface FournisseurStats { nom: string; nbProduits: number; valeurAchats: number; margeTotal: number; tauxMarge: number; delaiMoyen: number|null; }
@@ -1089,6 +1090,49 @@ function SectionTable({ title, cnt, alert, rows, cols, emptyMsg, extra }: {
         </div>
       )}
       {extra}
+    </div>
+  );
+}
+
+type TableFilter = 'all' | 'pepites' | 'fiables' | 'top20';
+interface TableSortOpt { key: string; label: string; fn: (a: ModelStats, b: ModelStats) => number; }
+const FILTER_LABELS: Record<TableFilter, string> = { all: 'Tout', pepites: '🌍 Pépites locales', fiables: '✅ Très fiables (≥10)', top20: '⚡ Top 20' };
+
+function TableWithControls({ title, rows, cols, emptyMsg, extra, pepiteLocaleSet, sortOpts }: {
+  title: string; rows: ModelStats[]; cols: ColDef[]; emptyMsg?: string; extra?: ReactNode;
+  pepiteLocaleSet: Set<string>; sortOpts: TableSortOpt[];
+}) {
+  const [filter, setFilter] = useState<TableFilter>('all');
+  const [sortKey, setSortKey] = useState<string>(sortOpts[0]?.key ?? '');
+  const sortFn = sortOpts.find(s => s.key === sortKey)?.fn ?? (() => 0);
+  const hasPepites = rows.some(s => pepiteLocaleSet.has(s.modele.toLowerCase()));
+  let display = [...rows];
+  if (filter === 'pepites') display = display.filter(s => pepiteLocaleSet.has(s.modele.toLowerCase()));
+  else if (filter === 'fiables') display = display.filter(s => s.qteVendue >= 10);
+  display.sort(sortFn);
+  if (filter === 'top20') display = display.slice(0, 20);
+  const btnF = (k: TableFilter, disabled?: boolean) =>
+    `px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${disabled?'opacity-40 cursor-not-allowed bg-white border border-[#E0E0E0] text-[#9CA3AF]':filter===k?'bg-[#E30613] text-white':'bg-white border border-[#E0E0E0] text-[#6B7280] hover:border-[#E30613] hover:text-[#E30613]'}`;
+  const btnS = (k: string) =>
+    `px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${sortKey===k?'bg-[#E30613] text-white':'bg-white border border-[#E0E0E0] text-[#6B7280] hover:border-[#E30613] hover:text-[#E30613]'}`;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {(['all','pepites','fiables','top20'] as TableFilter[]).map(f=>{
+          const dis = f==='pepites' && !hasPepites;
+          return <button key={f} disabled={dis} className={btnF(f,dis)} onClick={()=>!dis&&setFilter(f)}>{FILTER_LABELS[f]}</button>;
+        })}
+        <span className="text-[#D1D5DB] mx-0.5 select-none">|</span>
+        {sortOpts.map(s=><button key={s.key} className={btnS(s.key)} onClick={()=>setSortKey(s.key)}>{s.label}</button>)}
+      </div>
+      <SectionTable
+        title={title}
+        cnt={`${display.length} modèle${display.length!==1?'s':''} · min 3 ventes`}
+        rows={display}
+        cols={cols}
+        emptyMsg={emptyMsg}
+        extra={extra}
+      />
     </div>
   );
 }
@@ -2340,10 +2384,15 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             const ra=recoAchat(rotEcartPA,'rotations rapides');
             const rv=recoVente(rotEcartPV,'rotations rapides');
             return (
-              <SectionTable
+              <TableWithControls
                 title={`⚡ TOP ROTATIONS (délai < ${seuilRotationRapide.seuil}j) — Famille ${seuilRotationRapide.fc}`}
-                cnt={`${topRotations.length} modèle${topRotations.length!==1?'s':''} · min 3 ventes`}
                 rows={topRotations}
+                pepiteLocaleSet={pepiteLocaleSet}
+                sortOpts={[
+                  {key:'delai_asc',label:'Délai ↑',fn:(a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999)},
+                  {key:'marge_desc',label:'Marge totale ↓',fn:(a,b)=>b.margeTotal-a.margeTotal},
+                  {key:'qte_desc',label:'Qté ↓',fn:(a,b)=>b.qteVendue-a.qteVendue},
+                ]}
                 cols={[
                   {label:'Modèle',render:modeleCol},
                   {label:'Famille',render:s=>s.famille||'—'},
@@ -2394,8 +2443,15 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             const rv=volEcartPV===null?null:
               `💡 Écart PV vs cote EP vente — Sur ces modèles à fort volume, votre prix de vente moyen est à ${fmtEc(volEcartPV)} vs la cote réseau. À vous de juger si cet écart traduit un positionnement local volontaire ou s'il mérite un ajustement.`;
             return (
-              <SectionTable title="📦 TOP VENTES EN VOLUME" cnt={`Top ${topVolume.length} · min 3 ventes`}
+              <TableWithControls
+                title="📦 TOP VENTES EN VOLUME"
                 rows={topVolume}
+                pepiteLocaleSet={pepiteLocaleSet}
+                sortOpts={[
+                  {key:'qte_desc',label:'Qté ↓',fn:(a,b)=>b.qteVendue-a.qteVendue},
+                  {key:'marge_desc',label:'Marge totale ↓',fn:(a,b)=>b.margeTotal-a.margeTotal},
+                  {key:'delai_asc',label:'Délai ↑',fn:(a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999)},
+                ]}
                 cols={[
                   {label:'Modèle',render:modeleCol},
                   {label:'Famille',render:s=>s.famille||'—'},
@@ -2438,46 +2494,46 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             const rv=coeffEcartPV===null?null:
               `💡 Écart PV vs cote EP vente — Sur ces modèles à fort coefficient, votre prix de vente moyen est à ${fmtEc(coeffEcartPV)} vs la cote réseau. À vous de juger si cet écart traduit un positionnement local volontaire ou s'il mérite un ajustement.`;
             return (
-              <div className="space-y-2.5">
-                <div>
-                  <h3 className="text-sm font-bold text-[#1A1A1A]">💎 Top coefficient d&apos;écoulement <span className="text-xs font-normal text-[#9CA3AF]">min 3 ventes · marge totale ÷ délai moyen</span></h3>
-                  <p className="text-xs text-[#9CA3AF] mt-0.5">Les modèles qui rapportent le plus de marge par jour mobilisé</p>
-                </div>
-                <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
-                  <table className="text-xs w-full border-collapse">
-                    <thead><tr>{['Modèle','Famille/Segment','Qté','Marge unit. (€)','Délai moyen (j)','Coefficient','PA vs EP achat','PV vs EP vente'].map((l,i)=>(
-                      <th key={i} className={i===0?TH:THR}>{l}</th>
-                    ))}</tr></thead>
-                    <tbody>{topCoeff.map((s,i)=>(
-                      <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
-                        <td className={TD}>{modeleCol(s)}</td>
-                        <td className={TDR}>{s.famille||'—'}</td>
-                        <td className={TDR}>{s.qteVendue}</td>
-                        <td className={TDR}>{fmtK(s.margeUnitaire)} €</td>
-                        <td className={TDR}>{s.delaiMoyen!==null?`${s.delaiMoyen} j`:'—'}</td>
-                        <td className={TDR}><span className="font-bold text-[#E30613]">{s.coeff}</span></td>
-                        <td className={TDR}><EcartCell v={s.ecartEPA??null}/></td>
-                        <td className={TDR}><EcartCell v={s.ecartEP??null}/></td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-                <p className="text-xs text-[#9CA3AF] italic px-1">💡 Le coefficient d&apos;écoulement croise marge et vitesse de rotation. Plus il est élevé, plus le produit rapporte de marge par jour de stock immobilisé. Indicateur synthétique de la vraie rentabilité d&apos;un modèle.</p>
-                {hasCoeffEP&&(ra||rv)&&(
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 space-y-1.5 text-xs text-[#1A1A1A]">
-                    {ra&&<p>{ra}</p>}
-                    {rv&&<p>{rv}</p>}
+              <TableWithControls
+                title="💎 Top coefficient d'écoulement"
+                rows={topCoeff}
+                pepiteLocaleSet={pepiteLocaleSet}
+                sortOpts={[
+                  {key:'coeff_desc',label:'Coefficient ↓',fn:(a,b)=>(b.coeff??0)-(a.coeff??0)},
+                  {key:'marge_desc',label:'Marge totale ↓',fn:(a,b)=>b.margeTotal-a.margeTotal},
+                  {key:'qte_desc',label:'Qté ↓',fn:(a,b)=>b.qteVendue-a.qteVendue},
+                ]}
+                cols={[
+                  {label:'Modèle',render:modeleCol},
+                  {label:'Famille',render:s=>s.famille||'—'},
+                  {label:'Qté',right:true,render:s=>s.qteVendue},
+                  {label:'Marge unit.',right:true,render:s=>`${fmtK(s.margeUnitaire)} €`},
+                  {label:'Délai moyen',right:true,render:s=>s.delaiMoyen!==null?`${s.delaiMoyen} j`:'—'},
+                  {label:'Coefficient',right:true,render:s=><span className="font-bold text-[#E30613]">{s.coeff}</span>},
+                  {label:'PA vs EP achat',right:true,render:s=><EcartCell v={s.ecartEPA??null}/>},
+                  {label:'PV vs EP vente',right:true,render:s=><EcartCell v={s.ecartEP??null}/>},
+                ]}
+                emptyMsg="Aucun modèle avec coefficient calculable sur cette période."
+                extra={
+                  <div className="space-y-2">
+                    <p className="text-xs text-[#9CA3AF] italic px-1">💡 Le coefficient d&apos;écoulement croise marge et vitesse de rotation. Plus il est élevé, plus le produit rapporte de marge par jour de stock immobilisé.</p>
+                    {hasCoeffEP&&(ra||rv)&&(
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 space-y-1.5 text-xs text-[#1A1A1A]">
+                        {ra&&<p>{ra}</p>}
+                        {rv&&<p>{rv}</p>}
+                      </div>
+                    )}
+                    {coeffPepCnt>0&&(
+                      <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-xs text-green-800">
+                        🌍 <strong>{coeffPepCnt} modèle{coeffPepCnt>1?'s':''} absent{coeffPepCnt>1?'s':''} de la gamme réseau {pepiteLocaleFamily||'nationale'}</strong>. À intégrer en sourcing prioritaire au comptoir.
+                      </div>
+                    )}
+                    {!hasAnyGamme&&detectedFamilies.some(f=>(['JCDR','JCON','TLCE','JPOR'] as string[]).includes(f))&&(
+                      <p className="text-xs text-[#9CA3AF] italic px-1">💡 Importez la gamme réseau pour identifier les pépites locales absentes de la référence nationale.</p>
+                    )}
                   </div>
-                )}
-                {coeffPepCnt>0&&(
-                  <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-xs text-green-800">
-                    🌍 <strong>{coeffPepCnt} modèle{coeffPepCnt>1?'s':''} absent{coeffPepCnt>1?'s':''} de la gamme réseau {pepiteLocaleFamily||'nationale'}</strong>. À intégrer en sourcing prioritaire au comptoir.
-                  </div>
-                )}
-                {!hasAnyGamme&&detectedFamilies.some(f=>(['JCDR','JCON','TLCE','JPOR'] as string[]).includes(f))&&(
-                  <p className="text-xs text-[#9CA3AF] italic px-1">💡 Importez la gamme réseau pour identifier les pépites locales absentes de la référence nationale.</p>
-                )}
-              </div>
+                }
+              />
             );
           })()}
 
