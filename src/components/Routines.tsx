@@ -291,6 +291,30 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
     } catch { return {}; }
   });
 
+  const [customLabels, setCustomLabels] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const s = localStorage.getItem(`routines_labels_${magasinNom}`);
+      return s ? JSON.parse(s) as Record<string, string> : {};
+    } catch { return {}; }
+  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  function startEdit(id: string, currentLabel: string) {
+    setEditingId(id);
+    setEditValue(customLabels[id] ?? currentLabel);
+  }
+  function saveLabel(id: string) {
+    const trimmed = editValue.trim();
+    const next = { ...customLabels };
+    if (trimmed) next[id] = trimmed; else delete next[id];
+    setCustomLabels(next);
+    try { localStorage.setItem(`routines_labels_${magasinNom}`, JSON.stringify(next)); } catch {}
+    setEditingId(null);
+  }
+  function getLabel(r: RoutineDef) { return customLabels[r.id] ?? r.label; }
+
   // ── Inventaires state ───────────────────────────────────────────────────────
   const currentYear = new Date().getFullYear();
   const [invYear, setInvYear] = useState(currentYear);
@@ -489,7 +513,7 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
                 <div className="divide-y divide-[#F0F0F0]">
                   {blocAgg.map(({ r, done, expected, pct: rPct }) => (
                     <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <span className="flex-1 text-xs text-[#1A1A1A]">{r.label}</span>
+                      <span className="flex-1 text-xs text-[#1A1A1A]">{getLabel(r)}</span>
                       <span className="text-xs text-[#6B7280]">{done}/{expected}</span>
                       <span className={`text-xs font-bold w-10 text-right ${rPct >= 80 ? 'text-green-600' : rPct >= 50 ? 'text-orange-500' : expected > 0 ? 'text-red-600' : 'text-[#9CA3AF]'}`}>
                         {expected > 0 ? `${rPct}%` : '—'}
@@ -532,29 +556,53 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
                     <tr key={routine.id} className={status === 'done' ? 'bg-green-50/40' : ''}>
                       <td className="px-4 py-3">
                         <div className="relative">
-                          <div className="flex items-start gap-1.5 flex-wrap">
-                            <span className={`text-xs leading-snug ${
-                              status === 'done' ? 'text-green-700 font-medium' :
-                              status === 'partial' ? 'text-orange-600' :
-                              'text-[#6B7280]'
-                            }`}>
-                              {routine.label}
-                            </span>
-                            {routine.monthly && (
-                              <span className="text-[9px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded-full whitespace-nowrap leading-none self-center">
-                                mensuel
+                          {editingId === routine.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                autoFocus
+                                className="flex-1 text-xs border border-[#E30613] rounded px-2 py-1 focus:outline-none bg-white"
+                                value={editValue}
+                                onChange={e => setEditValue(e.target.value)}
+                                onBlur={() => saveLabel(routine.id)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveLabel(routine.id); if (e.key === 'Escape') setEditingId(null); }}
+                              />
+                              <button onClick={() => saveLabel(routine.id)} className="text-[10px] text-green-600 font-bold px-1">✓</button>
+                              <button onClick={() => setEditingId(null)} className="text-[10px] text-[#9CA3AF] px-1">✕</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-start gap-1.5 flex-wrap">
+                              <span className={`text-xs leading-snug ${
+                                status === 'done' ? 'text-green-700 font-medium' :
+                                status === 'partial' ? 'text-orange-600' :
+                                'text-[#6B7280]'
+                              }`}>
+                                {getLabel(routine)}
+                                {customLabels[routine.id] && <span className="ml-1 text-[9px] text-[#E30613]">✎</span>}
                               </span>
-                            )}
-                            <button
-                              onClick={() => setTooltipId(isTooltipOpen ? null : routine.id)}
-                              className="text-[#C0C0C0] hover:text-[#6B7280] transition-colors text-[11px] leading-none self-center flex-shrink-0"
-                              title={routine.detail}
-                              aria-label="Voir le détail"
-                            >
-                              ℹ
-                            </button>
-                          </div>
-                          {isTooltipOpen && (
+                              {routine.monthly && (
+                                <span className="text-[9px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded-full whitespace-nowrap leading-none self-center">
+                                  mensuel
+                                </span>
+                              )}
+                              <button
+                                onClick={() => startEdit(routine.id, routine.label)}
+                                className="text-[#D0D0D0] hover:text-[#E30613] transition-colors text-[11px] leading-none self-center flex-shrink-0"
+                                title="Renommer cette routine"
+                                aria-label="Renommer"
+                              >
+                                ✎
+                              </button>
+                              <button
+                                onClick={() => setTooltipId(isTooltipOpen ? null : routine.id)}
+                                className="text-[#C0C0C0] hover:text-[#6B7280] transition-colors text-[11px] leading-none self-center flex-shrink-0"
+                                title={routine.detail}
+                                aria-label="Voir le détail"
+                              >
+                                ℹ
+                              </button>
+                            </div>
+                          )}
+                          {isTooltipOpen && editingId !== routine.id && (
                             <div className="mt-2 bg-[#1A1A1A] text-white text-[11px] p-3 rounded-xl shadow-xl leading-relaxed z-30 max-w-xs">
                               {routine.detail}
                             </div>
