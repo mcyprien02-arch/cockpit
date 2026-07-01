@@ -5,12 +5,12 @@ import type { PAPAction } from '@/types';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
-type FreqKey = 'quotidien' | '3x' | '2x' | '1x' | 'mensuel';
+type FreqKey = 'quotidien' | '4x' | '3x' | '2x' | '1x' | 'mensuel';
 interface RoutineDef { id: string; label: string; freq: FreqKey; detail: string; monthly?: boolean; }
 interface BlocDef { icon: string; title: string; subtitle: string; headerBg: string; routines: RoutineDef[]; }
 type WeekData = Record<string, boolean[]>;
 
-const FREQ_DEFAULTS: Record<FreqKey, number> = { quotidien: 5, '3x': 3, '2x': 2, '1x': 1, mensuel: 0 };
+const FREQ_DEFAULTS: Record<FreqKey, number> = { quotidien: 5, '4x': 4, '3x': 3, '2x': 2, '1x': 1, mensuel: 0 };
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
@@ -20,14 +20,20 @@ const BLOCS: BlocDef[] = [
     subtitle: 'Transformer les flux et encaisser la valeur chaque jour',
     headerBg: 'bg-green-50',
     routines: [
-      { id: 'v1', label: 'Brief vente matin (objectifs + priorités du jour)', freq: 'quotidien',
-        detail: "Chaque matin, 5 min debout avec l'équipe : CA de la veille, objectif du jour, 1 point technique (Estaly, argumentation, accessoires). Sans brief, la journée s'organise par défaut." },
-      { id: 'v2', label: 'Estaly / extension garantie proposé à chaque vente', freq: 'quotidien',
-        detail: 'Objectif : 100% des ventes éligibles avec proposition Estaly. Script : "Je vous propose aussi l\'extension garantie à 3 ou 5 ans..." Levier direct sur marge nette.' },
-      { id: 'v3', label: 'Demande d\'avis Google en caisse', freq: 'quotidien',
-        detail: "Script à l'encaissement : \"Avez-vous 30 secondes pour nous laisser un avis Google ? Ça nous aide vraiment.\". Objectif : 10 nouveaux avis/mois minimum." },
-      { id: 'v4', label: 'Animation vitrine / mise en avant bonnes affaires', freq: '1x',
-        detail: 'Chaque semaine : 3 produits en vedette avec prix barré visible, étiquettes de réassurance, tournez les têtes de gondole. Ce que l\'œil voit, la main prend.' },
+      { id: 'v1', label: 'Brief équipe matin sur les ventes de la veille', freq: 'quotidien',
+        detail: "Chaque matin, 5 min debout avec l'équipe : CA de la veille, objectif du jour, focus Estaly + accessoires. Sans brief, la journée s'organise par défaut." },
+      { id: 'v2', label: 'Estaly proposé systématiquement (high-tech, gaming, bijou, montres)', freq: 'quotidien',
+        detail: 'Objectif : 100% des ventes éligibles avec proposition Estaly. Script : "Je vous propose aussi l\'extension garantie 3 ou 5 ans…" Levier direct sur marge nette. Cible : 2 à 3 contrats/jour.' },
+      { id: 'v3', label: 'Suivi contrats Estaly du jour (cible 2-3/j)', freq: 'quotidien',
+        detail: 'Tracker les contrats Estaly vendus chaque jour. Affichage visible en back-office. L\'équipe qui voit son score en temps réel fait 40% mieux que celle qui ne le voit pas.' },
+      { id: 'v4', label: 'Mesure taux de transformation du jour (cible 8-12% CDV)', freq: 'quotidien',
+        detail: 'Athéna → Tableau de bord → Taux de transformation. Objectif centre-ville : 8-12%. Zone commerciale : ajuster selon flux. Sous 5% → brief argumentation immédiat.' },
+      { id: 'v5', label: 'Vente additionnelle TLAC : hydrogels, chargeurs rapides, films', freq: 'quotidien',
+        detail: 'Sur chaque vente téléphonie : proposer protection écran hydrogel + chargeur rapide. "Votre téléphone est nu sans protection — voici ce qui se vend le mieux." La TLAC finance les salaires.' },
+      { id: 'v6', label: 'Lecture discours réassurance (garantie 2 ans, SOR 30j, tests)', freq: '1x',
+        detail: 'Hebdo avec l\'équipe : rappel des 4 arguments Easy Cash — garantie 2 ans, SOR 30 jours, produits testés, authentifiés. Ces arguments différencient Easy Cash du particulier. Maitrise = conversion.' },
+      { id: 'v7', label: 'Revue objectifs commerciaux du mois avec l\'équipe', freq: 'mensuel', monthly: true,
+        detail: 'Chaque 1er du mois : afficher objectifs CA, Estaly, transformation, NPS + état au J1 + primes si atteintes. L\'équipe engagée sur ses objectifs est plus performante.' },
     ],
   },
   {
@@ -35,14 +41,20 @@ const BLOCS: BlocDef[] = [
     subtitle: 'Alimenter le stock en continu et optimiser le sourcing',
     headerBg: 'bg-[#FFF5F5]',
     routines: [
-      { id: 'a1', label: 'Sourcing comptoir actif (rachat proactif)', freq: 'quotidien',
-        detail: "Posture proactive : proposer l'achat au client qui entre. Former l'équipe à déclencher la discussion rachat systématiquement. L'offre d'achat ne se génère pas d'elle-même." },
-      { id: 'a2', label: 'Édition appel de stock / gamme manquante', freq: '1x',
-        detail: 'Intranet → Gestion magasin → Gamme référence. Identifier les trous dans la gamme et éditer les appels de stock. 1 référence manquante = CA perdu.' },
-      { id: 'a3', label: 'Sourcing externe (Leboncoin, Vinted, Vinted Pro)', freq: '2x',
-        detail: 'Chercher les produits manquants en gamme sur les plateformes. Négocier en dessous de la côte EasyPrice pour préserver la marge. 2× par semaine minimum.' },
-      { id: 'a4', label: 'Visite concurrence (veille tarifs + gamme)', freq: 'mensuel', monthly: true,
-        detail: 'Aller voir 1 à 2 concurrents par mois. Capter leurs prix, leur gamme, leurs arguments. Adapters votre positionnement. (Cash Express, indépendants locaux)' },
+      { id: 'a1', label: 'Application VPD — 5 questions clés avant de fixer le prix', freq: 'quotidien',
+        detail: 'Valorisation Partagée Différenciée : Famille majeure ? Nouveauté ? Top vente ? Forte rotation ? Concurrence sur le rachat ? Ces 5 questions structurent le prix. Sans elles, on laisse de la marge sur la table.' },
+      { id: 'a2', label: 'Test Piceasoft 100% téléphones rachetés (batterie ≥ 80%)', freq: 'quotidien',
+        detail: 'Aucun téléphone ne rentre en stock sans test Piceasoft complet. Batterie < 80% = renégociation du prix. Un téléphone non testé est un produit retourné en puissance.' },
+      { id: 'a3', label: 'Demande avis Google en fin de transaction d\'achat', freq: 'quotidien',
+        detail: 'Script achat : "Avez-vous 30 secondes pour nous laisser un avis Google ? Ça aide les autres clients à nous trouver." Les clients vendeurs laissent des avis sincères — souvent meilleurs que les acheteurs.' },
+      { id: 'a4', label: 'Création / MAJ fiche client Athéna (mail + téléphone)', freq: 'quotidien',
+        detail: 'Chaque transaction = fiche client complète dans Athéna avec mail et téléphone. La base CRM bien tenue est le premier actif immatériel du magasin. Elle conditionne aussi le taux de démarque.' },
+      { id: 'a5', label: 'Brief acheteurs sur les 3 modèles à sourcer en priorité', freq: 'quotidien',
+        detail: 'Chaque matin : identifier les 3 modèles les plus manquants en gamme et briefer l\'équipe achat. "Aujourd\'hui on cherche iPhone 15, PS5 et Samsung A55." Focus = efficacité sourcing.' },
+      { id: 'a6', label: 'Lecture journal des achats avec l\'équipe', freq: '1x',
+        detail: 'Hebdomadaire : passer en revue les achats de la semaine. Quel acheteur a le meilleur ratio ? Quels produits sur-payés ? Retour formatif pour chaque acheteur, sur données réelles.' },
+      { id: 'a7', label: 'Audit acheteur via Grille Achat (VPD, test, fidélisation)', freq: 'mensuel', monthly: true,
+        detail: 'Chaque mois, auditer un acheteur via la Grille Achat du cockpit. 5 sections, 25 critères, score sur 100. Support de brief individuel. Voir module Grille Achat.' },
     ],
   },
   {
@@ -50,14 +62,20 @@ const BLOCS: BlocDef[] = [
     subtitle: 'Piloter la rotation et éliminer le vieux stock',
     headerBg: 'bg-orange-50',
     routines: [
-      { id: 's1', label: 'Lecture chiffres Athéna (CA / marge / stock âgé)', freq: '1x',
-        detail: 'Chaque semaine : CA réalisé vs objectif, taux de marge, % stock âgé. Ces 3 chiffres vous disent tout. Préparez le brief en y allant.' },
-      { id: 's2', label: 'TOP 20 vieux stock — 1 action minimum', freq: '1x',
-        detail: 'Athéna → Stock → Ventilation par ancienneté. Prendre le TOP 20 valeur et faire 1 action : démarque, placement vitrine, contact revendeur. 1 action/semaine = 50 mouvements/an.' },
-      { id: 's3', label: 'Mise à jour prix EasyPrice (côtes réseau)', freq: '3x',
-        detail: 'Récupérer les nouvelles côtes EasyPrice 3× par semaine et mettre à jour les prix en magasin. Ne jamais laisser un écart de plus de 72h entre la côte et votre étiquette.' },
-      { id: 's4', label: 'Traitement SAV / retours (bac à vider)', freq: '1x',
-        detail: "Vider le bac retours chaque semaine. Aucun produit en attente > 15 jours. L'immobilisation SAV est de la trésorerie morte. Process : tester → diagnostiquer → décider (revendre / retour réseau / démarque)." },
+      { id: 's1', label: 'Contrôle des entrées en stock du jour', freq: 'quotidien',
+        detail: 'Chaque soir : valider que chaque produit racheté est bien saisi en stock et correctement rattaché à une famille et une côte. Un stock mal saisi = pilotage aveugle des KPIs.' },
+      { id: 's2', label: 'Identification des 20 produits qui immobilisent le plus de cash', freq: '1x',
+        detail: 'Athéna → Stock → Tri par valeur d\'immobilisation. Le TOP 20 valeur immobilise souvent 60% du cash stock. Chaque semaine, 1 action sur ce TOP 20 = 50 mouvements cash/an.' },
+      { id: 's3', label: 'Mode Accélération Athéna sur produits qui ne tournent pas', freq: '1x',
+        detail: 'Athéna → Mode Accélération → identifier les produits non vendus en 15 jours. Activer la démarque progressive. Ce n\'est pas une perte : c\'est du cash récupéré avant que ce soit pire.' },
+      { id: 's4', label: 'Baisse progressive -10%/semaine sur invendus depuis 15 jours', freq: '1x',
+        detail: 'Règle Easy Cash : -10% par semaine sur tout produit non vendu depuis 15 jours, plutôt qu\'attendre 6 mois et subir -30% d\'un coup. L\'anticipation préserve la marge nette globale.' },
+      { id: 's5', label: 'FIFO strict en réserve (téléphonie & consoles)', freq: '1x',
+        detail: 'FIFO = First In First Out. En réserve téléphonie et consoles : la date d\'achat la plus ancienne va en vitrine en premier. La rotation naturelle évite le stock âgé structurel.' },
+      { id: 's6', label: 'Point cash hebdomadaire : encaissé / dépensé / variation', freq: '1x',
+        detail: 'Chaque semaine : cash encaissé (ventes) vs cash dépensé (achats). Variation = pilote de trésorerie. Si variation négative 2 semaines de suite → déstockage prioritaire, frein aux achats.' },
+      { id: 's7', label: 'Identification stock âgé +6 mois et +12 mois', freq: 'mensuel', monthly: true,
+        detail: 'Chaque mois : éditer depuis Athéna la liste du stock âgé +6 mois et +12 mois. Définir un plan de sortie pour chacun : remise ciblée, revendeur réseau, ou perte acceptée et documentée.' },
     ],
   },
   {
@@ -65,14 +83,20 @@ const BLOCS: BlocDef[] = [
     subtitle: 'Alimenter le catalogue digital et la réputation en ligne',
     headerBg: 'bg-blue-50',
     routines: [
-      { id: 'w1', label: 'Mise en ligne produits EasyBiz (photos + description)', freq: 'quotidien',
-        detail: "Chaque jour : mettre en ligne les produits rachetés la veille. 1 jour de délai = 1 jour sans visibilité web. Photo soignée + description précise = moins d'annulations." },
-      { id: 'w2', label: 'Réponse aux avis Google', freq: 'quotidien',
-        detail: "Répondre à TOUS les avis Google sous 24h : remerciement aux positifs, résolution aux négatifs. Les réponses soignées aux avis négatifs convertissent mieux que les notes parfaites." },
-      { id: 'w3', label: 'Suivi annulations commandes web', freq: '1x',
-        detail: "Analyser les annulations de la semaine : cause (rupture, délai, prix), action corrective. Taux cible : ≤ 5%. Au-delà, chaque annulation dégrade votre note Marketplace." },
-      { id: 'w4', label: 'Publications réseaux sociaux (Instagram, TikTok, FB)', freq: '2x',
-        detail: "Publier 2× par semaine minimum : bonnes affaires du moment, coulisses du magasin, témoignages clients. Construire une communauté locale de racheteurs et d'acheteurs." },
+      { id: 'w1', label: 'Vérification publication EC.fr — rattachement systématique', freq: 'quotidien',
+        detail: 'Chaque jour : vérifier que chaque produit racheté la veille est publié sur EC.fr avec photo et description conformes. 1 jour de délai = 1 jour sans visibilité web = vente manquée.' },
+      { id: 'w2', label: 'Réponse aux cotations manuelles via Dashboard EC.fr', freq: 'quotidien',
+        detail: 'Traiter les demandes de cotation en attente sur EC.fr. Réponse < 2h = taux de conversion 3× supérieur. Au-delà, le client a acheté ailleurs ou rachat à un concurrent.' },
+      { id: 'w3', label: 'Sourcing marketplaces (EC.fr, LBC, Vinted, Momox) — 15 min max', freq: 'quotidien',
+        detail: '15 minutes par jour de sourcing actif sur les marketplaces pour les modèles manquants en gamme. Délimitez le temps : au-delà de 15 min, la rentabilité s\'effondre.' },
+      { id: 'w4', label: 'Réponse aux avis Google sous 24h', freq: 'quotidien',
+        detail: 'Répondre à TOUS les avis sous 24h : remerciement personnalisé pour les positifs, résolution + contact pour les négatifs. Une réponse soignée à un avis 1★ convertit mieux qu\'une note parfaite.' },
+      { id: 'w5', label: 'Publication bijoux sur EasyBiz (3×/semaine)', freq: '3x',
+        detail: '3 publications bijouterie par semaine sur EasyBiz : photo fond blanc, titre avec matière et poids, prix compétitif. La bijouterie est la famille avec le meilleur ratio temps/marge en ligne.' },
+      { id: 'w6', label: 'Publications FB/Instagram — rachat ciblé + bonnes affaires', freq: '4x',
+        detail: 'Minimum 4 publications par semaine : opérations de rachat ciblé + bonnes affaires du moment. Les stories "on rachète" génèrent du trafic entrant. Format : photo produit + prix barré + CTA.' },
+      { id: 'w7', label: 'Suivi indicateurs digitaux (conversion, panier moyen, annulations)', freq: 'mensuel', monthly: true,
+        detail: 'Chaque mois : taux de conversion EC.fr, panier moyen en ligne, taux d\'annulation (cible ≤ 5%). Ces 3 KPIs suffisent pour piloter le digital. Tout le reste est bruit.' },
     ],
   },
   {
@@ -80,14 +104,16 @@ const BLOCS: BlocDef[] = [
     subtitle: "Ritualiser l'équipe et développer les compétences",
     headerBg: 'bg-amber-50',
     routines: [
-      { id: 'mg1', label: 'Brief hebdomadaire équipe (objectifs + chiffres)', freq: '1x',
-        detail: "Lundi matin, 15 min max : CA semaine passée, objectif semaine, 1 action prioritaire par personne. Debout autour du comptoir. L'équipe qui sait où elle va performait 30% mieux." },
-      { id: 'mg2', label: 'Tour de table responsables (GPA + sujet libre)', freq: '1x',
-        detail: "Chaque responsable de rayon : 5 min sur sa GPA (gamme, prix, animation) + 1 sujet libre. Format structuré qui responsabilise et fait remonter les signaux faibles." },
-      { id: 'mg3', label: 'Coaching individuel vente (observation + feedback)', freq: 'mensuel', monthly: true,
-        detail: "1 fois par mois par personne : observer une vente, donner un feedback positif + 1 point d'amélioration. Méthode sandwich : positif → amélioration → encouragement." },
-      { id: 'mg4', label: 'Entretien individuel mensuel (projet + motivation)', freq: 'mensuel', monthly: true,
-        detail: "15 à 30 min en tête-à-tête : résultats du mois, satisfaction au poste, projets, besoins de formation. L'entretien qui n'a pas lieu laisse les signaux faibles s'amplifier." },
+      { id: 'mg1', label: 'Tour magasin matin — regard client (abords, vitrines, propreté)', freq: 'quotidien',
+        detail: 'Chaque matin avant ouverture : faire le tour avec les yeux d\'un client. Abords propres ? Vitrines attractives ? Signalétique conforme ? Ce que le client voit en premier conditionne la suite.' },
+      { id: 'mg2', label: 'Zoning équipe selon flux client attendu', freq: 'quotidien',
+        detail: 'Placer la bonne personne au bon poste selon le flux attendu. Pics : renforcer accueil et caisse. Creux : sourcing et web. Un mauvais zoning = file d\'attente + vente manquée.' },
+      { id: 'mg3', label: 'Présence en surface de vente aux pics de fréquentation', freq: 'quotidien',
+        detail: 'Vous = sur le terrain aux heures de pointe (12h-14h, 17h-19h). La présence managériale sur le terrain augmente le taux de transformation de 15% en moyenne. Le back-office peut attendre.' },
+      { id: 'mg4', label: 'Lecture indicateurs satisfaction (Critizr, Google, NPS)', freq: '1x',
+        detail: 'Chaque semaine : Critizr, note Google, NPS. Identifier les points de friction récurrents. 1 insatisfait silencieux = 10 clients potentiels perdus. Agir avant que ça se voit sur la note.' },
+      { id: 'mg5', label: 'Point individuel mensuel (résultats, motivation, projet)', freq: 'mensuel', monthly: true,
+        detail: '15-30 min en tête-à-tête par mois et par collaborateur : résultats, satisfaction, formation souhaitée. L\'entretien qui n\'a pas lieu laisse les signaux faibles devenir des démissions.' },
     ],
   },
   {
@@ -95,14 +121,20 @@ const BLOCS: BlocDef[] = [
     subtitle: 'Piloter les 3 leviers structurels de la performance',
     headerBg: 'bg-purple-50',
     routines: [
-      { id: 'g1', label: 'Check gamme référence Athéna (taux de couverture)', freq: '1x',
-        detail: 'Athéna → Gestion magasin → Gamme référence/modèle. Taux de couverture par famille. TLCE : 100% couverture = 60% du volume. JCON : 100% = 70% marge. Planifier les achats manquants.' },
-      { id: 'g2', label: 'Mise à jour prix familles clés (côtes réseau)', freq: '3x',
-        detail: "Mettre à jour les prix des 5 familles clés 3× par semaine. En dessous : vous perdez de la marge. Au-dessus : vous perdez des ventes. La côte réseau est votre benchmark." },
-      { id: 'g3', label: 'Animation — 3 produits mis en valeur (vitrine + PLV)', freq: '1x',
-        detail: "Chaque semaine : 3 produits en animation dans la vitrine avec prix barré + argument chiffré (\"économisez 40% vs neuf\"). Rotation hebdomadaire = nouveauté perçue = retour des clients." },
-      { id: 'g4', label: 'Suivi inventaire tournant (planification + réalisation)', freq: '1x',
-        detail: "Vérifier le planning des inventaires tournants de la semaine. Réaliser les familles prévues. TLCE : 2×/mois. BOR/JCON/IPOR : 1×/mois. Voir section Inventaires ci-dessous." },
+      { id: 'g1', label: 'Vérification côte EasyPrice sur produits entrés la veille', freq: 'quotidien',
+        detail: 'Via Athéna : vérifier que le prix de vente affiché = côte EasyPrice réseau. Chaque écart non détecté = marge perdue ou vente bloquée. La côte est mise à jour par le réseau — suivez-la.' },
+      { id: 'g2', label: 'MAJ prix via Zebra sur les écarts identifiés', freq: 'quotidien',
+        detail: 'Après vérification côte : mettre à jour physiquement les étiquettes prix via la Zebra. Un prix obsolète en vitrine = frein de vente invisible. Délai max : 24h après tout changement de côte.' },
+      { id: 'g3', label: 'Couverture de gamme — vérifier les Stock Max 0 (Intranet)', freq: '1x',
+        detail: 'Intranet → Gestion magasin → Gamme référence → Stock Max 0. Ce sont vos trous de gamme. Chaque trou identifié = sourcing à déclencher cette semaine. TLCE : 100% couverture = 60% du volume.' },
+      { id: 'g4', label: 'Appel de stock écrit en vitrine sur modèles déficitaires (PA Max)', freq: '1x',
+        detail: 'Sur les 2-3 modèles les plus manquants : afficher en vitrine "On rachète : [modèle] — Prix annoncé : [PA Max]". Maximum 2 appels par vitrine pour éviter la dilution du message.' },
+      { id: 'g5', label: 'Mise en avant Bonnes Affaires (prix barré, étiquette jaune)', freq: '1x',
+        detail: 'Chaque semaine : 3 produits en tête de vitrine avec prix barré + étiquette jaune Easy Cash. Ce que l\'œil voit, la main prend. Rotation hebdomadaire = effet nouveauté permanent.' },
+      { id: 'g6', label: 'Mise en avant Nouveautés et Coup de cœur (PLV)', freq: '1x',
+        detail: 'Alterner Nouveautés (produits entrés < 7j) et Coups de cœur (sélection subjective de qualité). La théâtralisation vitrine différencie Easy Cash des braderies en ligne.' },
+      { id: 'g7', label: 'Lecture conjointe journal achat-vente — performances famille', freq: '1x',
+        detail: 'Chaque semaine avec l\'équipe : quelles familles ont bien tourné ? Lesquelles stagnent ? Cette lecture collective aligne tout le monde sur les priorités d\'achat et d\'animation.' },
     ],
   },
 ];
@@ -392,7 +424,7 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
           <h2 className="text-lg font-bold text-[#1A1A1A]">
             🔁 Routines{magasinNom ? ` — ${magasinNom}` : ''}
           </h2>
-          <p className="text-sm text-[#6B7280] mt-0.5">6 domaines · 24 routines · Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
+          <p className="text-sm text-[#6B7280] mt-0.5">6 domaines · {ALL_ROUTINES.length} routines · Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
         </div>
         {/* View selector */}
         <div className="flex rounded-xl border border-[#E0E0E0] overflow-hidden bg-white shadow-sm flex-shrink-0">
