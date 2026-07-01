@@ -12,6 +12,14 @@ interface Collaborateur {
   competences: Record<string, number>; // 0-2
 }
 
+interface GridConfig {
+  deletedComps: string[];
+  customLabels: Record<string, string>;
+  customComps: Array<{ id: string; domaineIdx: number; label: string }>;
+}
+
+const DEFAULT_GRID: GridConfig = { deletedComps: [], customLabels: {}, customComps: [] };
+
 const DOMAINES = [
   {
     titre: '🤝 Achat au comptoir',
@@ -66,9 +74,6 @@ const DOMAINES = [
   },
 ];
 
-const ALL_COMPETENCES = DOMAINES.flatMap(d => d.competences);
-const TOTAL = ALL_COMPETENCES.length;
-
 // Level 0: red (none), 1: orange (occasional), 2: green (mastered)
 const CELL_BG = ['bg-red-500', 'bg-orange-400', 'bg-green-500'];
 const LEVEL_LABELS = ['Aucune', 'Occasionnelle', 'Maîtrisée'];
@@ -77,10 +82,12 @@ const AVG_COLOR = (avg: number) =>
 
 function uid() { return Math.random().toString(36).slice(2); }
 
-// Word export colors: red, orange, green
 const LEVEL_FILL = ['EF4444', 'FB923C', '22C55E'];
 
-async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
+type CompItem = { key: string; label: string; isCustom: boolean };
+type ExportDomaine = { titre: string; compItems: CompItem[] };
+
+async function exportCompetences(magasinNom: string, collab: Collaborateur[], domaines: ExportDomaine[]) {
   try {
     const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, AlignmentType, WidthType, ShadingType } = await import('docx');
 
@@ -100,7 +107,7 @@ async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
       ],
     });
 
-    const compRows = DOMAINES.flatMap(domaine => [
+    const compRows = domaines.flatMap(domaine => [
       new TableRow({
         children: [
           new TableCell({
@@ -110,25 +117,26 @@ async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
           }),
         ],
       }),
-      ...domaine.competences.map(comp => new TableRow({
+      ...domaine.compItems.map(ci => new TableRow({
         children: [
-          makeCell(comp),
+          makeCell(ci.label),
           ...collab.map(c => {
-            const lvl = c.competences[comp] ?? 0;
+            const lvl = c.competences[ci.key] ?? 0;
             return makeCell(String(lvl), LEVEL_FILL[lvl]);
           }),
         ],
       })),
     ]);
 
-    // Dependency alerts
+    const allCompItems = domaines.flatMap(d => d.compItems);
+
     const dependencyAlerts: string[] = [];
-    ALL_COMPETENCES.forEach(comp => {
-      const masters = collab.filter(c => (c.competences[comp] ?? 0) === 2);
-      if (masters.length === 1) dependencyAlerts.push(`⚠ ${comp} repose sur ${masters[0].prenom} seul (seul niveau 2) — risque dépendance`);
+    allCompItems.forEach(ci => {
+      const masters = collab.filter(c => (c.competences[ci.key] ?? 0) === 2);
+      if (masters.length === 1) dependencyAlerts.push(`⚠ ${ci.label} repose sur ${masters[0].prenom} seul (seul niveau 2) — risque dépendance`);
     });
     const noMasteryAlerts = collab
-      .filter(c => ALL_COMPETENCES.every(comp => (c.competences[comp] ?? 0) < 2))
+      .filter(c => allCompItems.every(ci => (c.competences[ci.key] ?? 0) < 2))
       .map(c => `⚠ ${c.prenom} : aucune compétence niveau 2 — besoin formation`);
     const allAlerts = [...dependencyAlerts, ...noMasteryAlerts];
 
@@ -180,12 +188,12 @@ async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
 
 export default function Competences({ magasinNom, onAddAction }: Props) {
   const storageKey = `comp_${magasinNom}`;
+  const gridKey = `comp_grid_${magasinNom}`;
 
   const [collab, setCollab] = useState<Collaborateur[]>(() => {
     try {
       const s = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
       if (!s) return [];
-      // Migrate old data: clamp values to 0-2
       const parsed = JSON.parse(s) as Collaborateur[];
       return parsed.map(c => ({
         ...c,
@@ -196,9 +204,20 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
     } catch { return []; }
   });
 
+  const [gridConfig, setGridConfig] = useState<GridConfig>(() => {
+    try {
+      const s = typeof window !== 'undefined' ? localStorage.getItem(gridKey) : null;
+      return s ? JSON.parse(s) as GridConfig : DEFAULT_GRID;
+    } catch { return DEFAULT_GRID; }
+  });
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [newPrenom, setNewPrenom] = useState('');
   const [newPoste, setNewPoste] = useState('');
+
+  const [editingComp, setEditingComp] = useState<{ key: string; val: string } | null>(null);
+  const [addingToDomaineIdx, setAddingToDomaineIdx] = useState<number | null>(null);
+  const [newCompLabel, setNewCompLabel] = useState('');
 
   const [vah] = useState<number>(() => {
     if (typeof window === 'undefined') return 0;
@@ -206,46 +225,106 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
     catch { return 0; }
   });
 
+  // Effective domaines: filter deleted, apply renamed labels, append custom
+  const effectiveDomaines: Array<{ titre: string; compItems: CompItem[] }> = DOMAINES.map((d, idx) => ({
+    titre: d.titre,
+    compItems: [
+      ...d.competences
+        .filter(c => !gridConfig.deletedComps.includes(c))
+        .map(c => ({ key: c, label: gridConfig.customLabels[c] ?? c, isCustom: false })),
+      ...gridConfig.customComps
+        .filter(cc => cc.domaineIdx === idx)
+        .map(cc => ({ key: cc.id, label: cc.label, isCustom: true })),
+    ],
+  }));
+
+  const effectiveAllCompItems = effectiveDomaines.flatMap(d => d.compItems);
+  const EFFECTIVE_TOTAL = effectiveAllCompItems.length;
+
   function save(rows: Collaborateur[]) {
     setCollab(rows);
     localStorage.setItem(storageKey, JSON.stringify(rows));
   }
 
+  function saveGridConfig(cfg: GridConfig) {
+    setGridConfig(cfg);
+    localStorage.setItem(gridKey, JSON.stringify(cfg));
+  }
+
   function addCollab() {
     if (!newPrenom.trim()) return;
     const empty: Record<string, number> = {};
-    ALL_COMPETENCES.forEach(c => { empty[c] = 0; });
+    effectiveAllCompItems.forEach(ci => { empty[ci.key] = 0; });
     save([...collab, { id: uid(), prenom: newPrenom.trim(), poste: newPoste.trim(), competences: empty }]);
     setNewPrenom(''); setNewPoste(''); setShowAddForm(false);
   }
 
   function delCollab(id: string) { save(collab.filter(c => c.id !== id)); }
 
-  function cycleLevel(collabId: string, competence: string) {
+  function cycleLevel(collabId: string, compKey: string) {
     save(collab.map(c =>
       c.id === collabId
-        ? { ...c, competences: { ...c.competences, [competence]: ((c.competences[competence] ?? 0) + 1) % 3 } }
+        ? { ...c, competences: { ...c.competences, [compKey]: ((c.competences[compKey] ?? 0) + 1) % 3 } }
         : c
     ));
   }
 
-  // Average per competence
+  function saveCompRename(key: string, newLabel: string, isCustom: boolean) {
+    const trimmed = newLabel.trim();
+    if (!trimmed) { setEditingComp(null); return; }
+    if (isCustom) {
+      saveGridConfig({
+        ...gridConfig,
+        customComps: gridConfig.customComps.map(cc => cc.id === key ? { ...cc, label: trimmed } : cc),
+      });
+    } else {
+      saveGridConfig({ ...gridConfig, customLabels: { ...gridConfig.customLabels, [key]: trimmed } });
+    }
+    setEditingComp(null);
+  }
+
+  function deleteComp(key: string, isCustom: boolean) {
+    if (isCustom) {
+      saveGridConfig({ ...gridConfig, customComps: gridConfig.customComps.filter(cc => cc.id !== key) });
+    } else {
+      saveGridConfig({ ...gridConfig, deletedComps: [...gridConfig.deletedComps, key] });
+    }
+    const updated = collab.map(c => {
+      const comps = { ...c.competences };
+      delete comps[key];
+      return { ...c, competences: comps };
+    });
+    setCollab(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+  }
+
+  function addCustomComp(domaineIdx: number) {
+    const trimmed = newCompLabel.trim();
+    if (!trimmed) return;
+    const newId = uid();
+    saveGridConfig({ ...gridConfig, customComps: [...gridConfig.customComps, { id: newId, domaineIdx, label: trimmed }] });
+    const updated = collab.map(c => ({ ...c, competences: { ...c.competences, [newId]: 0 } }));
+    setCollab(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+    setNewCompLabel('');
+    setAddingToDomaineIdx(null);
+  }
+
+  // Scoring
   const avgByComp: Record<string, number> = {};
-  ALL_COMPETENCES.forEach(comp => {
-    const vals = collab.map(c => c.competences[comp] ?? 0);
-    avgByComp[comp] = vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+  effectiveAllCompItems.forEach(({ key }) => {
+    const vals = collab.map(c => c.competences[key] ?? 0);
+    avgByComp[key] = vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
   });
 
-  // Analysis: dependency risk (exactly 1 person at level 2)
-  const dependencyAlerts: Array<{ comp: string; prenom: string }> = [];
-  ALL_COMPETENCES.forEach(comp => {
-    const masters = collab.filter(c => (c.competences[comp] ?? 0) === 2);
-    if (masters.length === 1) dependencyAlerts.push({ comp, prenom: masters[0].prenom });
+  const dependencyAlerts: Array<{ key: string; label: string; prenom: string }> = [];
+  effectiveAllCompItems.forEach(({ key, label }) => {
+    const masters = collab.filter(c => (c.competences[key] ?? 0) === 2);
+    if (masters.length === 1) dependencyAlerts.push({ key, label, prenom: masters[0].prenom });
   });
 
-  // Analysis: no mastery alerts (no level-2 competence)
   const noMasteryAlerts = collab.filter(c =>
-    ALL_COMPETENCES.every(comp => (c.competences[comp] ?? 0) < 2)
+    effectiveAllCompItems.every(({ key }) => (c.competences[key] ?? 0) < 2)
   );
 
   return (
@@ -257,7 +336,7 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => exportCompetences(magasinNom, collab)}
+            onClick={() => exportCompetences(magasinNom, collab, effectiveDomaines)}
             className="bg-white border border-[#E0E0E0] hover:bg-[#F5F5F5] text-[#1A1A1A] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
           >
             📄 Exporter grille en Word
@@ -271,7 +350,7 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
         </div>
       </div>
 
-      {/* Add form */}
+      {/* Add collaborateur form */}
       {showAddForm && (
         <div className="bg-white rounded-xl p-4 flex flex-wrap gap-3 items-end border border-[#E0E0E0] shadow-sm">
           <div>
@@ -306,7 +385,7 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
             <span>{i === 0 ? '🟥' : i === 1 ? '🟧' : '🟩'} {l}</span>
           </div>
         ))}
-        <span className="text-[#6B7280] ml-2">Cliquer pour changer de niveau</span>
+        <span className="text-[#6B7280] ml-2">Cliquer sur une cellule pour changer de niveau · ✏ renommer · 🗑 supprimer</span>
       </div>
 
       {collab.length === 0 ? (
@@ -316,13 +395,13 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
           {/* Per-person summary */}
           <div className="flex flex-wrap gap-2">
             {collab.map(c => {
-              const mastered = ALL_COMPETENCES.filter(comp => (c.competences[comp] ?? 0) === 2).length;
+              const mastered = effectiveAllCompItems.filter(({ key }) => (c.competences[key] ?? 0) === 2).length;
               return (
                 <div key={c.id} className="bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-xs">
                   <span className="text-[#1A1A1A] font-semibold">{c.prenom}</span>
                   {c.poste && <span className="text-[#6B7280] ml-1">({c.poste})</span>}
-                  <span className={`ml-2 font-bold ${mastered >= TOTAL * 0.7 ? 'text-green-600' : mastered >= TOTAL * 0.4 ? 'text-orange-500' : 'text-red-600'}`}>
-                    {mastered}/{TOTAL} maîtrisées (niveau 2)
+                  <span className={`ml-2 font-bold ${mastered >= EFFECTIVE_TOTAL * 0.7 ? 'text-green-600' : mastered >= EFFECTIVE_TOTAL * 0.4 ? 'text-orange-500' : 'text-red-600'}`}>
+                    {mastered}/{EFFECTIVE_TOTAL} maîtrisées (niveau 2)
                   </span>
                 </div>
               );
@@ -341,9 +420,9 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
                     {dependencyAlerts.map(a => {
                       const cost = Math.round(vah * 35);
                       return (
-                        <div key={`cost-dep-${a.comp}`} className="border-l-4 border-l-orange-400 bg-orange-50 rounded-r-lg px-4 py-3">
+                        <div key={`cost-dep-${a.key}`} className="border-l-4 border-l-orange-400 bg-orange-50 rounded-r-lg px-4 py-3">
                           <p className="text-sm font-semibold text-[#1A1A1A] mb-1">
-                            ⚠ <strong>{a.comp}</strong> repose sur <strong>{a.prenom}</strong> seul.
+                            ⚠ <strong>{a.label}</strong> repose sur <strong>{a.prenom}</strong> seul.
                           </p>
                           <p className="text-xs text-[#6B7280] leading-relaxed">
                             Coût caché estimé : si <strong>{a.prenom}</strong> est absent ne serait-ce qu&apos;une semaine, votre magasin perd l&apos;équivalent de{' '}
@@ -388,10 +467,15 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
           )}
 
           {/* Grids by domain */}
-          {DOMAINES.map(domaine => (
+          {effectiveDomaines.map((domaine, domaineIdx) => (
             <div key={domaine.titre} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#E0E0E0] bg-[#F5F5F5]">
+              <div className="px-4 py-3 border-b border-[#E0E0E0] bg-[#F5F5F5] flex items-center justify-between">
                 <h3 className="font-semibold text-sm text-[#1A1A1A]">{domaine.titre}</h3>
+                <button
+                  onClick={() => { setAddingToDomaineIdx(domaineIdx); setNewCompLabel(''); }}
+                  className="text-[#9CA3AF] hover:text-[#E30613] text-xs font-semibold transition-colors"
+                  title="Ajouter une compétence"
+                >+ Ajouter</button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -408,15 +492,45 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E0E0E0]">
-                    {domaine.competences.map(comp => (
-                      <tr key={comp} className="hover:bg-[#FAFAFA]">
-                        <td className="px-3 py-2 text-[#6B7280]">{comp}</td>
+                    {domaine.compItems.map(ci => (
+                      <tr key={ci.key} className="hover:bg-[#FAFAFA] group">
+                        <td className="px-3 py-2 text-[#6B7280]">
+                          {editingComp?.key === ci.key ? (
+                            <input
+                              autoFocus
+                              value={editingComp.val}
+                              onChange={e => setEditingComp({ key: ci.key, val: e.target.value })}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') saveCompRename(ci.key, editingComp.val, ci.isCustom);
+                                if (e.key === 'Escape') setEditingComp(null);
+                              }}
+                              onBlur={() => saveCompRename(ci.key, editingComp.val, ci.isCustom)}
+                              className="bg-white border border-[#E30613] rounded px-1.5 py-0.5 text-xs text-[#1A1A1A] focus:outline-none w-full"
+                            />
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <span className="flex-1">{ci.label}</span>
+                              <span className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity flex-shrink-0">
+                                <button
+                                  onClick={() => setEditingComp({ key: ci.key, val: ci.label })}
+                                  className="text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors leading-none"
+                                  title="Renommer"
+                                >✏</button>
+                                <button
+                                  onClick={() => deleteComp(ci.key, ci.isCustom)}
+                                  className="text-[#9CA3AF] hover:text-red-600 transition-colors leading-none"
+                                  title="Supprimer"
+                                >🗑</button>
+                              </span>
+                            </div>
+                          )}
+                        </td>
                         {collab.map(c => {
-                          const lvl = c.competences[comp] ?? 0;
+                          const lvl = c.competences[ci.key] ?? 0;
                           return (
                             <td key={c.id} className="px-2 py-2 text-center">
                               <button
-                                onClick={() => cycleLevel(c.id, comp)}
+                                onClick={() => cycleLevel(c.id, ci.key)}
                                 title={`${LEVEL_LABELS[lvl]} — cliquer pour changer`}
                                 className={`w-7 h-7 rounded-sm ${CELL_BG[lvl]} hover:opacity-80 transition-opacity mx-auto block`}
                               />
@@ -424,12 +538,34 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
                           );
                         })}
                         <td className="px-2 py-2 text-center">
-                          <span className={`font-semibold ${AVG_COLOR(avgByComp[comp])}`}>
-                            {avgByComp[comp] > 0 ? avgByComp[comp].toFixed(1) : '—'}
+                          <span className={`font-semibold ${AVG_COLOR(avgByComp[ci.key])}`}>
+                            {avgByComp[ci.key] > 0 ? avgByComp[ci.key].toFixed(1) : '—'}
                           </span>
                         </td>
                       </tr>
                     ))}
+                    {/* Inline add new competence */}
+                    {addingToDomaineIdx === domaineIdx && (
+                      <tr>
+                        <td colSpan={collab.length + 2} className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              autoFocus
+                              value={newCompLabel}
+                              onChange={e => setNewCompLabel(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') addCustomComp(domaineIdx);
+                                if (e.key === 'Escape') setAddingToDomaineIdx(null);
+                              }}
+                              placeholder="Nom de la compétence..."
+                              className="bg-white border border-[#E30613] rounded px-2 py-1 text-xs text-[#1A1A1A] focus:outline-none flex-1"
+                            />
+                            <button onClick={() => addCustomComp(domaineIdx)} className="bg-[#E30613] hover:bg-[#B8050F] text-white text-xs px-2 py-1 rounded transition-colors">Ajouter</button>
+                            <button onClick={() => setAddingToDomaineIdx(null)} className="text-[#6B7280] hover:text-[#1A1A1A] text-xs">Annuler</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -441,14 +577,14 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 space-y-1.5">
               <p className="text-xs font-semibold text-red-700 mb-2">Alertes équipe</p>
               {dependencyAlerts.map(a => (
-                <div key={`dep-${a.comp}`} className="flex items-center justify-between gap-2">
+                <div key={`dep-${a.key}`} className="flex items-center justify-between gap-2">
                   <p className="text-xs text-red-600">
-                    ⚠ <strong>{a.comp}</strong> repose sur <strong>{a.prenom}</strong> seul (seul niveau 2) — risque dépendance
+                    ⚠ <strong>{a.label}</strong> repose sur <strong>{a.prenom}</strong> seul (seul niveau 2) — risque dépendance
                   </p>
                   {onAddAction && (
                     <button onClick={() => {
                       const e = new Date(); e.setDate(e.getDate() + 14);
-                      onAddAction({ id: String(Date.now()), titre: `Compétences — Former un 2ème niveau sur ${a.comp}`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Dépendance critique : ${a.comp} repose uniquement sur ${a.prenom}. Former un second collaborateur pour réduire le risque d'absence.`, echeance: e.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
+                      onAddAction({ id: String(Date.now()), titre: `Compétences — Former un 2ème niveau sur ${a.label}`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Dépendance critique : ${a.label} repose uniquement sur ${a.prenom}. Former un second collaborateur pour réduire le risque d'absence.`, echeance: e.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
                     }} className="text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
                   )}
                 </div>
