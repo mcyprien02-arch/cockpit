@@ -57,7 +57,7 @@ BENCHMARKS RÉSEAU EASYCASH (référence pour tes recommandations) :
 - Masse salariale : ≤ 15% du CA (cible DAF)
 - CA par ETP : ≥ 250 000 € (référence réseau)
 - Sourcing comptoir : > 60% des achats (pour préserver la marge)
-- Turnover équipe : ≤ 20% par an (signal d'alerte > 30%)
+- Turnover équipe : ≤ 15% par an (vigilance 15–30%, alerte > 30%)
 
 OUTILS ISEOR : VAH = (CA × Taux de marge brute) / Heures annuelles. Coût d'un dysfonctionnement = VAH × temps perdu × fréquence.
 
