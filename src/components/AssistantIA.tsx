@@ -8,8 +8,6 @@ import { getVisionContext } from '@/components/Objectifs';
 import { getBenchmarkContext } from '@/components/BenchmarkFinancier';
 import { getSimulateurContext } from '@/components/Simulateur';
 import { getHistoireContext } from '@/components/Dashboard';
-import ZonesModule from './ZonesModule';
-
 interface Props {
   data: MagasinData;
   actions: PAPAction[];
@@ -224,7 +222,6 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
         </div>
       )}
 
-      <ZonesModule moduleKey="assistantia" />
     </div>
   );
 }

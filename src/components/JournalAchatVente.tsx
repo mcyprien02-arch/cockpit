@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
-import ZonesModule from './ZonesModule';
-
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; }
 type Periode = 'all' | '3m' | '6m' | '12m';
 type FamilyCode = 'TLCE'|'JCON'|'JCDR'|'JPOR'|'BOR'|'BOPI'|'BMAR'|'BMON'|'IPOR'|'ITAB'|'UNKNOWN';
@@ -2707,7 +2705,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
         </div>
       )}
 
-      <ZonesModule moduleKey="journal" />
     </div>
   );
 }

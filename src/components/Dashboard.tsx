@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction, Phase } from '@/types';
 import { DEFAULT_DATA } from '@/types';
-import ZonesModule from './ZonesModule';
-
 interface Props {
   data: MagasinData;
   onSave: (d: MagasinData) => void;
@@ -393,8 +391,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
           )}
         </>
       )}
-
-      <ZonesModule moduleKey="histoire" />
 
       {/* Modal — qualitative config only */}
       {showModal && (

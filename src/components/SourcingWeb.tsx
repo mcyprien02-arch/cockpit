@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { getJournalSourcingData, type SourcingModele } from './JournalAchatVente';
-import ZonesModule from './ZonesModule';
 import { lbcUrl, vintedUrl } from '@/lib/sourcingUrls';
 
 interface Props { magasinNom: string; }
@@ -109,7 +108,6 @@ export default function SourcingWeb({ magasinNom }: Props) {
         </p>
       </div>
 
-      <ZonesModule moduleKey="sourcing" />
     </div>
   );
 }

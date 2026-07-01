@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import type { PAPAction } from '@/types';
-import ZonesModule from './ZonesModule';
 
 interface Props { magasinNom: string; isCriticalSpiral?: boolean; onAddAction?: (action: PAPAction) => void; }
 
@@ -438,7 +437,6 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
       {/* ══ Scénarios RH ══ */}
       <ScenarioRH magasinNom={magasinNom} totalMasseSal={totalMasseSal} caAnnuel={caAnnuel} tauxMarge={tauxMarge} onAddAction={onAddAction} />
 
-      <ZonesModule moduleKey="simulateur" />
     </div>
   );
 }

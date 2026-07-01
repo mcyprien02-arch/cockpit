@@ -2,8 +2,6 @@
 
 import { useState, useRef } from 'react';
 import type { MagasinData, PAPAction, ActionAxe, StoredStatut } from '@/types';
-import ZonesModule from './ZonesModule';
-
 interface Props {
   data: MagasinData;
   actions: PAPAction[];
@@ -500,7 +498,6 @@ export default function PlanAction({ data, actions, onSave }: Props) {
         )}
       </div>
 
-      <ZonesModule moduleKey="planaction" />
     </div>
   );
 }

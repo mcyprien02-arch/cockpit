@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react';
 import type { PAPAction, ActionAxe, StoredStatut } from '@/types';
 import { getDelaiMoyenParFamille, detectFamilyCode } from './JournalAchatVente';
-import ZonesModule from './ZonesModule';
-
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -804,7 +802,6 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
         )}
       </div>
 
-      <ZonesModule moduleKey="objectifs" />
     </div>
   );
 }

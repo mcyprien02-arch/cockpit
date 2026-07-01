@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from 'react';
 import type { PAPAction } from '@/types';
-import ZonesModule from './ZonesModule';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -1006,7 +1005,6 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
         ) : null}
       </div>
 
-      <ZonesModule moduleKey="routines" />
     </div>
   );
 }

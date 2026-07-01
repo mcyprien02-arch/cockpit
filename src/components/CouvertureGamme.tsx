@@ -1,435 +1,444 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { PAPAction } from '@/types';
-import ZonesModule from './ZonesModule';
 import { lbcUrl, vintedUrl } from '@/lib/sourcingUrls';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
-interface Famille {
+interface GammeModele {
   id: string;
-  famille: string;
-  referenceValue: number;  // valeur de référence réseau — verrouillée pour les familles preset
-  locked: boolean;
-  qteParModele: number;    // 1-5
-  tauxMarge: number;
-  couverture: number;
-  poidsMarge: number;
-  delaiVente: number;
+  produit: string;
+  marque: string;
+  volumePct: number;   // % Volume réseau
+  easyPrice: number;   // EasyPrice €
 }
 
-const DEFAULT_FAMILLES: Array<Omit<Famille, 'id'>> = [
-  { famille: 'TLCE', referenceValue: 16000, locked: true,  qteParModele: 2, tauxMarge: 34, couverture: 0, poidsMarge: 0, delaiVente: 30 },
-  { famille: 'JCON', referenceValue: 8000,  locked: true,  qteParModele: 1, tauxMarge: 47, couverture: 0, poidsMarge: 0, delaiVente: 30 },
-  { famille: 'JCDR', referenceValue: 2500,  locked: true,  qteParModele: 1, tauxMarge: 47, couverture: 0, poidsMarge: 0, delaiVente: 30 },
-  { famille: 'ITAB', referenceValue: 3000,  locked: true,  qteParModele: 1, tauxMarge: 41, couverture: 0, poidsMarge: 0, delaiVente: 30 },
-  { famille: 'JPOR', referenceValue: 950,   locked: true,  qteParModele: 1, tauxMarge: 47, couverture: 0, poidsMarge: 0, delaiVente: 45 },
-];
+// ── CSV parser ───────────────────────────────────────────────────────────────
 
-const BUSINESS_IMPACT: Record<string, { pct: number; type: string; label: string }> = {
-  TLCE: { pct: 60, type: 'volume de ventes', label: 'en téléphonie' },
-  JCON: { pct: 70, type: 'marge',            label: 'en jeux vidéo consoles' },
-  JCDR: { pct: 30, type: 'marge',            label: 'en CD Rom / JV' },
-  IPOR: { pct: 55, type: 'marge',            label: 'en informatique portables (100–500€)' },
-};
-
-function uid() { return Math.random().toString(36).slice(2); }
-function defaultRows(): Famille[] {
-  return DEFAULT_FAMILLES.map(f => ({ ...f, id: uid() }));
+function parseCSV(text: string): string[][] {
+  const lines = text.trim().split(/\r?\n/);
+  const sep = (lines[0].match(/;/g) ?? []).length > (lines[0].match(/,/g) ?? []).length ? ';' : ',';
+  return lines.map(line => {
+    const cells: string[] = [];
+    let cur = '';
+    let inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === sep && !inQ) { cells.push(cur.trim()); cur = ''; continue; }
+      cur += ch;
+    }
+    cells.push(cur.trim());
+    return cells;
+  });
 }
+
+function parseNum(s: string): number {
+  // Handle "5,87%" → 5.87, "1 200,50" → 1200.5, "1200.50" → 1200.5
+  const cleaned = s.replace(/\s/g, '').replace(/%$/, '');
+  // If both . and , present, the one that appears last is the decimal separator
+  const hasComma = cleaned.includes(',');
+  const hasDot = cleaned.includes('.');
+  if (hasComma && hasDot) {
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastDot = cleaned.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
+    }
+    return parseFloat(cleaned.replace(/,/g, ''));
+  }
+  if (hasComma) return parseFloat(cleaned.replace(',', '.'));
+  return parseFloat(cleaned);
+}
+
+function buildId(produit: string, marque: string): string {
+  return `${produit.toLowerCase().trim()}_${marque.toLowerCase().trim()}`.replace(/\s+/g, '_');
+}
+
+function parseGamme(text: string): GammeModele[] {
+  const rows = parseCSV(text);
+  if (rows.length < 2) return [];
+  const header = rows[0].map(h => h.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // remove accents
+    .replace(/[^a-z0-9%]/g, ''));
+
+  const iP = header.findIndex(h => h.includes('produit') || h.includes('modele') || h.includes('model') || h.includes('article'));
+  const iM = header.findIndex(h => h.includes('marque') || h.includes('brand') || h.includes('fabricant'));
+  const iV = header.findIndex(h => h.includes('volume') || (h.includes('%') && !h.includes('price') && !h.includes('marge')));
+  const iE = header.findIndex(h => h.includes('easyprice') || h.includes('easy') || h.includes('price') || h.includes('prix'));
+
+  const colProduit = iP >= 0 ? iP : 0;
+  const colMarque  = iM >= 0 ? iM : 1;
+  const colVolume  = iV >= 0 ? iV : 2;
+  const colPrice   = iE >= 0 ? iE : 3;
+
+  const models: GammeModele[] = [];
+  const seenIds = new Set<string>();
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.every(c => !c)) continue;
+    const produit = (r[colProduit] ?? '').trim();
+    const marque  = (r[colMarque]  ?? '').trim();
+    if (!produit) continue;
+    const volumePct = parseNum(r[colVolume] ?? '0') || 0;
+    const easyPrice = parseNum(r[colPrice]  ?? '0') || 0;
+    const id = buildId(produit, marque);
+    const uniqueId = seenIds.has(id) ? `${id}_${i}` : id;
+    seenIds.add(uniqueId);
+    models.push({ id: uniqueId, produit, marque, volumePct, easyPrice });
+  }
+  return models;
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
 
 export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
-  const [familles, setFamilles] = useState<Famille[]>(defaultRows);
+  const [gamme, setGamme]   = useState<GammeModele[]>([]);
+  const [stock, setStock]   = useState<Record<string, boolean>>({});
+  const [filter, setFilter] = useState<'all' | 'manquant' | 'enstock'>('all');
+  const [search, setSearch] = useState('');
+  const [importError, setImportError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const gammeKey = `gamme_reseau_${magasinNom}`;
+  const stockKey = `gamme_stock_${magasinNom}`;
 
   useEffect(() => {
     try {
-      const s = localStorage.getItem(`couverture_${magasinNom}`);
-      if (s) {
-        const parsed = JSON.parse(s) as Famille[];
-        // Migrate: if old format (has nbModeles or missing referenceValue), start fresh
-        if (parsed.length > 0 && ('nbModeles' in parsed[0] || !('referenceValue' in parsed[0]))) {
-          setFamilles(defaultRows());
-        } else {
-          setFamilles(parsed);
+      const g = localStorage.getItem(gammeKey);
+      if (g) setGamme(JSON.parse(g) as GammeModele[]);
+    } catch { /* ignore */ }
+    try {
+      const s = localStorage.getItem(stockKey);
+      if (s) setStock(JSON.parse(s) as Record<string, boolean>);
+    } catch { /* ignore */ }
+  }, [magasinNom, gammeKey, stockKey]);
+
+  function saveGamme(g: GammeModele[], s: Record<string, boolean>) {
+    setGamme(g);
+    setStock(s);
+    localStorage.setItem(gammeKey, JSON.stringify(g));
+    localStorage.setItem(stockKey, JSON.stringify(s));
+  }
+
+  function toggleStock(id: string) {
+    const next = { ...stock, [id]: !stock[id] };
+    setStock(next);
+    localStorage.setItem(stockKey, JSON.stringify(next));
+  }
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError('');
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const text = ev.target?.result as string;
+        const parsed = parseGamme(text);
+        if (parsed.length === 0) {
+          setImportError('Aucun modèle détecté. Vérifiez le format du fichier (colonnes : Produit, Marque, % Volume réseau, EasyPrice).');
+          return;
         }
-      } else {
-        setFamilles(defaultRows());
+        // Merge: keep existing stock toggles for models with same id
+        const nextStock: Record<string, boolean> = {};
+        parsed.forEach(m => {
+          nextStock[m.id] = stock[m.id] ?? false;
+        });
+        saveGamme(parsed, nextStock);
+      } catch {
+        setImportError('Erreur de lecture du fichier. Utilisez un fichier CSV (séparateur , ou ;).');
       }
-    } catch {
-      setFamilles(defaultRows());
-    }
-  }, [magasinNom]);
-
-  function save(rows: Famille[]) {
-    setFamilles(rows);
-    localStorage.setItem(`couverture_${magasinNom}`, JSON.stringify(rows));
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
   }
 
-  function update(id: string, field: keyof Famille, raw: string | number) {
-    const value = field === 'famille'
-      ? raw
-      : (typeof raw === 'number' ? raw : (parseFloat(raw as string) || 0));
-    save(familles.map(f => f.id === id ? { ...f, [field]: value } : f));
+  function clearGamme() {
+    setGamme([]);
+    setStock({});
+    localStorage.removeItem(gammeKey);
+    localStorage.removeItem(stockKey);
   }
 
-  function add() {
-    save([...familles, {
-      id: uid(), famille: '', referenceValue: 0, locked: false,
-      qteParModele: 1, tauxMarge: 0, couverture: 0, poidsMarge: 0, delaiVente: 30,
-    }]);
-  }
+  // ── Derived ─────────────────────────────────────────────────────────────────
 
-  function del(id: string) { save(familles.filter(f => f.id !== id)); }
+  const totalModeles    = gamme.length;
+  const enStockCount    = gamme.filter(m => stock[m.id]).length;
+  const manquantCount   = totalModeles - enStockCount;
+  const totalVolume     = gamme.reduce((s, m) => s + m.volumePct, 0);
+  const volumeEnStock   = gamme.filter(m => stock[m.id]).reduce((s, m) => s + m.volumePct, 0);
+  const couverturePct   = totalVolume > 0 ? (volumeEnStock / totalVolume) * 100 : 0;
+  const investissement  = gamme.filter(m => !stock[m.id]).reduce((s, m) => s + m.easyPrice, 0);
+  const volumeManquant  = totalModeles > 0 ? 100 - couverturePct : 0;
 
-  // Derived per-row
-  const rows = familles.map(f => {
-    const stockCible  = Math.round(f.referenceValue * f.qteParModele);
-    const stockActuel = Math.round(stockCible * f.couverture / 100);
-    const manque      = Math.max(0, stockCible - stockActuel);
-    const score       = f.poidsMarge > 0 && f.tauxMarge > 0 && f.delaiVente > 0
-      ? (f.poidsMarge * f.tauxMarge) / f.delaiVente : 0;
-    return { ...f, stockCible, stockActuel, manque, score };
-  });
+  // Sorted missing models (by volume % desc for priority)
+  const manquants = gamme
+    .filter(m => !stock[m.id])
+    .sort((a, b) => b.volumePct - a.volumePct);
 
-  // Ranks — descending score
-  const sorted = [...rows].sort((a, b) => b.score - a.score);
-  const rankMap = new Map<string, number>();
-  sorted.forEach((r, i) => { if (r.score > 0) rankMap.set(r.id, i + 1); });
+  // Display list (filtered + searched)
+  const displayed = gamme
+    .filter(m => {
+      if (filter === 'manquant' && stock[m.id]) return false;
+      if (filter === 'enstock' && !stock[m.id]) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return m.produit.toLowerCase().includes(q) || m.marque.toLowerCase().includes(q);
+      }
+      return true;
+    })
+    .sort((a, b) => b.volumePct - a.volumePct);
 
-  // Totals
-  const totalStockCible   = rows.reduce((s, r) => s + r.stockCible, 0);
-  const totalStockActuel  = rows.reduce((s, r) => s + r.stockActuel, 0);
-  const totalManque       = rows.reduce((s, r) => s + r.manque, 0);
-  const totalPoidsMarge   = rows.reduce((s, r) => s + r.poidsMarge, 0);
+  const top5 = manquants.slice(0, 5);
 
-  // Couverture moyenne pondérée par poids marge ; fallback sur stock cible
-  const couvertureGlobale = totalPoidsMarge > 0
-    ? Math.round(rows.reduce((s, r) => s + r.couverture * r.poidsMarge, 0) / totalPoidsMarge)
-    : totalStockCible > 0
-      ? Math.round(totalStockActuel / totalStockCible * 100)
-      : 0;
-
-  const hasData = totalStockCible > 0;
-  const top5    = sorted.filter(r => r.score > 0 && r.manque > 0).slice(0, 5);
-
-  const banner = !hasData ? null
-    : couvertureGlobale >= 95
-      ? { cls: 'border-l-green-500 bg-green-50',    text: `Couverture quasi complète. La priorité bascule du renforcement vers le renouvellement (rotation), pas vers l'élargissement.` }
-      : couvertureGlobale >= 70
-        ? { cls: 'border-l-blue-500 bg-blue-50',    text: `Votre couverture est correcte. Concentrez les achats sur les familles à fort score. Investissement complémentaire : ${totalManque.toLocaleString('fr-FR')} € pour atteindre la couverture cible.` }
-        : { cls: 'border-l-orange-400 bg-orange-50', text: `Votre couverture est faible. Priorisez l'investissement sur les familles à fort score (rang 1 à 3). Investissement total : ${totalManque.toLocaleString('fr-FR')} € pour atteindre le stock cible.` };
-
-  // Styles
-  const ic  = 'bg-white border border-[#E0E0E0] rounded-md px-1.5 py-1 text-[#1A1A1A] text-xs focus:outline-none focus:border-[#E30613]';
-  const thI = 'text-right px-2 py-2.5 font-semibold text-[#6B7280] bg-[#F5F5F5] whitespace-nowrap';
-  const thA = 'text-right px-2 py-2.5 font-semibold text-[#9CA3AF] bg-[#EBEBEB] whitespace-nowrap';
-  const ac  = 'text-right px-2 py-2 text-xs font-medium bg-[#EBEBEB] text-[#1A1A1A]';
+  const couvertureColor = couverturePct >= 80 ? 'text-green-600' : couverturePct >= 50 ? 'text-orange-500' : 'text-red-600';
 
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-bold text-[#1A1A1A]">Couverture de gamme — {magasinNom || 'Magasin'}</h2>
-
-      {/* Intro */}
-      <div className="bg-white border border-[#E0E0E0] rounded-xl px-4 py-3 text-sm text-[#6B7280]">
-        Dimensionnez votre besoin de stock par famille à partir de la gamme référence réseau. Choisissez la quantité par modèle et renseignez votre couverture actuelle : le module calcule automatiquement votre stock cible, votre stock actuel et le manque à combler.
+      <div>
+        <h2 className="text-lg font-bold text-[#1A1A1A]">🗂 Couverture de gamme</h2>
+        <p className="text-sm text-[#6B7280] mt-0.5">
+          Importez la gamme réseau par modèle et indiquez vos modèles en stock — le module calcule votre couverture pondérée par volume réseau.
+        </p>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-5 text-xs text-[#6B7280] flex-wrap">
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm bg-white border border-[#D1D5DB]" />
-          <span>Champ à saisir</span>
+      {/* Import zone */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-3">
+        <div>
+          <h3 className="text-sm font-bold text-[#1A1A1A]">📥 Importer la gamme réseau</h3>
+          <p className="text-xs text-[#6B7280] mt-0.5">
+            Fichier CSV avec colonnes : <strong>Produit</strong>, <strong>Marque</strong>, <strong>% Volume réseau</strong>, <strong>EasyPrice (€)</strong>. Séparateur , ou ; détecté automatiquement.
+          </p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm bg-[#EBEBEB] border border-[#D1D5DB]" />
-          <span>Calculé automatiquement ▾</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="text-sm font-semibold bg-[#E30613] text-white hover:bg-[#B8050F] rounded-lg px-4 py-2 transition-colors"
+          >
+            {gamme.length > 0 ? '↺ Mettre à jour la gamme' : '+ Importer la gamme réseau'}
+          </button>
+          {gamme.length > 0 && (
+            <button
+              onClick={clearGamme}
+              className="text-xs text-[#9CA3AF] hover:text-red-600 transition-colors"
+            >
+              Effacer tout
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.txt"
+            onChange={handleFile}
+            className="hidden"
+          />
+          {gamme.length > 0 && (
+            <span className="text-xs text-[#6B7280]">{totalModeles} modèle{totalModeles > 1 ? 's' : ''} importé{totalModeles > 1 ? 's' : ''}</span>
+          )}
         </div>
-        <div className="flex items-center gap-1.5">
-          <span>🔒</span>
-          <span>Valeur réseau (verrouillée)</span>
-        </div>
+        {importError && (
+          <p className="text-xs text-red-600 font-medium">{importError}</p>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="text-xs border-collapse" style={{ minWidth: '860px' }}>
-            <thead>
-              <tr className="border-b border-[#E0E0E0]">
-                <th className="text-left px-3 py-2.5 font-semibold text-[#6B7280] bg-[#F5F5F5] sticky left-0 z-20 border-r border-[#E0E0E0] whitespace-nowrap">Famille</th>
-                <th className={thI}>Qté/modèle</th>
-                <th className={thI}>Référence (€)</th>
-                <th className={thA}>Stock cible ▾</th>
-                <th className={thI}>Marge (%)</th>
-                <th className={thI}>Couverture (%)</th>
-                <th className={thA}>Stock actuel ▾</th>
-                <th className={thA}>Manque ▾</th>
-                <th className={thI}>Poids marge (%)</th>
-                <th className={thI}>Délai (j)</th>
-                <th className={thA}>Score ▾</th>
-                <th className="text-center px-2 py-2.5 font-semibold text-[#9CA3AF] bg-[#EBEBEB] whitespace-nowrap">Rang ▾</th>
-                <th className="px-2 py-2.5 bg-[#F5F5F5]"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(f => {
-                const rangNum = rankMap.get(f.id);
-                const rang = rangNum ?? '—';
-                const rangColor = rangNum === 1 ? 'text-[#E30613] font-black'
-                  : rangNum === 2 ? 'text-orange-500 font-bold'
-                  : rangNum === 3 ? 'text-yellow-600 font-bold'
-                  : 'text-[#6B7280]';
-                const rowBg = rangNum === 1 ? 'bg-[#FFF5F5]'
-                  : (rangNum ?? 0) >= 4 ? 'bg-[#FAFAFA]'
-                  : 'bg-white';
-                const impact = BUSINESS_IMPACT[(f.famille ?? '').toUpperCase()];
-                const missed = impact && f.couverture > 0 && f.couverture < 100
-                  ? Math.round((100 - f.couverture) / 100 * impact.pct)
-                  : 0;
-                return (
-                  <React.Fragment key={f.id}>
-                    <tr className={`border-t border-[#E0E0E0] hover:brightness-[0.98] transition-all ${rowBg}`}>
-                      {/* Sticky famille cell */}
-                      <td className={`px-2 py-2 sticky left-0 z-10 border-r border-[#E0E0E0] ${rowBg}`}>
-                        <input
-                          value={f.famille}
-                          onChange={e => update(f.id, 'famille', e.target.value)}
-                          className={`${ic} w-14`}
-                          placeholder="Famille"
-                        />
-                      </td>
+      {gamme.length === 0 ? (
+        <div className="bg-white border border-[#E0E0E0] rounded-xl px-6 py-12 text-center">
+          <div className="text-4xl mb-3">🗂</div>
+          <p className="text-sm font-semibold text-[#1A1A1A]">Aucune gamme importée</p>
+          <p className="text-xs text-[#6B7280] mt-2">
+            Importez le fichier CSV de la gamme réseau (Produit, Marque, % Volume réseau, EasyPrice) pour commencer.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
+              <div className={`text-2xl font-black ${couvertureColor}`}>{couverturePct.toFixed(1)}%</div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Couverture pondérée</div>
+              <div className="text-[10px] text-[#9CA3AF]">par % volume réseau</div>
+            </div>
+            <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
+              <div className="text-2xl font-black text-[#1A1A1A]">{enStockCount} / {totalModeles}</div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Modèles en stock</div>
+            </div>
+            <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
+              <div className={`text-2xl font-black ${manquantCount > 0 ? 'text-orange-500' : 'text-green-600'}`}>{manquantCount}</div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Modèles manquants</div>
+              {totalVolume > 0 && <div className="text-[10px] text-[#9CA3AF]">{volumeManquant.toFixed(1)}% volume potentiel</div>}
+            </div>
+            <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
+              <div className={`text-2xl font-black ${investissement > 0 ? 'text-orange-500' : 'text-green-600'}`}>
+                {investissement > 0 ? `${Math.round(investissement).toLocaleString('fr-FR')} €` : '✓'}
+              </div>
+              <div className="text-xs text-[#6B7280] mt-0.5">Investissement min.</div>
+              <div className="text-[10px] text-[#9CA3AF]">1 unité par modèle manquant</div>
+            </div>
+          </div>
 
-                      {/* Qté/modèle — sélecteur 1-5 */}
-                      <td className="px-2 py-2 text-right">
-                        <div className="flex gap-0.5 justify-end">
-                          {[1, 2, 3, 4, 5].map(n => (
-                            <button
-                              key={n}
-                              onClick={() => update(f.id, 'qteParModele', n)}
-                              className={`w-6 h-6 rounded text-xs font-semibold transition-colors ${
-                                f.qteParModele === n
-                                  ? 'bg-[#E30613] text-white'
-                                  : 'bg-[#F5F5F5] text-[#6B7280] hover:bg-[#E0E0E0]'
-                              }`}
-                            >
-                              {n}
-                            </button>
-                          ))}
+          {/* Priority section — top 5 missing */}
+          {top5.length > 0 && (
+            <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Ordre de priorité d&apos;investissement</h3>
+                <p className="text-xs text-[#6B7280] mt-0.5">Modèles manquants triés par % volume réseau décroissant</p>
+              </div>
+              <div className="space-y-3">
+                {top5.map((m, i) => {
+                  const rang = i + 1;
+                  const numColor = rang === 1 ? 'text-[#E30613]' : rang === 2 ? 'text-orange-500' : rang === 3 ? 'text-yellow-600' : 'text-[#6B7280]';
+                  return (
+                    <div key={m.id} className="space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2 flex-1">
+                          <span className={`font-black text-base w-6 flex-shrink-0 ${numColor}`}>#{rang}</span>
+                          <div>
+                            <span className="text-sm text-[#1A1A1A] font-semibold">{m.produit}</span>
+                            {m.marque && <span className="text-xs text-[#6B7280] ml-1.5">{m.marque}</span>}
+                            <div className="flex flex-wrap gap-3 mt-0.5 text-xs text-[#6B7280]">
+                              {m.volumePct > 0 && <span className="font-medium text-[#374151]">{m.volumePct.toFixed(2)}% volume réseau</span>}
+                              {m.easyPrice > 0 && <span>EasyPrice : <strong className="text-orange-600">{m.easyPrice.toLocaleString('fr-FR')} €</strong></span>}
+                            </div>
+                          </div>
                         </div>
-                      </td>
-
-                      {/* Référence — verrouillée pour preset, libre pour custom */}
-                      <td className="px-2 py-2 text-right">
-                        {f.locked ? (
-                          <span className="flex items-center justify-end gap-1 text-[#6B7280] font-medium">
-                            <span className="text-[10px]">🔒</span>
-                            {f.referenceValue.toLocaleString('fr-FR')} €
-                          </span>
-                        ) : (
-                          <input
-                            type="number"
-                            min="0"
-                            value={f.referenceValue || ''}
-                            onChange={e => update(f.id, 'referenceValue', e.target.value)}
-                            className={`${ic} w-20 text-right`}
-                            placeholder="0"
-                          />
+                        {onAddAction && (
+                          <button onClick={() => {
+                            const e = new Date(); e.setDate(e.getDate() + 14);
+                            onAddAction({ id: String(Date.now()), titre: `Gamme — Sourcer ${m.produit}${m.marque ? ' ' + m.marque : ''} (${m.volumePct.toFixed(2)}% vol. réseau)`, axe: 'Stock', pilote: 'Franchisé', copilote: '', description: `Modèle manquant priorité #${rang} : ${m.produit}${m.marque ? ' ' + m.marque : ''}. % Volume réseau : ${m.volumePct.toFixed(2)}%. EasyPrice : ${m.easyPrice.toLocaleString('fr-FR')} €. À sourcer en priorité pour renforcer la couverture de gamme.`, echeance: e.toISOString().slice(0, 10), priorite: rang <= 2 ? 1 : 2, gain: 0, statut: 'À faire' });
+                          }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
                         )}
-                      </td>
+                      </div>
+                      <div className="flex gap-1.5 pl-8">
+                        <a
+                          href={lbcUrl(m.produit, m.easyPrice || null)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-[#E0E0E0] bg-white hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700 text-[#374151] transition-colors whitespace-nowrap"
+                        >
+                          🔍 Leboncoin
+                        </a>
+                        <a
+                          href={vintedUrl(m.produit, m.easyPrice || null)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-[#E0E0E0] bg-white hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 text-[#374151] transition-colors whitespace-nowrap"
+                        >
+                          🔍 Vinted
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-                      {/* Auto: Stock cible */}
-                      <td className={ac}>
-                        {f.stockCible > 0 ? `${f.stockCible.toLocaleString('fr-FR')} €` : '—'}
-                      </td>
+          {/* Full model table */}
+          <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+            {/* Filters */}
+            <div className="px-4 py-3 border-b border-[#E0E0E0] flex flex-wrap items-center gap-3">
+              <div className="flex gap-1.5">
+                {(['all', 'manquant', 'enstock'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`text-xs font-semibold px-3 py-1 rounded-full transition-colors ${filter === f ? 'bg-[#E30613] text-white' : 'bg-[#F5F5F5] text-[#6B7280] hover:bg-[#E0E0E0]'}`}
+                  >
+                    {f === 'all' ? `Tous (${totalModeles})` : f === 'manquant' ? `Manquants (${manquantCount})` : `En stock (${enStockCount})`}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Rechercher un modèle…"
+                className="text-xs border border-[#E0E0E0] rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#9CA3AF] w-48"
+              />
+            </div>
 
-                      {/* Input: Marge */}
-                      <td className="px-2 py-2 text-right">
-                        <input type="number" min="0" max="100" value={f.tauxMarge || ''} onChange={e => update(f.id, 'tauxMarge', e.target.value)} className={`${ic} w-12 text-right`} placeholder="0" />
-                      </td>
-
-                      {/* Input: Couverture */}
-                      <td className="px-2 py-2 text-right">
-                        <input type="number" min="0" max="100" value={f.couverture || ''} onChange={e => update(f.id, 'couverture', e.target.value)} className={`${ic} w-12 text-right`} placeholder="0" />
-                      </td>
-
-                      {/* Auto: Stock actuel */}
-                      <td className={ac}>
-                        {f.stockActuel > 0 ? `${f.stockActuel.toLocaleString('fr-FR')} €` : '—'}
-                      </td>
-
-                      {/* Auto: Manque */}
-                      <td className="text-right px-2 py-2 text-xs font-medium bg-[#EBEBEB]">
-                        {f.stockCible > 0 ? (
-                          f.manque > 0
-                            ? <span className="text-orange-600 font-semibold">{f.manque.toLocaleString('fr-FR')} €</span>
-                            : <span className="text-green-600">✓</span>
-                        ) : '—'}
-                      </td>
-
-                      {/* Input: Poids marge */}
-                      <td className="px-2 py-2 text-right">
-                        <input type="number" min="0" max="100" value={f.poidsMarge || ''} onChange={e => update(f.id, 'poidsMarge', e.target.value)} className={`${ic} w-12 text-right`} placeholder="0" />
-                      </td>
-
-                      {/* Input: Délai */}
-                      <td className="px-2 py-2 text-right">
-                        <input type="number" min="0" value={f.delaiVente || ''} onChange={e => update(f.id, 'delaiVente', e.target.value)} className={`${ic} w-12 text-right`} placeholder="0" />
-                      </td>
-
-                      {/* Auto: Score */}
-                      <td className="text-right px-2 py-2 text-xs text-[#6B7280] bg-[#EBEBEB]">
-                        {f.score > 0 ? f.score.toFixed(1) : '—'}
-                      </td>
-
-                      {/* Auto: Rang */}
-                      <td className="text-center px-2 py-2 bg-[#EBEBEB]">
-                        <span className={rangColor}>{f.score > 0 ? `#${rang}` : '—'}</span>
-                      </td>
-
-                      {/* Delete */}
-                      <td className="px-2 py-2">
-                        <button onClick={() => del(f.id)} className="text-[#9CA3AF] hover:text-red-600 transition-colors">🗑</button>
-                      </td>
-                    </tr>
-
-                    {/* Business impact hint row */}
-                    {impact && (
-                      <tr className="border-t border-[#F0F0F0] bg-[#FAFAFA]">
-                        <td colSpan={13} className="px-5 py-1.5">
-                          <span className={`text-[11px] italic ${f.couverture > 0 && f.couverture < 100 ? 'text-orange-500' : 'text-[#9CA3AF]'}`}>
-                            {f.couverture > 0 && f.couverture < 100
-                              ? `Vous êtes à ${f.couverture}% de couverture en ${f.famille}. Vous loupez environ ${missed}% de votre potentiel de ${impact.type} ${impact.label}.`
-                              : `100% de couverture en ${f.famille} représente ${impact.pct}% du ${impact.type} ${impact.label}.`
-                            }
-                            {f.couverture > 0 && f.couverture < 100 && f.manque > 0 && (
-                              <> Manque à combler : <strong>{f.manque.toLocaleString('fr-FR')} €</strong>.</>
-                            )}
-                          </span>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-[#E0E0E0] bg-[#F5F5F5] text-[#6B7280]">
+                    <th className="text-left px-3 py-2 font-semibold">Produit</th>
+                    <th className="text-left px-3 py-2 font-semibold">Marque</th>
+                    <th className="text-right px-3 py-2 font-semibold">% Volume</th>
+                    <th className="text-right px-3 py-2 font-semibold">EasyPrice</th>
+                    <th className="text-center px-3 py-2 font-semibold">Stock</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#F0F0F0]">
+                  {displayed.map(m => {
+                    const inStock = !!stock[m.id];
+                    return (
+                      <tr key={m.id} className={`hover:brightness-[0.98] ${inStock ? 'bg-white' : 'bg-[#FFF9F9]'}`}>
+                        <td className="px-3 py-2.5 font-medium text-[#1A1A1A]">{m.produit}</td>
+                        <td className="px-3 py-2.5 text-[#6B7280]">{m.marque || '—'}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          {m.volumePct > 0 ? (
+                            <span className={m.volumePct >= 3 ? 'font-semibold text-[#374151]' : 'text-[#6B7280]'}>
+                              {m.volumePct.toFixed(2)}%
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-[#374151]">
+                          {m.easyPrice > 0 ? `${m.easyPrice.toLocaleString('fr-FR')} €` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <button
+                            onClick={() => toggleStock(m.id)}
+                            className={`text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${
+                              inStock
+                                ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100'
+                                : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'
+                            }`}
+                          >
+                            {inStock ? '✓ En stock' : '✗ Manquant'}
+                          </button>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {!inStock && (
+                            <div className="flex gap-1">
+                              <a
+                                href={lbcUrl(m.produit, m.easyPrice || null)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] px-2 py-0.5 rounded border border-[#E0E0E0] bg-white hover:bg-orange-50 hover:text-orange-700 text-[#6B7280] transition-colors whitespace-nowrap"
+                              >
+                                LBC
+                              </a>
+                              <a
+                                href={vintedUrl(m.produit, m.easyPrice || null)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] px-2 py-0.5 rounded border border-[#E0E0E0] bg-white hover:bg-teal-50 hover:text-teal-700 text-[#6B7280] transition-colors whitespace-nowrap"
+                              >
+                                Vinted
+                              </a>
+                            </div>
+                          )}
                         </td>
                       </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-
-            {hasData && (
-              <tfoot>
-                <tr className="bg-[#F5F5F5] border-t-2 border-[#E0E0E0] font-semibold text-xs">
-                  <td className="px-3 py-2.5 text-[#1A1A1A] sticky left-0 bg-[#F5F5F5] z-10 border-r border-[#E0E0E0]">Total</td>
-                  <td></td>
-                  <td></td>
-                  <td className="text-right px-2 py-2.5 text-[#1A1A1A] bg-[#EBEBEB]">{totalStockCible.toLocaleString('fr-FR')} €</td>
-                  <td></td>
-                  <td className="text-right px-2 py-2.5">
-                    <span className={couvertureGlobale >= 95 ? 'text-green-600 font-black' : couvertureGlobale >= 70 ? 'text-blue-600 font-black' : 'text-orange-500 font-black'}>
-                      {couvertureGlobale}%
-                    </span>
-                  </td>
-                  <td className="text-right px-2 py-2.5 bg-[#EBEBEB]">{totalStockActuel.toLocaleString('fr-FR')} €</td>
-                  <td className="text-right px-2 py-2.5 bg-[#EBEBEB]">
-                    <span className={totalManque > 0 ? 'text-orange-500' : 'text-green-600'}>
-                      {totalManque > 0 ? `${totalManque.toLocaleString('fr-FR')} €` : '✓'}
-                    </span>
-                  </td>
-                  <td className="text-right px-2 py-2.5 text-[#6B7280]">{totalPoidsMarge > 0 ? `${totalPoidsMarge.toFixed(1)}%` : '—'}</td>
-                  <td colSpan={4}></td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-        <div className="px-3 py-2 border-t border-[#E0E0E0]">
-          <button onClick={add} className="text-xs text-[#E30613] hover:text-[#B8050F] font-medium transition-colors">
-            + Ajouter une famille
-          </button>
-        </div>
-      </div>
-
-      {/* Recap cards */}
-      {hasData && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: 'Stock cible total',  value: `${totalStockCible.toLocaleString('fr-FR')} €`,  cls: 'text-[#1A1A1A]' },
-            { label: 'Stock actuel total', value: `${totalStockActuel.toLocaleString('fr-FR')} €`, cls: 'text-[#1A1A1A]' },
-            { label: 'Manque à combler',   value: `${totalManque.toLocaleString('fr-FR')} €`,      cls: totalManque > 0 ? 'text-orange-600' : 'text-green-600' },
-            { label: 'Couverture moy.',    value: `${couvertureGlobale}%`,                         cls: couvertureGlobale >= 95 ? 'text-green-600' : couvertureGlobale >= 70 ? 'text-blue-600' : 'text-orange-500' },
-          ].map(c => (
-            <div key={c.label} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
-              <div className={`text-xl font-black ${c.cls}`}>{c.value}</div>
-              <div className="text-xs text-[#6B7280] mt-0.5">{c.label}</div>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
+
+            {displayed.length === 0 && (
+              <div className="px-4 py-8 text-center text-sm text-[#9CA3AF]">Aucun modèle pour ce filtre.</div>
+            )}
+          </div>
+
+          <p className="text-[10px] text-[#9CA3AF] italic">
+            Couverture pondérée = % volume réseau des modèles en stock / % volume réseau total. Investissement minimum = EasyPrice × 1 unité par modèle manquant.
+          </p>
+        </>
       )}
-
-      {/* Priority order */}
-      {top5.length > 0 && (
-        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4 space-y-2.5">
-          <h3 className="text-sm font-bold text-[#1A1A1A] mb-3">🎯 Ordre de priorité d&apos;investissement</h3>
-          {top5.map((f, i) => {
-            const rang = i + 1;
-            const numColor = rang === 1 ? 'text-[#E30613]' : rang === 2 ? 'text-orange-500' : rang === 3 ? 'text-yellow-600' : 'text-[#6B7280]';
-            return (
-              <div key={f.id} className="space-y-1.5">
-                <div className="flex items-start justify-between gap-2 text-sm">
-                  <div className="flex items-start gap-2 flex-1">
-                    <span className={`font-black text-base w-6 flex-shrink-0 ${numColor}`}>#{rang}</span>
-                    <span className="text-[#1A1A1A] leading-snug">
-                      <strong>{f.famille || '—'}</strong> : investir{' '}
-                      <strong className="text-orange-600">{f.manque.toLocaleString('fr-FR')} €</strong>
-                      {f.poidsMarge > 0 && (
-                        <> (poids marge {f.poidsMarge}%, marge {f.tauxMarge}%, rotation {f.delaiVente}j)</>
-                      )}
-                    </span>
-                  </div>
-                  {onAddAction && (
-                    <button onClick={() => {
-                      const e = new Date(); e.setDate(e.getDate() + 14);
-                      onAddAction({ id: String(Date.now()), titre: `Gamme — Investir en ${f.famille || '—'} (manque ${f.manque.toLocaleString('fr-FR')} €)`, axe: 'Stock', pilote: 'Franchisé', copilote: '', description: `Couverture de gamme insuffisante sur ${f.famille}. Investissement prioritaire #${rang} : ${f.manque.toLocaleString('fr-FR')} € (marge ${f.tauxMarge}%, rotation ${f.delaiVente}j).`, echeance: e.toISOString().slice(0, 10), priorite: rang <= 2 ? 1 : 2, gain: 0, statut: 'À faire' });
-                    }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
-                  )}
-                </div>
-                {f.famille && (
-                  <div className="flex gap-1.5 pl-8">
-                    <a
-                      href={lbcUrl(f.famille, f.manque)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-[#E0E0E0] bg-white hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700 text-[#374151] transition-colors whitespace-nowrap"
-                    >
-                      🔍 Leboncoin
-                    </a>
-                    <a
-                      href={vintedUrl(f.famille, f.manque)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-[#E0E0E0] bg-white hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 text-[#374151] transition-colors whitespace-nowrap"
-                    >
-                      🔍 Vinted
-                    </a>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Dynamic banner */}
-      {banner && (
-        <div className={`${banner.cls} border-l-4 rounded-r-xl px-4 py-3 text-sm text-[#1A1A1A]`}>
-          {banner.text}
-        </div>
-      )}
-
-      {/* Disclaimer */}
-      <p className="text-xs text-[#9CA3AF] italic">
-        Stock cible = Valeur de référence réseau × Qté par modèle. Stock actuel = Stock cible × Couverture. Score priorité = (Poids marge × Taux marge) / Délai vente. Estimations indicatives basées sur les valeurs saisies — ne constituent pas un engagement financier.
-      </p>
-
-      <ZonesModule moduleKey="gamme" />
     </div>
   );
 }

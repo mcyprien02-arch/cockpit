@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import type { PAPAction } from '@/types';
-import ZonesModule from './ZonesModule';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -618,7 +617,6 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
         </div>
       )}
 
-      <ZonesModule moduleKey="competences" />
     </div>
   );
 }

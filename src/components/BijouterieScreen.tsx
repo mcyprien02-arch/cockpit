@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { detectTypeBijou, extractPoidsFromLib } from '@/lib/bijouUtils';
-import ZonesModule from './ZonesModule';
 import type { PAPAction } from '@/types';
 
 interface Props { magasinNom: string; onNavigateToJournal?: () => void; onAddAction?: (action: PAPAction) => void; }
@@ -1337,7 +1336,6 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
         </div>
       )}
 
-      <ZonesModule moduleKey="bijouterie" />
     </div>
   );
 }

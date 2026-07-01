@@ -3,7 +3,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
-import ZonesModule from './ZonesModule';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1096,8 +1095,6 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
           </div>
         );
       })()}
-
-      <ZonesModule moduleKey="benchmark" />
 
       {/* ── Clear data ── */}
       <div className="flex justify-end pt-2">
