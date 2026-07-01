@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction, Phase } from '@/types';
 import { DEFAULT_DATA } from '@/types';
-import { KPI_DEFS, parsePastedText } from '@/lib/kpis';
+import { KPI_DEFS } from '@/lib/kpis';
 import { SEUIL_DEFAULTS } from '@/lib/seuils';
 
 interface Props {
@@ -154,65 +154,20 @@ function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
   );
 }
 
-// ── KPI row : label | valeur | seuil sur une ligne ─────────────────────────
-function KpiRow({ label, field, form, setF, unit, placeholder, seuil, onSeuil }: {
-  label: string; field: keyof MagasinData;
-  form: MagasinData; setF: (k: keyof MagasinData, v: number) => void;
-  unit?: string; placeholder?: string;
-  seuil?: number; onSeuil?: (v: number) => void;
-}) {
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-2 py-3 border-b border-[#F0F0F0] last:border-0">
-      <span className="flex-1 text-sm text-[#1A1A1A] font-medium">
-        {label}
-        {unit && <span className="text-[#9CA3AF] ml-1 text-xs font-normal">({unit})</span>}
-      </span>
-      <input
-        type="number"
-        className="w-full sm:w-32 bg-white border border-[#E0E0E0] rounded-lg px-2 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
-        value={(form[field] as number) || ''}
-        onChange={e => setF(field, parseFloat(e.target.value) || 0)}
-        placeholder={placeholder ?? '0'}
-      />
-      {onSeuil !== undefined && (
-        <input
-          type="number"
-          className="w-full sm:w-28 bg-amber-50 border border-amber-300 rounded-lg px-2 py-2 text-amber-700 text-xs focus:outline-none focus:border-amber-400"
-          value={seuil ?? ''}
-          onChange={e => { const v = parseFloat(e.target.value); onSeuil(isNaN(v) ? 0 : v); }}
-          placeholder="Mon seuil…"
-        />
-      )}
-    </div>
-  );
-}
-
-// ── Toggle row ─────────────────────────────────────────────────────────────
-function ToggleRow({ label, value, onChange, hint }: {
-  label: string; value: boolean; onChange: (v: boolean) => void; hint?: string;
-}) {
-  return (
-    <div className="flex items-center gap-3 py-3 border-b border-[#F0F0F0] last:border-0">
-      <span className="flex-1 text-sm text-[#1A1A1A] font-medium">{label}</span>
-      <button
-        onClick={() => onChange(!value)}
-        className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${value ? 'bg-green-500' : 'bg-[#D1D5DB]'}`}
-      >
-        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
-      </button>
-      {hint && <span className="text-[10px] text-[#6B7280] italic max-w-[120px] leading-snug">{hint}</span>}
-    </div>
-  );
-}
+const SEUILS_CLES = [
+  { key: 'stockAge',         label: 'Stock âgé',        unit: '%'  },
+  { key: 'tauxMargeNette',   label: 'Marge nette',       unit: '%'  },
+  { key: 'noteGoogle',       label: 'Note Google',        unit: '/5' },
+  { key: 'tauxDemarque',     label: 'Démarque',          unit: '%'  },
+  { key: 'tauxTransformation', label: 'Transformation',  unit: '%'  },
+  { key: 'tauxAchatExterne', label: 'Achat externe',     unit: '%'  },
+  { key: 'estalyParSemaine', label: 'Estaly/mois',       unit: ''   },
+  { key: 'poidsDigital',     label: 'Poids digital',     unit: '%'  },
+];
 
 export default function Dashboard({ data, onSave, actions, onNavigate, onAddAction }: Props) {
   const [showModal, setShowModal] = useState(!data.nom);
   const [form, setForm] = useState<MagasinData>({ ...DEFAULT_DATA, ...data });
-  const [pasteMode, setPasteMode] = useState(false);
-  const [pasteText, setPasteText] = useState('');
-  const [pasteCount, setPasteCount] = useState(0);
-  const [importMsg, setImportMsg] = useState('');
-  const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
   const [customSeuils, setCustomSeuils] = useState<Record<string, number>>(() => {
     if (typeof window === 'undefined') return { ...SEUIL_DEFAULTS };
     try { const s = localStorage.getItem(`seuils_${data.nom}`); return s ? JSON.parse(s) as Record<string, number> : { ...SEUIL_DEFAULTS }; }
@@ -221,6 +176,11 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
   const [vahHeures, setVahHeures] = useState<number>(() => {
     if (typeof window === 'undefined') return 0;
     try { return parseFloat(localStorage.getItem(`vah_heures_${data.nom}`) ?? '0') || 0; }
+    catch { return 0; }
+  });
+  const [vahMarge, setVahMarge] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    try { return parseFloat(localStorage.getItem(`vah_marge_${data.nom}`) ?? '0') || 0; }
     catch { return 0; }
   });
   const [vision, setVision] = useState<{ vision3ans: string; valeur1: string; valeur2: string; valeur3: string } | null>(() => {
@@ -245,6 +205,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
       setVahHeures(h ? parseFloat(h) || 0 : 0);
     } catch { setVahHeures(0); }
     try {
+      const m = localStorage.getItem(`vah_marge_${data.nom}`);
+      setVahMarge(m ? parseFloat(m) || 0 : 0);
+    } catch { setVahMarge(0); }
+    try {
       const v = localStorage.getItem(`vision_${data.nom}`);
       setVision(v ? JSON.parse(v) : null);
     } catch { setVision(null); }
@@ -253,8 +217,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
       setHistoire(h ? JSON.parse(h) as HistoireStore : HISTOIRE_EMPTY);
     } catch { setHistoire(HISTOIRE_EMPTY); }
   }, [data.nom]);
-
-  function setF(k: keyof MagasinData, v: number) { setForm(f => ({ ...f, [k]: v })); }
 
   function setCustomSeuil(key: string, v: number) {
     setCustomSeuils(prev => {
@@ -269,58 +231,17 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
     if (form.nom) localStorage.setItem(`vah_heures_${form.nom}`, String(h));
   }
 
-  function handlePaste() {
-    const parsed = parsePastedText(pasteText);
-    const keys = Object.keys(parsed);
-    setForm(f => ({ ...f, ...parsed }));
-    setHighlightedFields(new Set(keys));
-    setPasteCount(keys.length);
-    setPasteMode(false);
-  }
-
-  async function handleExcel(file: File) {
-    setImportMsg('Import en cours...');
-    try {
-      const XLSX = await import('xlsx');
-      const data2 = await file.arrayBuffer();
-      const wb = XLSX.read(data2, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 });
-      const headers: string[] = [];
-      const values: unknown[] = [];
-      rows.forEach((row: unknown[]) => {
-        if (Array.isArray(row) && row.length >= 2) {
-          headers.push(String(row[0]).toLowerCase());
-          values.push(row[1]);
-        }
-      });
-      const text = headers.map((h, i) => `${h} ${values[i]}`).join('\n');
-      const parsed = parsePastedText(text);
-      const keys = Object.keys(parsed);
-      setForm(f => ({ ...f, ...parsed }));
-      setHighlightedFields(new Set(keys));
-      setImportMsg(`✓ ${keys.length} valeur(s) détectée(s) : ${keys.join(', ')}`);
-    } catch {
-      setImportMsg("Erreur d'import. Vérifiez le format du fichier.");
-    }
+  function updateVahMarge(m: number) {
+    setVahMarge(m);
+    if (form.nom) localStorage.setItem(`vah_marge_${form.nom}`, String(m));
   }
 
   function handleSave() {
     if (!form.nom.trim()) return;
-    onSave(form);
+    // Only persist nom and phase — all KPI values come from their source modules
+    onSave({ ...data, nom: form.nom, phase: form.phase });
     localStorage.setItem(`seuils_${form.nom}`, JSON.stringify(customSeuils));
-    if (form.nom) {
-      const vahResult = vahHeures > 0 && form.caAnnuel > 0 && form.tauxMargeNette > 0
-        ? (form.caAnnuel * form.tauxMargeNette / 100) / vahHeures : 0;
-      localStorage.setItem(`vah_ca_${form.nom}`, String(form.caAnnuel));
-      localStorage.setItem(`vah_marge_${form.nom}`, String(form.tauxMargeNette));
-      localStorage.setItem(`vah_heures_${form.nom}`, String(vahHeures));
-      localStorage.setItem(`vah_resultat_${form.nom}`, String(vahResult));
-    }
     setShowModal(false);
-    setHighlightedFields(new Set());
-    setPasteCount(0);
-    setImportMsg('');
   }
 
   const phase = data.phase ?? 'Maturité';
@@ -416,7 +337,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
   const hasCouverture = data.nom ? !!localStorage.getItem(`couverture_${data.nom}`) : false;
   const hasJournal = data.nom ? !!localStorage.getItem(`journal_achats_${data.nom}`) : false;
 
-  const hl = (k: string) => highlightedFields.has(k) ? 'ring-2 ring-[#E30613] rounded-lg' : '';
+  // VAH uses CA from Simulateur and marge from dedicated vahMarge state
+  const vahCa = simuSummary?.ca ?? 0;
+  const vahResult = vahHeures > 0 && vahCa > 0 && vahMarge > 0
+    ? (vahCa * vahMarge / 100) / vahHeures : 0;
 
   return (
     <div className="space-y-5">
@@ -557,7 +481,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
           ) : (
             <div className="bg-green-50 border border-green-300 rounded-xl p-4 text-center">
               <p className="text-green-700 font-semibold text-sm">✓ Tous vos KPIs sont dans les seuils — continuez comme ça !</p>
-              {!topKey && <p className="text-xs text-[#6B7280] mt-1">Saisissez vos données et vos seuils dans le formulaire pour obtenir des recommandations.</p>}
+              {!topKey && <p className="text-xs text-[#6B7280] mt-1">Configurez vos seuils cibles dans &quot;Modifier mes données&quot; pour obtenir des recommandations.</p>}
             </div>
           )}
 
@@ -644,6 +568,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
               </div>
             )}
           </div>
+
           {/* Modules actifs */}
           {(simuSummary || routinesScore !== null || hasBenchmark || hasObjectifs || hasCompetences || hasCouverture || hasJournal) && (
             <div className="space-y-2">
@@ -692,6 +617,17 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
                 </div>
               )}
 
+              {/* VAH summary (read-only, from localStorage) */}
+              {vahResult > 0 && (
+                <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-[#1A1A1A]">⏱ Valeur ajoutée horaire</span>
+                    <p className="text-xs text-[#6B7280] mt-0.5">Chaque heure perdue coûte cette valeur</p>
+                  </div>
+                  <span className="text-2xl font-black text-[#E30613]">{vahResult.toFixed(1)} €/h</span>
+                </div>
+              )}
+
               {/* Other module badges */}
               <div className="flex flex-wrap gap-2">
                 {routinesScore !== null && (
@@ -732,50 +668,19 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
         </>
       )}
 
-      {/* Modal */}
+      {/* Modal — qualitative config only */}
       {showModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 flex items-start justify-center pt-4 pb-8">
           <div className="bg-white rounded-2xl w-full max-w-2xl mx-4 shadow-xl">
 
-            {/* Modal header */}
             <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[#E0E0E0]">
-              <div>
-                <h2 className="text-lg font-bold text-[#1A1A1A]">Données du magasin</h2>
-                <p className="text-[10px] text-amber-600 mt-0.5">Champ doré = votre seuil cible personnalisé</p>
-              </div>
+              <h2 className="text-lg font-bold text-[#1A1A1A]">Données du magasin</h2>
               <button onClick={() => setShowModal(false)} className="text-[#6B7280] hover:text-[#1A1A1A] text-xl leading-none">✕</button>
             </div>
 
             <div className="px-6 py-5 space-y-5">
-              {/* Import rapide */}
-              <div className="flex gap-2 flex-wrap">
-                <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#F5F5F5] border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB] transition-colors">
-                  📂 Importer Excel/CSV
-                  <input type="file" accept=".xlsx,.csv" className="hidden" onChange={e => e.target.files?.[0] && handleExcel(e.target.files[0])} />
-                </label>
-                <button onClick={() => setPasteMode(!pasteMode)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#F5F5F5] border border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB]">
-                  📋 Coller mes données
-                </button>
-                {importMsg && <span className="text-xs text-green-600 self-center">{importMsg}</span>}
-                {pasteCount > 0 && !importMsg && <span className="text-xs text-green-600 self-center">✓ {pasteCount} valeur(s) détectée(s)</span>}
-              </div>
 
-              {pasteMode && (
-                <div className="space-y-2">
-                  <textarea
-                    className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none resize-none"
-                    rows={4}
-                    value={pasteText}
-                    onChange={e => setPasteText(e.target.value)}
-                    placeholder="Collez vos données ici (ex: marge 38%, stock âgé 25%...)"
-                  />
-                  <button onClick={handlePaste} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#E30613] text-white hover:bg-[#B8050F]">
-                    Détecter les valeurs
-                  </button>
-                </div>
-              )}
-
-              {/* Général */}
+              {/* Nom + Phase */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-[#6B7280] mb-1">Nom du magasin *</label>
@@ -798,127 +703,86 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
                 </div>
               </div>
 
-              {/* Section 1 — Indicateurs essentiels */}
-              <FormSection title="📊 Mes indicateurs essentiels">
-                <div className={hl('caAnnuel')}>
-                  <KpiRow label="CA annuel" field="caAnnuel" form={form} setF={setF} unit="€"
-                    seuil={customSeuils['caAnnuel']} onSeuil={v => setCustomSeuil('caAnnuel', v)} />
-                </div>
-                <div className={hl('tauxMargeNette')}>
-                  <KpiRow label="Taux de marge nette" field="tauxMargeNette" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['tauxMargeNette']} onSeuil={v => setCustomSeuil('tauxMargeNette', v)} />
-                </div>
-                <div className={hl('tauxDemarque')}>
-                  <KpiRow label="Taux de démarque" field="tauxDemarque" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['tauxDemarque']} onSeuil={v => setCustomSeuil('tauxDemarque', v)} />
-                </div>
-                <div className={hl('stockTotal')}>
-                  <KpiRow label="Stock total" field="stockTotal" form={form} setF={setF} unit="€"
-                    seuil={customSeuils['stockTotal']} onSeuil={v => setCustomSeuil('stockTotal', v)} />
-                </div>
-                <div className={hl('stockAge')}>
-                  <KpiRow label="Stock âgé" field="stockAge" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['stockAge']} onSeuil={v => setCustomSeuil('stockAge', v)} />
-                </div>
-                <ToggleRow
-                  label="Top 20 vieux stock traité ?"
-                  value={form.top20Traite}
-                  onChange={v => setForm(f => ({ ...f, top20Traite: v }))}
-                  hint="Intranet › Stats › Stocks › Ventilation"
-                />
-                <div className={hl('estalyParSemaine')}>
-                  <KpiRow label="Estaly / mois" field="estalyParSemaine" form={form} setF={setF}
-                    seuil={customSeuils['estalyParSemaine']} onSeuil={v => setCustomSeuil('estalyParSemaine', v)} />
-                </div>
-                <div className={hl('tauxSAV')}>
-                  <KpiRow label="Taux SAV" field="tauxSAV" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['tauxSAV']} onSeuil={v => setCustomSeuil('tauxSAV', v)} />
-                </div>
-                <div className={hl('tauxTransformation')}>
-                  <KpiRow label="Taux de transformation" field="tauxTransformation" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['tauxTransformation']} onSeuil={v => setCustomSeuil('tauxTransformation', v)} />
-                </div>
-                <KpiRow label="Ventes additionnelles" field="ventesAdditionnelles" form={form} setF={setF} unit="€"
-                  seuil={customSeuils['ventesAdditionnelles']} onSeuil={v => setCustomSeuil('ventesAdditionnelles', v)} />
-                <div className={hl('tauxAchatExterne')}>
-                  <KpiRow label="Achat externe" field="tauxAchatExterne" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['tauxAchatExterne']} onSeuil={v => setCustomSeuil('tauxAchatExterne', v)} />
-                </div>
-              </FormSection>
-
-              {/* Section Web */}
-              <FormSection title="🌐 Web">
-                <div className={hl('poidsDigital')}>
-                  <KpiRow label="Poids digital" field="poidsDigital" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['poidsDigital']} onSeuil={v => setCustomSeuil('poidsDigital', v)} />
-                </div>
-                <div className={hl('noteGoogle')}>
-                  <KpiRow label="Note Google" field="noteGoogle" form={form} setF={setF} placeholder="4.3"
-                    seuil={customSeuils['noteGoogle']} onSeuil={v => setCustomSeuil('noteGoogle', v)} />
-                </div>
-                <div className={hl('tauxAnnulationWeb')}>
-                  <KpiRow label="Taux d'annulation commande" field="tauxAnnulationWeb" form={form} setF={setF} unit="%"
-                    seuil={customSeuils['tauxAnnulationWeb']} onSeuil={v => setCustomSeuil('tauxAnnulationWeb', v)} />
-                </div>
-                <div className={hl('satisfactionWeb')}>
-                  <KpiRow label="Satisfaction client web" field="satisfactionWeb" form={form} setF={setF} unit="/5" placeholder="4.0"
-                    seuil={customSeuils['satisfactionWeb']} onSeuil={v => setCustomSeuil('satisfactionWeb', v)} />
-                </div>
-              </FormSection>
-
-              {/* Section VAH */}
-              {(() => {
-                const vahResult = vahHeures > 0 && form.caAnnuel > 0 && form.tauxMargeNette > 0
-                  ? (form.caAnnuel * form.tauxMargeNette / 100) / vahHeures : 0;
-                return (
-                  <div className="bg-white border border-[#E0E0E0] rounded-lg shadow-sm p-6">
-                    <h3 className="font-bold text-sm text-[#1A1A1A] mb-1">⏱ Ma valeur ajoutée horaire</h3>
-                    <p className="text-xs text-[#6B7280] italic mb-4">
-                      Cet indicateur est inspiré de la CHVACV de la méthodologie ISEOR (Savall &amp; Zardet, 1992). Il permet de chiffrer le coût caché des dysfonctionnements organisationnels.
-                    </p>
-                    <div className="space-y-3 mb-4">
-                      <div className="flex items-center gap-3 py-2 border-b border-[#F0F0F0]">
-                        <span className="flex-1 text-sm text-[#1A1A1A] font-medium">CA annuel <span className="text-[#9CA3AF] text-xs font-normal">(€)</span></span>
-                        <span className="text-sm font-semibold text-[#6B7280]">
-                          {form.caAnnuel > 0 ? form.caAnnuel.toLocaleString('fr-FR') + ' €' : <span className="text-[#9CA3AF] italic">non saisi</span>}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 py-2 border-b border-[#F0F0F0]">
-                        <span className="flex-1 text-sm text-[#1A1A1A] font-medium">Taux de marge nette <span className="text-[#9CA3AF] text-xs font-normal">(%)</span></span>
-                        <span className="text-sm font-semibold text-[#6B7280]">
-                          {form.tauxMargeNette > 0 ? form.tauxMargeNette + ' %' : <span className="text-[#9CA3AF] italic">non saisi</span>}
-                        </span>
-                      </div>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 py-2">
-                        <span className="flex-1 text-sm text-[#1A1A1A] font-medium">
-                          Heures travaillées/an (total équipe)
-                          <span className="text-[#9CA3AF] ml-1 text-xs font-normal">(h)</span>
-                        </span>
-                        <input
-                          type="number"
-                          className="w-full sm:w-40 bg-white border border-[#E0E0E0] rounded-lg px-2 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
-                          value={vahHeures || ''}
-                          onChange={e => updateVahHeures(parseFloat(e.target.value) || 0)}
-                          placeholder="Ex : 8035 (5 ETP × 1607h)"
-                        />
-                      </div>
+              {/* Seuils personnalisables */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <h3 className="font-bold text-sm text-[#1A1A1A] mb-1">🎯 Seuils cibles personnalisables</h3>
+                <p className="text-xs text-[#6B7280] italic mb-4">
+                  Ces seuils alimentent la section Priorité et les 3 KPI cards du tableau de bord.
+                  Laissez vide pour utiliser les seuils par défaut EasyCash.
+                </p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                  {SEUILS_CLES.map(({ key, label, unit }) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="flex-1 text-xs text-[#6B7280] truncate">{label}{unit && ` (${unit})`}</span>
+                      <input
+                        type="number"
+                        className="w-20 bg-white border border-amber-300 rounded-lg px-2 py-1.5 text-amber-700 text-xs focus:outline-none focus:border-amber-500 text-right"
+                        value={customSeuils[key] ?? ''}
+                        onChange={e => setCustomSeuil(key, parseFloat(e.target.value) || 0)}
+                        placeholder={String(SEUIL_DEFAULTS[key] ?? '')}
+                      />
                     </div>
-                    {vahResult > 0 ? (
-                      <div className="bg-[#FFF5F5] border border-[#E30613]/20 rounded-xl p-4">
-                        <div className="text-2xl font-black text-[#E30613] mb-1">{vahResult.toFixed(1)} €/h</div>
-                        <p className="text-sm text-[#1A1A1A] font-medium">
-                          Votre magasin produit en moyenne <strong>{vahResult.toFixed(1)} €</strong> de valeur ajoutée par heure de travail.
-                          Chaque heure perdue prive votre magasin de cette valeur.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="bg-[#F5F5F5] rounded-xl p-3 text-xs text-[#6B7280] italic">
-                        Renseignez les 3 champs pour obtenir votre valeur ajoutée horaire.
-                      </div>
-                    )}
+                  ))}
+                </div>
+              </div>
+
+              {/* VAH — CA from Simulateur (read-only), marge editable */}
+              <div className="bg-white border border-[#E0E0E0] rounded-lg shadow-sm p-5">
+                <h3 className="font-bold text-sm text-[#1A1A1A] mb-1">⏱ Ma valeur ajoutée horaire</h3>
+                <p className="text-xs text-[#6B7280] italic mb-4">
+                  Inspiré de la CHVACV (ISEOR — Savall &amp; Zardet, 1992). Le CA est lu depuis le module Simulateur.
+                </p>
+                <div className="space-y-3 mb-4">
+                  <div className="flex items-center gap-3 py-2 border-b border-[#F0F0F0]">
+                    <span className="flex-1 text-sm text-[#1A1A1A] font-medium">CA annuel <span className="text-[#9CA3AF] text-xs font-normal">(depuis Simulateur)</span></span>
+                    <span className="text-sm font-semibold text-[#6B7280]">
+                      {vahCa > 0
+                        ? vahCa.toLocaleString('fr-FR') + ' €'
+                        : <button onClick={() => { setShowModal(false); onNavigate('simulateur'); }} className="text-[#E30613] text-xs hover:underline italic">Configurer le Simulateur →</button>
+                      }
+                    </span>
                   </div>
-                );
-              })()}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 py-2 border-b border-[#F0F0F0]">
+                    <span className="flex-1 text-sm text-[#1A1A1A] font-medium">
+                      Taux de marge nette
+                      <span className="text-[#9CA3AF] ml-1 text-xs font-normal">(%)</span>
+                    </span>
+                    <input
+                      type="number"
+                      className="w-full sm:w-28 bg-white border border-[#E0E0E0] rounded-lg px-2 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
+                      value={vahMarge || ''}
+                      onChange={e => updateVahMarge(parseFloat(e.target.value) || 0)}
+                      placeholder="ex: 38"
+                    />
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 py-2">
+                    <span className="flex-1 text-sm text-[#1A1A1A] font-medium">
+                      Heures travaillées/an (total équipe)
+                      <span className="text-[#9CA3AF] ml-1 text-xs font-normal">(h)</span>
+                    </span>
+                    <input
+                      type="number"
+                      className="w-full sm:w-40 bg-white border border-[#E0E0E0] rounded-lg px-2 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#E30613]"
+                      value={vahHeures || ''}
+                      onChange={e => updateVahHeures(parseFloat(e.target.value) || 0)}
+                      placeholder="Ex : 8035 (5 ETP × 1607h)"
+                    />
+                  </div>
+                </div>
+                {vahResult > 0 ? (
+                  <div className="bg-[#FFF5F5] border border-[#E30613]/20 rounded-xl p-4">
+                    <div className="text-2xl font-black text-[#E30613] mb-1">{vahResult.toFixed(1)} €/h</div>
+                    <p className="text-sm text-[#1A1A1A] font-medium">
+                      Votre magasin produit en moyenne <strong>{vahResult.toFixed(1)} €</strong> de valeur ajoutée par heure de travail.
+                      Chaque heure perdue prive votre magasin de cette valeur.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-[#F5F5F5] rounded-xl p-3 text-xs text-[#6B7280] italic">
+                    Renseignez le taux de marge et les heures (CA depuis le Simulateur) pour obtenir votre valeur ajoutée horaire.
+                  </div>
+                )}
+              </div>
 
               <button
                 onClick={handleSave}
@@ -931,15 +795,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white border border-[#E0E0E0] rounded-lg shadow-sm p-6">
-      <h3 className="font-bold text-sm text-[#1A1A1A] mb-4">{title}</h3>
-      <div>{children}</div>
     </div>
   );
 }
