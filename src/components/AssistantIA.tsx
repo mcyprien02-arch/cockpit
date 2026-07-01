@@ -116,11 +116,23 @@ function buildDiagnosticPrompt(
 
 export default function AssistantIA({ data, actions, magasinNom }: Props) {
   const [prompt, setPrompt] = useState('');
+  const [livePrompt, setLivePrompt] = useState('');
+  const [showLive, setShowLive] = useState(true);
   const [copied, setCopied] = useState(false);
   const autoRan = useRef(false);
 
+  // Live preview — rebuilt from localStorage every 1.5s
+  useEffect(() => {
+    const update = () => setLivePrompt(buildDiagnosticPrompt(data, actions, magasinNom ?? ''));
+    update();
+    const id = setInterval(update, 1500);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function generate() {
-    setPrompt(buildDiagnosticPrompt(data, actions, magasinNom ?? ''));
+    const p = buildDiagnosticPrompt(data, actions, magasinNom ?? '');
+    setPrompt(p);
     setCopied(false);
   }
 
@@ -180,6 +192,30 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
           </div>
         ) : (
           <p className="text-xs text-[#9CA3AF] italic">Aucun module renseigné — remplissez Journal, Simulateur, Benchmark ou Histoire pour enrichir le prompt.</p>
+        )}
+      </div>
+
+      {/* Live prompt preview */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-4 py-3 text-left"
+          onClick={() => setShowLive(v => !v)}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-[#374151]">📡 Contexte transmis à l&apos;IA</span>
+            <span className="text-[10px] text-[#10B981] font-semibold bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full">mis à jour en direct</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            <span className="text-[10px] text-[#9CA3AF]">{livePrompt.length} car.</span>
+            <span className="text-[#9CA3AF] text-xs">{showLive ? '▲' : '▼'}</span>
+          </div>
+        </button>
+        {showLive && (
+          <div className="border-t border-[#E0E0E0] bg-[#F9FAFB]">
+            <pre className="text-[10px] text-[#374151] font-mono px-4 py-3 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+              {livePrompt || '(Chargement…)'}
+            </pre>
+          </div>
         )}
       </div>
 
