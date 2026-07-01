@@ -51,7 +51,7 @@ function loadActions(nom: string): PAPAction[] {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<TabId>('dashboard');
+  const [tab, setTab] = useState<TabId>('assistant');
   const [magasins, setMagasins] = useState<string[]>([]);
   const [currentNom, setCurrentNom] = useState<string>('');
   const [data, setData] = useState<MagasinData>(DEFAULT_DATA);
