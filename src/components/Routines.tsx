@@ -8,6 +8,7 @@ interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void;
 type FreqKey = 'quotidien' | '4x' | '3x' | '2x' | '1x' | 'mensuel';
 interface RoutineDef { id: string; label: string; freq: FreqKey; detail: string; monthly?: boolean; }
 interface BlocDef { icon: string; title: string; subtitle: string; headerBg: string; routines: RoutineDef[]; }
+interface CustomRoutine extends RoutineDef { blocTitle: string; isCustom: true; }
 type WeekData = Record<string, boolean[]>;
 
 const FREQ_DEFAULTS: Record<FreqKey, number> = { quotidien: 5, '4x': 4, '3x': 3, '2x': 2, '1x': 1, mensuel: 0 };
@@ -53,8 +54,8 @@ const BLOCS: BlocDef[] = [
         detail: 'Chaque matin : identifier les 3 modèles les plus manquants en gamme et briefer l\'équipe achat. "Aujourd\'hui on cherche iPhone 15, PS5 et Samsung A55." Focus = efficacité sourcing.' },
       { id: 'a6', label: 'Lecture journal des achats avec l\'équipe', freq: '1x',
         detail: 'Hebdomadaire : passer en revue les achats de la semaine. Quel acheteur a le meilleur ratio ? Quels produits sur-payés ? Retour formatif pour chaque acheteur, sur données réelles.' },
-      { id: 'a7', label: 'Audit acheteur via Grille Achat (VPD, test, fidélisation)', freq: 'mensuel', monthly: true,
-        detail: 'Chaque mois, auditer un acheteur via la Grille Achat du cockpit. 5 sections, 25 critères, score sur 100. Support de brief individuel. Voir module Grille Achat.' },
+      { id: 'a7', label: 'Audit acheteur : VPD, test Piceasoft, fidélisation client', freq: 'mensuel', monthly: true,
+        detail: 'Chaque mois, auditer un acheteur sur 5 axes : Application VPD, test Piceasoft systématique, demande avis Google, saisie fiche client Athéna, brief modèles prioritaires. Support individuel de recadrage.' },
     ],
   },
   {
@@ -236,8 +237,8 @@ function loadWeek(nom: string, off: number): WeekData {
   } catch { return {}; }
 }
 
-function computeScore(data: WeekData, cibles: Record<string, number>): number {
-  const scoreable = ALL_ROUTINES.filter(r => (cibles[r.id] ?? FREQ_DEFAULTS[r.freq]) > 0);
+function computeScore(data: WeekData, cibles: Record<string, number>, allR: RoutineDef[] = ALL_ROUTINES): number {
+  const scoreable = allR.filter(r => (cibles[r.id] ?? FREQ_DEFAULTS[r.freq]) > 0);
   if (scoreable.length === 0) return 0;
   const met = scoreable.filter(r => {
     const target = cibles[r.id] ?? FREQ_DEFAULTS[r.freq];
@@ -250,17 +251,24 @@ function computeScore(data: WeekData, cibles: Record<string, number>): number {
 export function getRoutinesContext(magasinNom: string): string {
   try {
     const cibles: Record<string, number> = (() => {
-      try {
-        const s = localStorage.getItem(`cibles_routines_${magasinNom}`);
-        return s ? JSON.parse(s) as Record<string, number> : {};
-      } catch { return {}; }
+      try { const s = localStorage.getItem(`cibles_routines_${magasinNom}`); return s ? JSON.parse(s) as Record<string, number> : {}; } catch { return {}; }
+    })();
+    const deletedIds: string[] = (() => {
+      try { const s = localStorage.getItem(`routines_deleted_${magasinNom}`); return s ? JSON.parse(s) as string[] : []; } catch { return []; }
+    })();
+    const customRoutines: CustomRoutine[] = (() => {
+      try { const s = localStorage.getItem(`routines_custom_${magasinNom}`); return s ? JSON.parse(s) as CustomRoutine[] : []; } catch { return []; }
     })();
     const weekData = loadWeek(magasinNom, 0);
     if (Object.keys(weekData).length === 0) return '';
     const lines: string[] = ['\nRoutines de la semaine en cours :'];
     for (const bloc of BLOCS) {
+      const blocRoutines: RoutineDef[] = [
+        ...bloc.routines.filter(r => !deletedIds.includes(r.id)),
+        ...customRoutines.filter(c => c.blocTitle === bloc.title),
+      ];
       const blocLines: string[] = [];
-      for (const r of bloc.routines) {
+      for (const r of blocRoutines) {
         const target = cibles[r.id] ?? FREQ_DEFAULTS[r.freq];
         if (target === 0) continue;
         const done = (weekData[r.id] ?? []).filter(Boolean).length;
@@ -291,6 +299,20 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
     } catch { return {}; }
   });
 
+  const [deletedIds, setDeletedIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try { const s = localStorage.getItem(`routines_deleted_${magasinNom}`); return s ? JSON.parse(s) as string[] : []; } catch { return []; }
+  });
+
+  const [customRoutines, setCustomRoutines] = useState<CustomRoutine[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try { const s = localStorage.getItem(`routines_custom_${magasinNom}`); return s ? JSON.parse(s) as CustomRoutine[] : []; } catch { return []; }
+  });
+
+  const [addingToBlocTitle, setAddingToBlocTitle] = useState<string | null>(null);
+  const [addLabel, setAddLabel] = useState('');
+  const [addFreq, setAddFreq] = useState<FreqKey>('1x');
+
   const [customLabels, setCustomLabels] = useState<Record<string, string>>(() => {
     if (typeof window === 'undefined') return {};
     try {
@@ -300,6 +322,37 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+
+  function getBlocRoutines(bloc: BlocDef): RoutineDef[] {
+    return [
+      ...bloc.routines.filter(r => !deletedIds.includes(r.id)),
+      ...customRoutines.filter(c => c.blocTitle === bloc.title),
+    ];
+  }
+
+  function deleteRoutine(id: string, isCustom: boolean) {
+    if (isCustom) {
+      const next = customRoutines.filter(c => c.id !== id);
+      setCustomRoutines(next);
+      try { localStorage.setItem(`routines_custom_${magasinNom}`, JSON.stringify(next)); } catch {}
+    } else {
+      const next = [...deletedIds, id];
+      setDeletedIds(next);
+      try { localStorage.setItem(`routines_deleted_${magasinNom}`, JSON.stringify(next)); } catch {}
+    }
+  }
+
+  function confirmAddRoutine(blocTitle: string) {
+    const trimmed = addLabel.trim();
+    if (!trimmed) return;
+    const newR: CustomRoutine = { id: `custom_${Date.now()}`, label: trimmed, freq: addFreq, detail: '', blocTitle, isCustom: true };
+    const next = [...customRoutines, newR];
+    setCustomRoutines(next);
+    try { localStorage.setItem(`routines_custom_${magasinNom}`, JSON.stringify(next)); } catch {}
+    setAddLabel('');
+    setAddFreq('1x');
+    setAddingToBlocTitle(null);
+  }
 
   function startEdit(id: string, currentLabel: string) {
     setEditingId(id);
@@ -397,8 +450,14 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
     return 'none';
   }
 
-  const scoreableRoutines = ALL_ROUTINES.filter(r => getTarget(r) > 0);
-  const pct = computeScore(weekData, cibles);
+  const effectiveAllRoutines = useMemo(
+    () => BLOCS.flatMap(b => getBlocRoutines(b)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deletedIds, customRoutines]
+  );
+
+  const scoreableRoutines = effectiveAllRoutines.filter(r => getTarget(r) > 0);
+  const pct = computeScore(weekData, cibles, effectiveAllRoutines);
   const metCount = scoreableRoutines.filter(r => {
     const target = getTarget(r);
     return (weekData[r.id] ?? []).filter(Boolean).length >= target;
@@ -409,10 +468,10 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
       const off = i - 11;
       const d = loadWeek(magasinNom, off);
       const hasData = Object.keys(d).length > 0;
-      return { off, pct: computeScore(d, cibles), hasData };
+      return { off, pct: computeScore(d, cibles, effectiveAllRoutines), hasData };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [magasinNom, weekData, cibles]);
+  }, [magasinNom, weekData, cibles, effectiveAllRoutines]);
 
   const withData = history.filter(h => h.hasData);
   let progressMsg = '';
@@ -431,7 +490,7 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
   const aggData = useMemo(() => {
     const weeks = viewMode === 'mois' ? 4 : 13;
     const allWeeks = Array.from({ length: weeks }, (_, i) => loadWeek(magasinNom, i - (weeks - 1)));
-    return ALL_ROUTINES.map(r => {
+    return effectiveAllRoutines.map(r => {
       const target = getTarget(r);
       if (target === 0) return { r, done: 0, expected: 0, pct: 0 };
       const done = allWeeks.reduce((s, w) => s + (w[r.id] ?? []).filter(Boolean).length, 0);
@@ -439,7 +498,7 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
       return { r, done, expected, pct: Math.round(done / expected * 100) };
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [magasinNom, viewMode, weekData, cibles]);
+  }, [magasinNom, viewMode, weekData, cibles, effectiveAllRoutines]);
 
   return (
     <div className="space-y-5">
@@ -448,7 +507,7 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
           <h2 className="text-lg font-bold text-[#1A1A1A]">
             🔁 Routines{magasinNom ? ` — ${magasinNom}` : ''}
           </h2>
-          <p className="text-sm text-[#6B7280] mt-0.5">6 domaines · {ALL_ROUTINES.length} routines · Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
+          <p className="text-sm text-[#6B7280] mt-0.5">6 domaines · {effectiveAllRoutines.length} routines · Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
         </div>
         {/* View selector */}
         <div className="flex rounded-xl border border-[#E0E0E0] overflow-hidden bg-white shadow-sm flex-shrink-0">
@@ -500,7 +559,8 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
             {viewMode === 'mois' ? 'Synthèse des 4 dernières semaines' : 'Synthèse des 13 dernières semaines'} — lecture seule.
           </p>
           {BLOCS.map(bloc => {
-            const blocAgg = aggData.filter(a => bloc.routines.some(r => r.id === a.r.id));
+            const blocEffective = getBlocRoutines(bloc);
+            const blocAgg = aggData.filter(a => blocEffective.some(r => r.id === a.r.id));
             const blocPct = blocAgg.length ? Math.round(blocAgg.reduce((s, a) => s + a.pct, 0) / blocAgg.length) : 0;
             return (
               <div key={bloc.title} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
@@ -530,10 +590,44 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
       {/* Weekly view — 6 blocs routines */}
       {viewMode === 'semaine' && BLOCS.map(bloc => (
         <div key={bloc.title} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-visible">
-          <div className={`px-4 py-3 ${bloc.headerBg} border-b border-[#E0E0E0] rounded-t-xl`}>
-            <h3 className="font-bold text-sm text-[#1A1A1A]">{bloc.icon} {bloc.title}</h3>
-            <p className="text-xs text-[#6B7280] mt-0.5">{bloc.subtitle}</p>
+          <div className={`px-4 py-3 ${bloc.headerBg} border-b border-[#E0E0E0] rounded-t-xl flex items-start justify-between gap-3`}>
+            <div>
+              <h3 className="font-bold text-sm text-[#1A1A1A]">{bloc.icon} {bloc.title}</h3>
+              <p className="text-xs text-[#6B7280] mt-0.5">{bloc.subtitle}</p>
+            </div>
+            <button
+              onClick={() => setAddingToBlocTitle(addingToBlocTitle === bloc.title ? null : bloc.title)}
+              className="text-xs text-[#E30613] border border-[#E30613] rounded-full px-2.5 py-0.5 hover:bg-red-50 transition-colors font-semibold flex-shrink-0 mt-0.5"
+            >
+              + Ajouter
+            </button>
           </div>
+          {addingToBlocTitle === bloc.title && (
+            <div className="px-4 py-3 bg-[#FFFAF5] border-b border-[#E0E0E0] flex items-center gap-2 flex-wrap">
+              <input
+                autoFocus
+                placeholder="Intitulé de la routine..."
+                value={addLabel}
+                onChange={e => setAddLabel(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmAddRoutine(bloc.title); if (e.key === 'Escape') setAddingToBlocTitle(null); }}
+                className="flex-1 text-xs border border-[#E0E0E0] rounded px-2.5 py-1.5 focus:outline-none focus:border-[#E30613] min-w-[140px]"
+              />
+              <select
+                value={addFreq}
+                onChange={e => setAddFreq(e.target.value as FreqKey)}
+                className="text-xs border border-[#E0E0E0] rounded px-2 py-1.5 focus:outline-none bg-white"
+              >
+                <option value="quotidien">Quotidien</option>
+                <option value="4x">4×/sem</option>
+                <option value="3x">3×/sem</option>
+                <option value="2x">2×/sem</option>
+                <option value="1x">1×/sem</option>
+                <option value="mensuel">Mensuel</option>
+              </select>
+              <button onClick={() => confirmAddRoutine(bloc.title)} className="text-xs text-white bg-[#E30613] rounded-full px-3 py-1 font-semibold hover:bg-red-700 transition-colors">Ajouter</button>
+              <button onClick={() => setAddingToBlocTitle(null)} className="text-xs text-[#9CA3AF] hover:text-[#1A1A1A]">Annuler</button>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-xs" style={{ overflowX: 'visible' }}>
               <thead>
@@ -546,7 +640,7 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0F0F0]">
-                {bloc.routines.map(routine => {
+                {getBlocRoutines(bloc).map(routine => {
                   const days = Array.from({ length: 7 }, (_, i) => !!(weekData[routine.id]?.[i]));
                   const status = getStatus(routine, days);
                   const target = getTarget(routine);
@@ -592,13 +686,23 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
                               >
                                 ✎
                               </button>
+                              {routine.detail && (
+                                <button
+                                  onClick={() => setTooltipId(isTooltipOpen ? null : routine.id)}
+                                  className="text-[#C0C0C0] hover:text-[#6B7280] transition-colors text-[11px] leading-none self-center flex-shrink-0"
+                                  title={routine.detail}
+                                  aria-label="Voir le détail"
+                                >
+                                  ℹ
+                                </button>
+                              )}
                               <button
-                                onClick={() => setTooltipId(isTooltipOpen ? null : routine.id)}
-                                className="text-[#C0C0C0] hover:text-[#6B7280] transition-colors text-[11px] leading-none self-center flex-shrink-0"
-                                title={routine.detail}
-                                aria-label="Voir le détail"
+                                onClick={() => deleteRoutine(routine.id, !!(routine as CustomRoutine).isCustom)}
+                                className="text-[#D0D0D0] hover:text-red-500 transition-colors text-[12px] leading-none self-center flex-shrink-0"
+                                title="Supprimer cette routine"
+                                aria-label="Supprimer"
                               >
-                                ℹ
+                                🗑
                               </button>
                             </div>
                           )}
