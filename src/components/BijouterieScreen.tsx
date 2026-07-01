@@ -24,6 +24,7 @@ interface BijRow {
   type: string;
   famCode: 'BOR'|'BOPI';
   acheteur: string;
+  clientNom: string;
   dv: number|null;
   d: string|null;
 }
@@ -59,7 +60,8 @@ const ALIASES: Record<string, string[]> = {
   prixAchat:          ['achatprix','prixachat','prixdachat'],
   prixVente:          ['venteprixvendu','prixvente','prixvendu'],
   easypricePrixVente: ['easypriceprixventegradeb','easypriceprixvente','coteep'],
-  collaborateur:      ['collaborateur','acheteur','utilisateur','clientacheteurnom','clientnom'],
+  collaborateur:      ['collaborateur','acheteur','utilisateur'],
+  clientNom:          ['clientacheteurnom','clientnom','nomclient','clientacheteurnomprenom'],
   delaiVente:         ['ventedelai','delaivente','delaidevente'],
   dateVente:          ['ventedate','datevente'],
 };
@@ -101,6 +103,15 @@ const BENCHMARKS_GAMME: Record<string,{label:string;tranches:{label:string;min:n
   BPLA: {label:'🟡 BPLA — Plaqué or',     tranches:[{label:'0 – 10 €',min:0,max:10,bench:33},{label:'10 – 20 €',min:10,max:20,bench:33},{label:'20 – 30 €',min:20,max:30,bench:26},{label:'> 30 €',min:30,max:Infinity,bench:8}]},
   BARG: {label:'🔘 BARG — Argent',         tranches:[{label:'0 – 10 €',min:0,max:10,bench:38},{label:'10 – 20 €',min:10,max:20,bench:25},{label:'20 – 30 €',min:20,max:30,bench:19},{label:'> 30 €',min:30,max:Infinity,bench:18}]},
 };
+
+const BENCH_TYPES: {type:string;bench:number}[] = [
+  {type:'Bague',bench:35},
+  {type:"Boucles d'oreille",bench:25},
+  {type:'Collier',bench:15},
+  {type:'Bracelet',bench:13},
+  {type:'Pendentif',bench:8},
+  {type:'Autre',bench:6},
+];
 
 const STOCK_SEUILS: Record<string,{label:string;mini:number;cible:number;maxi:number}> = {
   BOR:  {label:'💍 BOR — Or',         mini:10000,cible:15000,maxi:23000},
@@ -197,9 +208,9 @@ function median(arr: number[]): number|null {
 function isLigneFonte(row: BijRow, config: FonteConfig): boolean {
   if (config.useGradeD && row.g==='D') return true;
   if (config.useKeywords && config.keywords.length>0) {
-    const uLib = row.lib.toUpperCase().trim();
-    const uAch = row.acheteur.toUpperCase().trim();
-    if (config.keywords.some(k => uLib.includes(k) || uAch.includes(k))) return true;
+    const uLib    = row.lib.toUpperCase().trim();
+    const uClient = row.clientNom.toUpperCase().trim();
+    if (config.keywords.some(k => uLib.includes(k) || uClient.includes(k))) return true;
   }
   return false;
 }
@@ -243,7 +254,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
   const fileRef = useRef<HTMLInputElement>(null);
   const [bijTab,       setBijTab]       = useState<BijInnerTab>('analyse');
   const [checklist,    setChecklist]    = useState<Record<ChecklistId,boolean>>({} as Record<ChecklistId,boolean>);
-  const [journalRows,  setJournalRows]  = useState<{f:string;pv:number;ep:number|null}[]>([]);
+  const [journalRows,  setJournalRows]  = useState<{f:string;pv:number;ep:number|null;m:string}[]>([]);
   const stockFileRef = useRef<HTMLInputElement>(null);
   const [stockRows,    setStockRows]    = useState<{f:string;ep:number|null;pa:number}[]>([]);
   const [stockLoading, setStockLoading] = useState(false);
@@ -278,8 +289,8 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
     try {
       const s=localStorage.getItem(`journal_analyse_${magasinNom}`);
       if (s) {
-        const p=JSON.parse(s) as {rows?:{f:string;pv:number;ep?:number|null}[]};
-        if (Array.isArray(p.rows)) setJournalRows(p.rows.map(r=>({f:r.f,pv:r.pv,ep:r.ep??null})));
+        const p=JSON.parse(s) as {rows?:{f:string;pv:number;ep?:number|null;m?:string}[]};
+        if (Array.isArray(p.rows)) setJournalRows(p.rows.map(r=>({f:r.f,pv:r.pv,ep:r.ep??null,m:r.m??''})));
       }
     } catch {}
     try {
@@ -311,6 +322,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
         const pa=col.prixAchat?parseNum(row[col.prixAchat]):0;
         const ep=col.easypricePrixVente?(parseNum(row[col.easypricePrixVente])||null):null;
         const acheteur=col.collaborateur?String(row[col.collaborateur]??'').trim():'';
+        const clientNom=col.clientNom?String(row[col.clientNom]??'').trim():'';
         const dvRaw=col.delaiVente?parseNum(row[col.delaiVente]):null;
         const dv=dvRaw!=null&&dvRaw>0?dvRaw:null;
         const dateV=col.dateVente?parseDateVal(row[col.dateVente]):null;
@@ -320,7 +332,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
           titre: detectTitreOr(lib),
           type:  detectTypeBijou(lib),
           famCode: detectFamCode(sf),
-          acheteur, dv,
+          acheteur, clientNom, dv,
           d: dateV?.toISOString()??null,
         });
       }
@@ -594,8 +606,8 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
     const byKw=fonteConfig.useKeywords&&fonteConfig.keywords.length>0
       ?fonteRows.filter(r=>{
         const uLib=r.lib.toUpperCase().trim();
-        const uAch=r.acheteur.toUpperCase().trim();
-        return fonteConfig.keywords.some(k=>uLib.includes(k)||uAch.includes(k));
+        const uClient=r.clientNom.toUpperCase().trim();
+        return fonteConfig.keywords.some(k=>uLib.includes(k)||uClient.includes(k));
       })
       :[];
     return {
@@ -1334,6 +1346,60 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
               );
             })}
           </div>
+          {/* Product-type axis */}
+          {(()=>{
+            const bijRows=journalRows.filter(r=>r.f==='BOR'||r.f==='BOPI');
+            const total=bijRows.length;
+            const typeData=BENCH_TYPES.map(bt=>{
+              const n=bijRows.filter(r=>detectTypeBijou(r.m)===bt.type).length;
+              const real=total>0?Math.round(n/total*100):null;
+              const ecart=real!=null?real-bt.bench:null;
+              const badge=ecart==null?null:Math.abs(ecart)<=5?'vert':Math.abs(ecart)<=15?'orange':'rouge';
+              return {...bt,real,ecart,badge};
+            });
+            return (
+              <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-[#1A1A1A]">💍 Répartition par type de produit (BOR + BOPI)</h4>
+                  <span className="text-[10px] text-[#9CA3AF]">{total>0?`${total} ventes`:'Aucune donnée'}</span>
+                </div>
+                <div className="space-y-4">
+                  {typeData.map((t,i)=>(
+                    <div key={i} className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-[#1A1A1A]">{t.type}</span>
+                        {t.badge&&t.ecart!=null&&(
+                          <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 ${
+                            t.badge==='vert'?'bg-green-100 text-green-700':
+                            t.badge==='orange'?'bg-orange-100 text-orange-700':
+                            'bg-red-100 text-red-700'
+                          }`}>{t.ecart>0?'+':''}{t.ecart} pt</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-[#E30613] font-semibold w-14">Réseau</span>
+                        <div className="flex-1 bg-[#F0F0F0] rounded-full h-2">
+                          <div className="bg-[#E30613] rounded-full h-2" style={{width:`${t.bench}%`}}/>
+                        </div>
+                        <span className="text-[10px] font-bold text-[#E30613] w-6 text-right">{t.bench}%</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-[#6B7280] font-semibold w-14">Magasin</span>
+                        <div className="flex-1 bg-[#F0F0F0] rounded-full h-2">
+                          {t.real!=null
+                            ?<div className="bg-[#6B7280] rounded-full h-2 transition-all" style={{width:`${t.real}%`}}/>
+                            :<div className="bg-[#E0E0E0] rounded-full h-2 w-full"/>
+                          }
+                        </div>
+                        <span className="text-[10px] font-bold text-[#6B7280] w-6 text-right">{t.real!=null?`${t.real}%`:'—'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-[#9CA3AF]">Benchmark réseau : Bague 35% · BO 25% · Collier 15% · Bracelet 13% · Pendentif 8% · Autre 6% — détection par libellé article.</p>
+              </div>
+            );
+          })()}
           <p className="text-[11px] text-[#9CA3AF] italic">Sources : fiche pratique EasyCash bijouterie. Écart ≤ 5 pt → vert · 6-15 pt → orange · &gt; 15 pt → rouge.</p>
         </div>
       )}
