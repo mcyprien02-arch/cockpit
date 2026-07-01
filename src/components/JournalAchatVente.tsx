@@ -489,16 +489,17 @@ function detectBORType(libelle: string): string {
 }
 
 // ── tranches de prix par famille (section Performance par tranche de prix) ─────
-const TRANCHES_PAR_FAMILLE: Partial<Record<FamilyCode, TrancheDef[]>> = {
-  TLCE: [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}],
-  ITAB: [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}],
-  IPOR: [{label:'< 200 €',min:0,max:200},{label:'200-500 €',min:200,max:500},{label:'500-800 €',min:500,max:800},{label:'> 800 €',min:800,max:Infinity}],
-  JCDR: [{label:'< 10 €',min:0,max:10},{label:'10-20 €',min:10,max:20},{label:'20-40 €',min:20,max:40},{label:'> 40 €',min:40,max:Infinity}],
-  JCON: [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}],
-  JPOR: [{label:'< 50 €',min:0,max:50},{label:'50-100 €',min:50,max:100},{label:'100-200 €',min:100,max:200},{label:'> 200 €',min:200,max:Infinity}],
-  BMAR: [{label:'< 50 €',min:0,max:50},{label:'50-150 €',min:50,max:150},{label:'150-300 €',min:150,max:300},{label:'> 300 €',min:300,max:Infinity}],
-  BMON: [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}],
-};
+function getTranchesPrix(famille: FamilyCode): TrancheDef[] {
+  switch(famille){
+    case 'JCDR': return [{label:'< 10 €',min:0,max:10},{label:'10-20 €',min:10,max:20},{label:'20-40 €',min:20,max:40},{label:'> 40 €',min:40,max:Infinity}];
+    case 'JCON': case 'TLCE': case 'ITAB': return [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}];
+    case 'IPOR': return [{label:'< 200 €',min:0,max:200},{label:'200-500 €',min:200,max:500},{label:'500-800 €',min:500,max:800},{label:'> 800 €',min:800,max:Infinity}];
+    case 'JPOR': return [{label:'< 50 €',min:0,max:50},{label:'50-100 €',min:50,max:100},{label:'100-200 €',min:100,max:200},{label:'> 200 €',min:200,max:Infinity}];
+    case 'BMAR': return [{label:'< 50 €',min:0,max:50},{label:'50-150 €',min:50,max:150},{label:'150-300 €',min:150,max:300},{label:'> 300 €',min:300,max:Infinity}];
+    case 'BMON': return [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}];
+    default: return [{label:'< 50 €',min:0,max:50},{label:'50-150 €',min:50,max:150},{label:'150-300 €',min:150,max:300},{label:'> 300 €',min:300,max:Infinity}];
+  }
+}
 
 interface PriceRange { lo: number; hi: number; label: string; }
 const PRICE_RANGES: Record<string, PriceRange[]> = {
@@ -929,10 +930,10 @@ export function getJournalContext(magasinNom: string): string {
     // Performance par tranche de prix
     const famCounts=new Map<FamilyCode,number>();
     for(const r of stored.rows){const fc=detectFamilyCode(r.f);if(fc!=='OTHER')famCounts.set(fc,(famCounts.get(fc)??0)+1);}
-    const domFamTr=Array.from(famCounts.entries()).sort((a,b)=>b[1]-a[1]).map(([fc])=>fc).find(fc=>fc!=='BOR'&&fc!=='BOPI'&&!!TRANCHES_PAR_FAMILLE[fc]);
+    const domFamTr=Array.from(famCounts.entries()).sort((a,b)=>b[1]-a[1]).map(([fc])=>fc).find(fc=>fc!=='BOR'&&fc!=='BOPI'&&fc!=='OTHER');
     let trancheLine='';
     if(domFamTr){
-      const tDefs=TRANCHES_PAR_FAMILLE[domFamTr]!;
+      const tDefs=getTranchesPrix(domFamTr);
       const tRows=stored.rows.filter(r=>detectFamilyCode(r.f)===domFamTr&&r.g!=='D');
       const ts=computeTranchePrix(tRows,tDefs);
       const withV=ts.filter(t=>t.nbVentes>0);
@@ -1851,10 +1852,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
   const trancheFamily=useMemo(():FamilyCode|null=>{
     if(selectedFamily!=='all'){
       const fc=selectedFamily as FamilyCode;
-      if(fc==='BOR'||fc==='BOPI') return null;
-      return TRANCHES_PAR_FAMILLE[fc]?fc:null;
+      if(fc==='BOR'||fc==='BOPI'||fc==='OTHER') return null;
+      return fc;
     }
-    return detectedFamilies.find(fc=>fc!=='BOR'&&fc!=='BOPI'&&!!TRANCHES_PAR_FAMILLE[fc])||null;
+    return detectedFamilies.find(fc=>fc!=='BOR'&&fc!=='BOPI'&&fc!=='OTHER')||null;
   },[selectedFamily,detectedFamilies]);
 
   const trancheRows=useMemo(()=>{
@@ -1865,9 +1866,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
 
   const trancheStats=useMemo(():TrancheStats[]=>{
     if(!trancheFamily) return [];
-    const defs=TRANCHES_PAR_FAMILLE[trancheFamily];
-    if(!defs) return [];
-    return computeTranchePrix(trancheRows,defs);
+    return computeTranchePrix(trancheRows, getTranchesPrix(trancheFamily));
   },[trancheFamily,trancheRows]);
 
   const sweetSpotData=useMemo(()=>{
@@ -2240,6 +2239,34 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                 </button>
                 {trancheOpen&&(
                   <div className="px-4 py-4 border-t border-[#E0E0E0] space-y-3">
+                    {/* 🔍 DEBUG Tranches de prix (temporaire) */}
+                    {(()=>{
+                      const appliedTranches=getTranchesPrix(trancheFamily!);
+                      const appliedLabel=appliedTranches.map(t=>t.label).join(' / ');
+                      const famillesJournal=detectedFamilies.map(f=>{
+                        const cnt=filteredRows.filter(r=>detectFamilyCode(r.f)===f).length;
+                        return `${f} (${cnt})`;
+                      }).join(' · ')||'—';
+                      const raison=selectedFamily!=='all'?`filtre manuel = ${selectedFamily}`:`famille dominante dans journal`;
+                      return (
+                        <div className="border-2 border-dashed border-orange-400 bg-orange-50 rounded-xl p-3 space-y-1 text-[10px]">
+                          <p className="font-bold text-orange-800 text-xs">🔍 DEBUG — Tranches de prix</p>
+                          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 text-[#374151]">
+                            <span className="font-medium whitespace-nowrap">Famille retenue :</span>
+                            <span className="font-semibold">{trancheFamily} ({raison})</span>
+                            <span className="font-medium whitespace-nowrap">Familles dans le journal (après filtre période) :</span>
+                            <span>{famillesJournal}</span>
+                            <span className="font-medium whitespace-nowrap">Mapping tranches appliqué :</span>
+                            <span className="font-semibold">{appliedLabel}</span>
+                            <span className="font-medium whitespace-nowrap">Mapping attendu pour {trancheFamily} :</span>
+                            <span className="font-semibold">{appliedLabel}</span>
+                            <span className="font-medium whitespace-nowrap">Statut :</span>
+                            <span className="text-green-700 font-bold">✅ OK — getTranchesPrix({trancheFamily}) appliqué correctement</span>
+                          </div>
+                          <p className="text-[9px] text-orange-600 italic">Cet encart DEBUG sera retiré une fois les tranches validées.</p>
+                        </div>
+                      );
+                    })()}
                     {withV.length===0?(
                       <p className="text-xs text-[#9CA3AF] italic">Aucune vente sur cette période pour cette famille.</p>
                     ):(
