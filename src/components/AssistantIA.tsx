@@ -52,9 +52,10 @@ MÉTHODOLOGIE GPA (structure de pilotage) :
 - Prix : côtes d'accélération réseau, pricing concurrentiel, décotes accélératrices
 - Animation : contrats Estaly, ventes additionnelles, animation vitrine, demandes d'avis Google
 
-BENCHMARKS RÉSEAU EASYCASH (référence pour tes recommandations) :
-- Taux de marge brute : ≥ 40% (Lancement), ≥ 42% (Croissance), ≥ 44% (Maturité)
-- Masse salariale : ≤ 15% du CA (cible DAF)
+BENCHMARKS RÉSEAU EASYCASH 2024 (référence pour tes recommandations) :
+- Taux de marge brute — Réseau réel : Moy. 35,6% | Méd. 35,6% — Cibles par phase : ≥ 40% (Lancement), ≥ 42% (Croissance), ≥ 44% (Maturité)
+- Masse salariale — Réseau réel : Moy. 15,1% | Méd. 15,0% du CA HT — Cible DAF : ≤ 15%
+- EBE — Réseau réel : Moy. 6,8% | Méd. 7,0% du CA HT
 - CA par ETP : ≥ 250 000 € (référence réseau)
 - Sourcing comptoir : > 60% des achats (pour préserver la marge)
 - Turnover équipe : ≤ 15% par an (vigilance 15–30%, alerte > 30%)
@@ -100,7 +101,7 @@ const PROMPT_TEMPLATES = [
     label: 'Équipe & RH',
     icon: '👥',
     build: (data: MagasinData) => {
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nAnalyse les données RH présentes dans le contexte (Simulateur : CA, ETP, masse salariale %, turnover) et donne-moi :\n1. Analyse du ratio CA/ETP et de la masse salariale vs benchmark réseau (≤15% CA)\n2. Si turnover élevé : actions concrètes pour le réduire\n3. Plan de montée en compétences GPA prioritaire pour l'équipe\n4. Rituel managérial à instaurer cette semaine`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nAnalyse les données RH présentes dans le contexte (Simulateur : CA, ETP, masse salariale %, turnover) et donne-moi :\n1. Analyse du ratio CA/ETP et de la masse salariale vs benchmark 2024 (Moy. 15,1% | Méd. 15,0% CA HT)\n2. Si turnover élevé : actions concrètes pour le réduire\n3. Plan de montée en compétences GPA prioritaire pour l'équipe\n4. Rituel managérial à instaurer cette semaine`;
     },
   },
   {
