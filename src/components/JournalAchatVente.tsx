@@ -773,6 +773,21 @@ function isInGamme(modele: string, gamme: GammeReseau): boolean {
   }
   return false;
 }
+function isInGammeDebug(modele: string, gamme: GammeReseau): {matched: boolean; matchedKey: string|null} {
+  const n = normGamme(modele);
+  const top20count = gamme.modeles.filter(m => m.inTop20).length;
+  const candidates = top20count >= 20 ? gamme.modeles.filter(m => m.inTop20) : gamme.modeles;
+  for (const gm of candidates) {
+    const key = gm.key_normalisee;
+    if (!key) continue;
+    if (n === key) return {matched:true, matchedKey:key};
+    if (n.includes(key) || key.includes(n)) return {matched:true, matchedKey:key};
+    const mots = key.split(' ').filter(m => m.length > 2);
+    if (!mots.length) continue;
+    if (mots.filter(m => n.includes(m)).length / mots.length >= 0.8) return {matched:true, matchedKey:key};
+  }
+  return {matched:false, matchedKey:null};
+}
 
 // ── weighted average EP gap ───────────────────────────────────────────────────
 function wAvg(rows: ModelStats[], getV: (s: ModelStats)=>number|null): number|null {
@@ -1799,16 +1814,30 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     const result=new Set<string>();
     for(const s of stats){
       if(!MIN3(s)) continue;
-      const famGamme=gammes[s.famille as FamilyCode]||null;
+      const fc=detectFamilyCode(s.famille);
+      const famGamme=gammes[fc]||null;
       if(!famGamme) continue;
       if(!isInGamme(s.modele,famGamme)){
-        console.log('[pépite] absent gamme:',s.modele,'famille:',s.famille,'nb_modeles:',famGamme.modeles.length,'top20:',famGamme.nb_top20);
         result.add(s.modele.toLowerCase());
       }
     }
-    console.log('[pépite] set size:',result.size,'sur',stats.filter(MIN3).length,'modèles qualifiés');
     return result;
   },[stats,gammes]);
+
+  // Debug matching info (visible panel — remove once matching validated)
+  const debugMatchInfo=useMemo(()=>{
+    const sample5=topRotations.slice(0,5);
+    return sample5.map(s=>{
+      const fc=detectFamilyCode(s.famille);
+      const famGamme=gammes[fc]||null;
+      const keyJournal=normGamme(s.modele);
+      const dbg=famGamme?isInGammeDebug(s.modele,famGamme):{matched:false,matchedKey:null};
+      return {modele:s.modele,keyJournal,fc,famGamme,matched:dbg.matched,matchedKey:dbg.matchedKey,isPepite:famGamme&&!dbg.matched};
+    });
+  },[topRotations,gammes]);
+  const debugRotPep=useMemo(()=>topRotations.filter(s=>pepiteLocaleSet.has(s.modele.toLowerCase())).length,[topRotations,pepiteLocaleSet]);
+  const debugCoeffPep=useMemo(()=>topCoeff.filter(s=>pepiteLocaleSet.has(s.modele.toLowerCase())).length,[topCoeff,pepiteLocaleSet]);
+  const debugVolPep=useMemo(()=>topVolume.filter(s=>pepiteLocaleSet.has(s.modele.toLowerCase())).length,[topVolume,pepiteLocaleSet]);
 
   // Weighted avg EP gaps per table
   const rotEcartPA =useMemo(()=>wAvg(topRotations,s=>s.ecartEPA),[topRotations]);
@@ -2294,6 +2323,52 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                 </table>
               </div>
               <p className="text-xs text-[#9CA3AF] italic px-1">Ces données aident à identifier les acheteurs qui appliquent le mieux la VPD et qui maîtrisent la cote EasyPrice.</p>
+            </div>
+          )}
+
+          {/* 🔍 DEBUG — matching pépites locales (temporaire) */}
+          {stored&&(
+            <div className="border-2 border-dashed border-yellow-400 bg-yellow-50 rounded-xl p-4 space-y-3 text-xs">
+              <p className="font-bold text-yellow-800 text-sm">🔍 DEBUG — Matching pépites locales</p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[#374151]">
+                <span className="font-medium">Familles détectées dans le journal :</span>
+                <span>{detectedFamilies.length>0?detectedFamilies.join(', '):'—'}</span>
+                <span className="font-medium">Gammes réseau disponibles :</span>
+                <span>{detectedFamilies.filter(f=>gammes[f]).map(f=>`${f} (${gammes[f].nb_modeles} modèles, ${gammes[f].nb_top20} matching)`).join(' · ')||'Aucune'}</span>
+                <span className="font-medium">Modèles dans pepiteLocaleSet :</span>
+                <span className="font-semibold">{pepiteLocaleSet.size} / {stats.filter(MIN3).length} qualifiés</span>
+                <span className="font-medium">Pépites dans Top Rotations :</span><span>{debugRotPep}</span>
+                <span className="font-medium">Pépites dans Top Coefficient :</span><span>{debugCoeffPep}</span>
+                <span className="font-medium">Pépites dans Top Volumes :</span><span>{debugVolPep}</span>
+              </div>
+              {debugMatchInfo.length>0&&(
+                <div className="space-y-1">
+                  <p className="font-semibold text-yellow-800">Détail matching — 5 premiers modèles Top Rotations :</p>
+                  <div className="overflow-x-auto">
+                    <table className="text-[10px] w-full border-collapse min-w-[520px]">
+                      <thead><tr className="bg-yellow-200">
+                        {['#','Modèle (libellé brut)','Key journal normalisée','Famille détectée','Gamme dispo ?','Résultat match','Key gamme matchée','Pépite locale ?'].map((l,i)=>(
+                          <th key={i} className="px-2 py-1 text-left font-semibold text-yellow-900 whitespace-nowrap">{l}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>{debugMatchInfo.map((d,i)=>(
+                        <tr key={i} className={i%2===0?'bg-yellow-50':'bg-white'}>
+                          <td className="px-2 py-1 text-center text-[#9CA3AF]">{i+1}</td>
+                          <td className="px-2 py-1 font-medium max-w-[160px]"><span className="block truncate">{d.modele}</span></td>
+                          <td className="px-2 py-1 italic text-[#6B7280] max-w-[160px]"><span className="block truncate">{d.keyJournal}</span></td>
+                          <td className="px-2 py-1">{d.fc}</td>
+                          <td className="px-2 py-1">{d.famGamme?<span className="text-green-700 font-semibold">OUI ({d.famGamme.nb_modeles})</span>:<span className="text-red-500 font-semibold">NON</span>}</td>
+                          <td className="px-2 py-1">{d.famGamme?(d.matched?<span className="text-green-700 font-semibold">✅ OUI</span>:<span className="text-orange-600 font-semibold">❌ NON</span>):<span className="text-[#9CA3AF]">N/A</span>}</td>
+                          <td className="px-2 py-1 italic text-[#6B7280] max-w-[160px]"><span className="block truncate">{d.matchedKey||'—'}</span></td>
+                          <td className="px-2 py-1">{d.isPepite?<span className="text-green-700 font-bold">🌍 OUI</span>:d.famGamme?<span className="text-[#9CA3AF]">Non</span>:<span className="text-[#9CA3AF]">N/A</span>}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {debugMatchInfo.length===0&&<p className="text-yellow-700 italic">Aucun modèle dans Top Rotations — importez un journal ou ajustez la période.</p>}
+              <p className="text-[10px] text-yellow-600 italic">Cet encart DEBUG sera retiré une fois la détection validée.</p>
             </div>
           )}
 
