@@ -592,7 +592,11 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
     const va=fonteRows.reduce((s,r)=>s+r.pa,0);
     const byGradeD=fonteRows.filter(r=>r.g==='D');
     const byKw=fonteConfig.useKeywords&&fonteConfig.keywords.length>0
-      ?fonteRows.filter(r=>{const u=r.lib.toUpperCase();return fonteConfig.keywords.some(k=>u.includes(k));})
+      ?fonteRows.filter(r=>{
+        const uLib=r.lib.toUpperCase().trim();
+        const uAch=r.acheteur.toUpperCase().trim();
+        return fonteConfig.keywords.some(k=>uLib.includes(k)||uAch.includes(k));
+      })
       :[];
     return {
       nbLignes:fonteRows.length,
