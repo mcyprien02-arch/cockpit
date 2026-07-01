@@ -14,6 +14,7 @@ import Routines from '@/components/Routines';
 import JournalAchatVente from '@/components/JournalAchatVente';
 import BijouterieScreen from '@/components/BijouterieScreen';
 import BenchmarkFinancier from '@/components/BenchmarkFinancier';
+import GrilleAchat from '@/components/GrilleAchat';
 import { detectSpiral } from '@/lib/spiral';
 
 const TABS = [
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'journal',     label: '📊 Journal' },
   { id: 'bijouterie',  label: '💍 Bijouterie' },
   { id: 'benchmark',   label: '📊 Benchmark' },
+  { id: 'grille-achat', label: '📋 Grille Achat' },
   { id: 'couverture',  label: '🗂 Gamme' },
   { id: 'routines',    label: '🔁 Routines' },
   { id: 'competences', label: '🎓 Compétences' },
@@ -161,6 +163,7 @@ export default function App() {
         {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} onNavigateToBijouterie={() => setTab('bijouterie')} />}
         {tab === 'bijouterie'  && <BijouterieScreen  magasinNom={currentNom} onNavigateToJournal={() => setTab('journal')} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'benchmark'   && <BenchmarkFinancier magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'grille-achat' && <GrilleAchat       magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'routines'    && <Routines          magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'competences' && <Competences       magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
