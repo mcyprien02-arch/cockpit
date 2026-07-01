@@ -72,82 +72,62 @@ Adapte impérativement le niveau d'exigence, les objectifs chiffrés et le ton d
 
 RÈGLES DE RÉPONSE : Réponds en 5 phrases maximum. Direct, chiffré, actionnable. Utilise les benchmarks réseau. Priorise les actions à impact financier immédiat. Termine par une action à faire dans les 48h.`;
 
-const PROMPT_TEMPLATES = [
-  {
-    id: 'diagnostic',
-    label: 'Diagnostic complet',
-    icon: '🔍',
-    build: (data: MagasinData, actions: PAPAction[]) => {
-      const actionStr = actions.filter(a => a.statut !== 'Fait').slice(0, 5).map(a => `- [P${a.priorite}] ${a.titre} (${a.statut})`).join('\n');
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nACTIONS EN COURS:\n${actionStr || 'Aucune action'}\n\nAnalyse l'ensemble des données disponibles dans le contexte ci-dessous (Histoire, Simulateur RH, Journal, Benchmark, Routines, Vision) et produis un diagnostic structuré :\n1. Points forts identifiés dans les données\n2. Problèmes prioritaires avec leur impact financier estimé\n3. Plan d'action concret (3 actions max, priorisées P1/P2/P3)\n4. Indicateur à surveiller chaque semaine`;
-    },
-  },
-  {
-    id: 'stock',
-    label: 'Stock & Sourcing',
-    icon: '📦',
-    build: (data: MagasinData) => {
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nAnalyse les données du Journal Achat-Vente présentes dans le contexte (rotation, délais, sourcing, écarts PA/PV vs EP réseau, pépites locales) et donne-moi :\n1. Les familles/modèles à traiter en priorité selon leur délai d'écoulement\n2. L'analyse du sourcing (équilibre comptoir vs fournisseurs, marge par canal)\n3. Les pépites locales absentes de ma gamme à sourcer en priorité\n4. Une action concrète sur les accélérations à lancer cette semaine`;
-    },
-  },
-  {
-    id: 'commerce',
-    label: 'Marges & Performance',
-    icon: '💰',
-    build: (data: MagasinData) => {
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nAnalyse les données de marge présentes dans le contexte (Journal : top coefficient d'écoulement, écart PA/PV vs EP ; Benchmark : charges vs réseau, potentiel d'optimisation) et donne-moi :\n1. Les produits/familles avec le meilleur coefficient marge×rotation à renforcer\n2. Les postes de charges surdimensionnés vs réseau à traiter en priorité\n3. Comment améliorer le prix d'achat au comptoir (VPD, négociation, Piceasoft)\n4. Une action immédiate pour gagner de la marge dès cette semaine`;
-    },
-  },
-  {
-    id: 'rh',
-    label: 'Équipe & RH',
-    icon: '👥',
-    build: (data: MagasinData) => {
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nAnalyse les données RH présentes dans le contexte (Simulateur : CA, ETP, masse salariale %, turnover) et donne-moi :\n1. Analyse du ratio CA/ETP et de la masse salariale vs benchmark 2024 (Moy. 15,1% | Méd. 15,0% CA HT)\n2. Si turnover élevé : actions concrètes pour le réduire\n3. Plan de montée en compétences GPA prioritaire pour l'équipe\n4. Rituel managérial à instaurer cette semaine`;
-    },
-  },
-  {
-    id: 'custom',
-    label: 'Question libre',
-    icon: '✏️',
-    build: (data: MagasinData) => {
-      return `${SYSTEM_PROMPT}\n\nContexte magasin EasyCash:\n- Nom: ${data.nom || 'Non renseigné'}\n- Phase: ${data.phase}\n\n`;
-    },
-  },
-];
+function buildDiagnosticPrompt(
+  data: MagasinData,
+  actions: PAPAction[],
+  magasinNom: string,
+): string {
+  const actionStr = actions
+    .filter(a => a.statut !== 'Fait')
+    .slice(0, 5)
+    .map(a => `- [P${a.priorite}] ${a.titre} (${a.statut})`)
+    .join('\n');
+
+  const histoireCtx  = magasinNom ? getHistoireContext(magasinNom) : '';
+  const simuCtx      = magasinNom ? getSimulateurContext(magasinNom) : '';
+  const journalCtx   = magasinNom ? getJournalContext(magasinNom) : '';
+  const routinesCtx  = magasinNom ? getRoutinesContext(magasinNom) : '';
+  const visionCtx    = magasinNom ? getVisionContext(magasinNom) : '';
+  const benchmarkCtx = magasinNom ? getBenchmarkContext(magasinNom) : '';
+
+  const filledModules = [
+    histoireCtx  && 'Histoire',
+    simuCtx      && 'Équipe/RH',
+    journalCtx   && 'Journal Achat-Vente',
+    routinesCtx  && 'Routines',
+    visionCtx    && 'Vision & Objectifs',
+    benchmarkCtx && 'Benchmark financier',
+  ].filter(Boolean).join(', ');
+
+  let prompt = `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}`;
+
+  if (actionStr) prompt += `\n\nACTIONS EN COURS:\n${actionStr}`;
+  if (histoireCtx)  prompt += `\n\nHISTOIRE DU MAGASIN :${histoireCtx}`;
+  if (simuCtx)      prompt += `\n\nÉQUIPE & RH :${simuCtx}`;
+  if (journalCtx)   prompt += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
+  if (routinesCtx)  prompt += `\n\nROUTINES HEBDOMADAIRES :${routinesCtx}`;
+  if (visionCtx)    prompt += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
+  if (benchmarkCtx) prompt += `\n\nBENCHMARK FINANCIER :${benchmarkCtx}`;
+
+  prompt += `\n\nMODULES DISPONIBLES : ${filledModules || 'aucun module renseigné'}\n\nProduis un diagnostic complet structuré :\n1. Points forts identifiés dans les données\n2. Problèmes prioritaires avec leur impact financier estimé\n3. Plan d'action concret (3 actions max, priorisées P1/P2/P3)\n4. Indicateur à surveiller chaque semaine`;
+
+  return prompt;
+}
 
 export default function AssistantIA({ data, actions, magasinNom }: Props) {
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [copied, setCopied] = useState(false);
   const autoRan = useRef(false);
 
-  function selectTemplate(id: string) {
-    const tpl = PROMPT_TEMPLATES.find(t => t.id === id);
-    if (!tpl) return;
-    setSelectedTemplate(id);
-    const base = tpl.build(data, actions);
-    const histoireCtx   = magasinNom ? getHistoireContext(magasinNom) : '';
-    const simuCtx       = magasinNom ? getSimulateurContext(magasinNom) : '';
-    const journalCtx    = magasinNom ? getJournalContext(magasinNom) : '';
-    const routinesCtx   = magasinNom ? getRoutinesContext(magasinNom) : '';
-    const visionCtx     = magasinNom ? getVisionContext(magasinNom) : '';
-    const benchmarkCtx  = magasinNom ? getBenchmarkContext(magasinNom) : '';
-    let built = base;
-    if (histoireCtx)  built += `\n\nHISTOIRE DU MAGASIN :${histoireCtx}`;
-    if (simuCtx)      built += `\n\nÉQUIPE & RH :${simuCtx}`;
-    if (journalCtx)   built += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
-    if (routinesCtx)  built += `\n\nROUTINES HEBDOMADAIRES :${routinesCtx}`;
-    if (visionCtx)    built += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
-    if (benchmarkCtx) built += `\n\nBENCHMARK FINANCIER :${benchmarkCtx}`;
-    setPrompt(built);
+  function generate() {
+    setPrompt(buildDiagnosticPrompt(data, actions, magasinNom ?? ''));
     setCopied(false);
   }
 
   useEffect(() => {
     if (!autoRan.current) {
       autoRan.current = true;
-      selectTemplate('diagnostic');
+      generate();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -175,7 +155,7 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
     journalCtxPreview   && '📊 Journal',
     routinesCtxPreview  && '🔁 Routines',
     visionCtxPreview    && '🎯 Vision',
-    benchmarkCtxPreview && '📊 Benchmark',
+    benchmarkCtxPreview && '📈 Benchmark',
   ].filter(Boolean) as string[];
 
   return (
@@ -203,26 +183,13 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
         )}
       </div>
 
-      {/* Template selection */}
-      <div>
-        <h3 className="text-sm font-semibold text-[#1A1A1A] mb-3">Choisissez un type d&apos;analyse</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          {PROMPT_TEMPLATES.map(tpl => (
-            <button
-              key={tpl.id}
-              onClick={() => selectTemplate(tpl.id)}
-              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left ${
-                selectedTemplate === tpl.id
-                  ? 'bg-[#E30613] text-white border-2 border-[#E30613]'
-                  : 'bg-[#F5F5F5] text-[#1A1A1A] hover:bg-[#EBEBEB] border-2 border-transparent'
-              }`}
-            >
-              <span className="text-lg flex-shrink-0">{tpl.icon}</span>
-              <span>{tpl.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Single diagnostic button */}
+      <button
+        onClick={generate}
+        className="w-full flex items-center justify-center gap-2 bg-[#E30613] hover:bg-[#B8050F] text-white font-semibold py-3 rounded-xl text-sm transition-colors"
+      >
+        🔍 Générer le diagnostic
+      </button>
 
       {/* Prompt editor */}
       {prompt && (
@@ -262,10 +229,9 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
         <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-3">
           <h3 className="font-semibold text-sm text-[#1A1A1A]">Comment ça marche ?</h3>
           <ol className="space-y-2 text-sm text-[#6B7280]">
-            <li className="flex gap-2"><span className="text-[#E30613] font-bold">1.</span><span>Renseignez vos données dans <strong className="text-[#1A1A1A]">Journal</strong>, <strong className="text-[#1A1A1A]">Simulateur</strong>, <strong className="text-[#1A1A1A]">Benchmark</strong> ou <strong className="text-[#1A1A1A]">Routines</strong></span></li>
-            <li className="flex gap-2"><span className="text-[#E30613] font-bold">2.</span><span>Choisissez le type d&apos;analyse ci-dessus</span></li>
-            <li className="flex gap-2"><span className="text-[#E30613] font-bold">3.</span><span>Cliquez <strong className="text-[#1A1A1A]">Copier &amp; ouvrir Claude</strong> — le prompt enrichi est copié</span></li>
-            <li className="flex gap-2"><span className="text-[#E30613] font-bold">4.</span><span>Sur claude.ai, collez le prompt (Ctrl+V / Cmd+V) et envoyez</span></li>
+            <li className="flex gap-2"><span className="text-[#E30613] font-bold">1.</span><span>Renseignez vos données dans <strong className="text-[#1A1A1A]">Journal</strong>, <strong className="text-[#1A1A1A]">Simulateur</strong>, <strong className="text-[#1A1A1A]">Benchmark</strong> ou <strong className="text-[#1A1A1A]">Histoire</strong></span></li>
+            <li className="flex gap-2"><span className="text-[#E30613] font-bold">2.</span><span>Cliquez <strong className="text-[#1A1A1A]">Générer le diagnostic</strong> — seuls les modules remplis sont inclus</span></li>
+            <li className="flex gap-2"><span className="text-[#E30613] font-bold">3.</span><span>Cliquez <strong className="text-[#1A1A1A]">Copier &amp; ouvrir Claude</strong> et collez sur claude.ai</span></li>
           </ol>
         </div>
       )}
