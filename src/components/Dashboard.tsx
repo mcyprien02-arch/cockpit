@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction, Phase } from '@/types';
 import { DEFAULT_DATA } from '@/types';
-import { KPI_DEFS } from '@/lib/kpis';
 
 interface Props {
   data: MagasinData;
@@ -82,79 +81,6 @@ function readRoutinesScore(nom: string): number | null {
   } catch { return null; }
 }
 
-// ── Cercle du Cash SVG ─────────────────────────────────────────────────────
-function CercleDuCash({ acheter, stocker, vendre, encaisser }: {
-  acheter: number; stocker: number; vendre: number; encaisser: number;
-}) {
-  const size = 260;
-  const cx = size / 2;
-  const cy = size / 2;
-  const outerR = 95;
-  const innerR = 58;
-  const gap = 0.07;
-
-  const score = Math.round((acheter + stocker + vendre + encaisser) / 4);
-  const scoreColor = score >= 65 ? '#16a34a' : score >= 35 ? '#d97706' : '#dc2626';
-
-  function c(s: number): string {
-    return s >= 65 ? '#22c55e' : s >= 35 ? '#f59e0b' : '#ef4444';
-  }
-
-  const steps = [
-    { label: 'ACHETER',   score: acheter,   sa: -Math.PI / 2, ea: 0 },
-    { label: 'STOCKER',   score: stocker,   sa: 0,            ea: Math.PI / 2 },
-    { label: 'VENDRE',    score: vendre,    sa: Math.PI / 2,  ea: Math.PI },
-    { label: 'ENCAISSER', score: encaisser, sa: Math.PI,      ea: 3 * Math.PI / 2 },
-  ];
-
-  const minScore = Math.min(acheter, stocker, vendre, encaisser);
-
-  function arcPath(sa: number, ea: number): string {
-    const s = sa + gap; const e = ea - gap;
-    const cos1 = Math.cos(s); const sin1 = Math.sin(s);
-    const cos2 = Math.cos(e); const sin2 = Math.sin(e);
-    const x1o = cx + outerR * cos1; const y1o = cy + outerR * sin1;
-    const x2o = cx + outerR * cos2; const y2o = cy + outerR * sin2;
-    const x2i = cx + innerR * cos2; const y2i = cy + innerR * sin2;
-    const x1i = cx + innerR * cos1; const y1i = cy + innerR * sin1;
-    return `M ${x1o} ${y1o} A ${outerR} ${outerR} 0 0 1 ${x2o} ${y2o} L ${x2i} ${y2i} A ${innerR} ${innerR} 0 0 0 ${x1i} ${y1i} Z`;
-  }
-
-  function labelXY(midAngle: number) {
-    const r = outerR + 26;
-    return { x: cx + r * Math.cos(midAngle), y: cy + r * Math.sin(midAngle) };
-  }
-
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {steps.map((st, i) => {
-        const mid = (st.sa + st.ea) / 2;
-        const lp = labelXY(mid);
-        const isMin = st.score === minScore && minScore < 65;
-        return (
-          <g key={i}>
-            <path d={arcPath(st.sa, st.ea)} fill={c(st.score)}
-              stroke={isMin ? '#dc2626' : 'none'} strokeWidth={isMin ? 4 : 0}
-              opacity={0.85} className={isMin ? 'animate-pulse' : ''} />
-            <text x={lp.x} y={lp.y} textAnchor="middle" dominantBaseline="middle"
-              fill="#1A1A1A" fontSize="10" fontWeight="700" letterSpacing="0.5">
-              {st.label}
-            </text>
-          </g>
-        );
-      })}
-      {steps.map((st, i) => {
-        const arrowX = cx + outerR * 1.02 * Math.cos(st.ea);
-        const arrowY = cy + outerR * 1.02 * Math.sin(st.ea);
-        return <text key={`arr${i}`} x={arrowX} y={arrowY} textAnchor="middle"
-          dominantBaseline="middle" fill="#9CA3AF" fontSize="11">→</text>;
-      })}
-      <text x={cx} y={cy - 10} textAnchor="middle" fill={scoreColor} fontSize="30" fontWeight="800">{score}</text>
-      <text x={cx} y={cy + 14} textAnchor="middle" fill="#6B7280" fontSize="10">/100</text>
-    </svg>
-  );
-}
-
 
 export default function Dashboard({ data, onSave, actions, onNavigate, onAddAction }: Props) {
   const [showModal, setShowModal] = useState(!data.nom);
@@ -189,45 +115,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
     onSave({ ...data, nom: form.nom, phase: form.phase });
     setShowModal(false);
   }
-
-  const phase = data.phase ?? 'Maturité';
-
-  function phaseScore(key: keyof MagasinData, value: number): number {
-    if (value === 0) return 50;
-    if (key === 'stockAge') {
-      if (phase === 'Lancement') return value < 25 ? 100 : value <= 35 ? 50 : 0;
-      if (phase === 'Croissance') return value < 22 ? 100 : value <= 32 ? 50 : 0;
-      return value < 20 ? 100 : value <= 30 ? 50 : 0;
-    }
-    if (key === 'tauxMargeNette') {
-      if (phase === 'Lancement') return value >= 35 ? 100 : value >= 30 ? 50 : 0;
-      if (phase === 'Croissance') return value >= 36 ? 100 : value >= 33 ? 50 : 0;
-      return value >= 38 ? 100 : value >= 35 ? 50 : 0;
-    }
-    if (key === 'noteGoogle') {
-      if (phase === 'Lancement') return value > 4.0 ? 100 : value >= 3.5 ? 50 : 0;
-      if (phase === 'Croissance') return value > 4.2 ? 100 : value >= 3.8 ? 50 : 0;
-      return value > 4.4 ? 100 : value >= 4.0 ? 50 : 0;
-    }
-    const def = KPI_DEFS.find(d => d.key === key);
-    return def ? def.score(value) : 50;
-  }
-
-  function avgScores(vals: number[]): number {
-    return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
-  }
-
-  const acheterScore = phaseScore('tauxAchatExterne', data.tauxAchatExterne);
-  const stockerScore = phaseScore('stockAge', data.stockAge);
-  const vendreScore  = avgScores([
-    phaseScore('tauxTransformation', data.tauxTransformation),
-    phaseScore('estalyParSemaine', data.estalyParSemaine),
-    phaseScore('noteGoogle', data.noteGoogle),
-  ]);
-  const encaisserScore = avgScores([
-    phaseScore('tauxMargeNette', data.tauxMargeNette),
-    phaseScore('tauxDemarque', data.tauxDemarque),
-  ]);
 
   const today = new Date().toISOString();
   const thisMonth = today.slice(0, 7);
@@ -384,11 +271,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
             </button>
             {bilanOpen && (
               <div className="border-t border-[#E0E0E0] p-5 space-y-5">
-                <div className="flex flex-col items-center">
-                  <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-4">Cercle du Cash</h3>
-                  <CercleDuCash acheter={acheterScore} stocker={stockerScore} vendre={vendreScore} encaisser={encaisserScore} />
-                  <p className="text-xs text-[#6B7280] mt-2">L&apos;étape la plus faible est encadrée en rouge</p>
-                </div>
                 <div>
                   <p className="text-sm font-semibold text-[#1A1A1A] mb-3">Quel est votre problème aujourd&apos;hui ?</p>
                   <div className="grid grid-cols-2 gap-2">
