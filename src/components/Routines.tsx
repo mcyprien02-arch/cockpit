@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import type { PAPAction } from '@/types';
 import CommentaireConsultant from './CommentaireConsultant';
+import PhraseExplicative from './PhraseExplicative';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -1006,6 +1007,7 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
         ) : null}
       </div>
 
+      <PhraseExplicative moduleKey="routines" defaultText="Liste les bonnes pratiques quotidiennes/hebdo du réseau, personnalisables par le franchisé." />
       <CommentaireConsultant moduleKey="routines" magasinNom={magasinNom} />
     </div>
   );

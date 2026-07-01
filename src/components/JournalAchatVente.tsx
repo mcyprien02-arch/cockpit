@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
 import CommentaireConsultant from './CommentaireConsultant';
+import PhraseExplicative from './PhraseExplicative';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; }
 type Periode = 'all' | '3m' | '6m' | '12m';
@@ -2653,6 +2654,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
         </div>
       )}
 
+      <PhraseExplicative moduleKey="journal" defaultText="Analyse les ventes importées pour identifier les rotations rapides, les pépites locales à sourcer, et la performance par acheteur comptoir." />
       <CommentaireConsultant moduleKey="journal" magasinNom={magasinNom} />
     </div>
   );

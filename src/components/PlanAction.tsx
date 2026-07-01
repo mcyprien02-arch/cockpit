@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import type { MagasinData, PAPAction, ActionAxe, StoredStatut } from '@/types';
 import CommentaireConsultant from './CommentaireConsultant';
+import PhraseExplicative from './PhraseExplicative';
 
 interface Props {
   data: MagasinData;
@@ -500,6 +501,7 @@ export default function PlanAction({ data, actions, onSave }: Props) {
         )}
       </div>
 
+      <PhraseExplicative moduleKey="planaction" defaultText="Centralise toutes les actions remontées par les modules dans un planning unique." />
       <CommentaireConsultant moduleKey="planaction" magasinNom={data.nom || ''} />
     </div>
   );
