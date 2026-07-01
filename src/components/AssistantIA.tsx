@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { MagasinData, PAPAction } from '@/types';
-import { getAlerts, getCategoryScores } from '@/lib/kpis';
 import { getJournalContext } from '@/components/JournalAchatVente';
 import { getRoutinesContext } from '@/components/Routines';
 import { getVisionContext } from '@/components/Objectifs';
@@ -18,11 +17,14 @@ interface Props {
 
 const SYSTEM_PROMPT = `Tu es un expert franchise EasyCash spécialiste de la seconde main en France. Tu connais :
 
-INDICATEURS SUIVIS DANS L'OUTIL (4 catégories) :
-- Rentabilité : CA annuel, Taux de marge nette, Taux de démarque
-- Stock : Stock total, Stock âgé %, Top 20 vieux stock traité
-- Commerce : Taux transformation, Estaly/mois, Taux SAV, Ventes additionnelles, Achat externe
-- Web : Poids digital, Note Google, Taux d'annulation commande, Satisfaction client web
+MODULES DE DONNÉES DISPONIBLES DANS CET OUTIL :
+- Histoire du magasin : type de point de vente, ancienneté, effectif, spécificités locales, défis, description libre
+- Simulateur RH : CA annuel, taux de marge, ETP, masse salariale % du CA, turnover
+- Journal Achat-Vente : rotation par modèle/famille, délai moyen d'écoulement, sourcing (% comptoir vs fournisseurs), marge totale, écart PA/PV vs EP réseau, top coefficient d'écoulement, pépites locales manquantes en gamme
+- Benchmark financier : santé globale vs DAF (% des postes de charges), top écarts défavorables vs réseau, potentiel d'optimisation en €
+- Vision & Objectifs : vision long terme, valeurs, cap commercial, objectifs mensuels par famille avec avancement %
+- Routines : taux de complétion par domaine (Commerce, Web & Digital, Pilotage, Management, GPA)
+Toutes les données du contexte proviennent exclusivement de ces modules. Ne demande pas d'indicateurs non présents.
 
 IMPACT BUSINESS PAR FAMILLE (couverture de gamme) :
 - TLCE (téléphonie) : 100% couverture gamme modèle = 60% du volume de ventes en TLCE
@@ -50,11 +52,12 @@ MÉTHODOLOGIE GPA (structure de pilotage) :
 - Prix : côtes d'accélération réseau, pricing concurrentiel, décotes accélératrices
 - Animation : contrats Estaly, ventes additionnelles, animation vitrine, demandes d'avis Google
 
-BENCHMARKS RÉSEAU EASYCASH :
-- Taux de marge nette : ≥ 40% (Lancement), ≥ 42% (Croissance), ≥ 44% (Maturité)
-- Stock âgé : ≤ 20% (Lancement), ≤ 15% (Croissance), ≤ 10% (Maturité)
-- Note Google : ≥ 4,2/5 — Taux annulation web : ≤ 5%
-- Taux transformation : ≥ 25% — Estaly : ≥ 3/mois (Lancement), ≥ 5 (Croissance), ≥ 8 (Maturité)
+BENCHMARKS RÉSEAU EASYCASH (référence pour tes recommandations) :
+- Taux de marge : ≥ 40% (Lancement), ≥ 42% (Croissance), ≥ 44% (Maturité)
+- Masse salariale : ≤ 15% du CA (cible DAF)
+- CA par ETP : ≥ 250 000 € (référence réseau)
+- Sourcing comptoir : > 60% des achats (pour préserver la marge)
+- Turnover équipe : ≤ 20% par an (signal d'alerte > 30%)
 
 OUTILS ISEOR : VAH = (CA × Taux Marge) / Heures annuelles. Coût d'un dysfonctionnement = VAH × temps perdu × fréquence.
 
@@ -72,86 +75,32 @@ const PROMPT_TEMPLATES = [
     label: 'Diagnostic complet',
     icon: '🔍',
     build: (data: MagasinData, actions: PAPAction[]) => {
-      const alerts = getAlerts(data);
-      const scores = getCategoryScores(data);
-      const scoreStr = [
-        `Rentabilité: ${Math.round(scores.rentabilite)}/100`,
-        `Stock: ${Math.round(scores.stock)}/100`,
-        `Commerce: ${Math.round(scores.commerce)}/100`,
-      ].join(', ');
-      const webKpis = [
-        data.poidsDigital ? `Poids digital: ${data.poidsDigital}%` : null,
-        data.noteGoogle ? `Note Google: ${data.noteGoogle}/5` : null,
-        data.tauxAnnulationWeb ? `Annulation web: ${data.tauxAnnulationWeb}%` : null,
-        data.satisfactionWeb ? `Satisfaction web: ${data.satisfactionWeb}/5` : null,
-      ].filter(Boolean).join(', ');
-      const alertStr = alerts.map(a => `- ${a.label}: ${a.value}${a.unit} (cible: ${a.seuilOk}, statut: ${a.status})`).join('\n');
       const actionStr = actions.filter(a => a.statut !== 'Fait').slice(0, 5).map(a => `- [P${a.priorite}] ${a.titre} (${a.statut})`).join('\n');
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nSCORES: ${scoreStr}\nWeb: ${webKpis || 'Non renseigné'}\n\nALERTES KPI:\n${alertStr || 'Aucune alerte'}\n\nACTIONS EN COURS:\n${actionStr || 'Aucune action'}\n\nFais un diagnostic structuré avec:\n1. Analyse des points forts (Rentabilité, Stock, Commerce, Web)\n2. Problèmes prioritaires et leurs causes probables\n3. Plan d'action concret (5 actions max, priorisées P1/P2/P3)\n4. Indicateurs à surveiller chaque semaine`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nACTIONS EN COURS:\n${actionStr || 'Aucune action'}\n\nAnalyse l'ensemble des données disponibles dans le contexte ci-dessous (Histoire, Simulateur RH, Journal, Benchmark, Routines, Vision) et produis un diagnostic structuré :\n1. Points forts identifiés dans les données\n2. Problèmes prioritaires avec leur impact financier estimé\n3. Plan d'action concret (3 actions max, priorisées P1/P2/P3)\n4. Indicateur à surveiller chaque semaine`;
     },
   },
   {
     id: 'stock',
-    label: 'Optimiser le stock',
+    label: 'Stock & Sourcing',
     icon: '📦',
     build: (data: MagasinData) => {
-      const stockKpis = [
-        `Stock total: ${data.stockTotal ? data.stockTotal.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
-        `Stock âgé: ${data.stockAge ? data.stockAge + '%' : 'N/R'}`,
-        `Top 20 vieux stock traité: ${data.top20Traite ? 'Oui' : 'Non'}`,
-        `Taux achat externe: ${data.tauxAchatExterne ? data.tauxAchatExterne + '%' : 'N/R'}`,
-        `Taux Piceasoft: ${data.tauxPiceasoft ? data.tauxPiceasoft + '%' : 'N/R'}`,
-        `Gamme téléphonie: ${data.gammeTel ? data.gammeTel + ' réfs' : 'N/R'}`,
-        `Gamme jeux vidéo: ${data.gammeJV ? data.gammeJV + ' réfs' : 'N/R'}`,
-        `Gamme consoles: ${data.gammeConsole ? data.gammeConsole + ' réfs' : 'N/R'}`,
-      ].join('\n');
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} (CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'} — Phase: ${data.phase})\n\nDONNÉES STOCK:\n${stockKpis}\n\nDonne-moi:\n1. Les familles à déstocker en priorité avec côtes d'accélération réseau\n2. Les actions concrètes pour traiter le stock âgé cette semaine\n3. Une stratégie d'inventaire tournant (méthode GPA Gamme)\n4. Comment ajuster les achats externes la semaine prochaine`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nAnalyse les données du Journal Achat-Vente présentes dans le contexte (rotation, délais, sourcing, écarts PA/PV vs EP réseau, pépites locales) et donne-moi :\n1. Les familles/modèles à traiter en priorité selon leur délai d'écoulement\n2. L'analyse du sourcing (équilibre comptoir vs fournisseurs, marge par canal)\n3. Les pépites locales absentes de ma gamme à sourcer en priorité\n4. Une action concrète sur les accélérations à lancer cette semaine`;
     },
   },
   {
     id: 'commerce',
-    label: 'Booster les ventes',
+    label: 'Marges & Performance',
     icon: '💰',
     build: (data: MagasinData) => {
-      const commerceKpis = [
-        `Taux transformation: ${data.tauxTransformation ? data.tauxTransformation + '%' : 'N/R'}`,
-        `Ventes additionnelles: ${data.ventesAdditionnelles || 'N/R'}`,
-        `Estaly/mois: ${data.estalyParSemaine ? (data.estalyParSemaine * 4).toFixed(0) + ' (soit ' + data.estalyParSemaine + '/sem)' : 'N/R'}`,
-        `Taux SAV: ${data.tauxSAV ? data.tauxSAV + '%' : 'N/R'}`,
-        `Achat externe: ${data.tauxAchatExterne ? data.tauxAchatExterne + '%' : 'N/R'}`,
-        `CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
-      ].join('\n');
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nDONNÉES COMMERCE:\n${commerceKpis}\n\nDonne-moi:\n1. Les leviers prioritaires pour augmenter le CA dès cette semaine\n2. Script de vente additionnelle adapté à EasyCash (Estaly + accessoires)\n3. Plan d'animation GPA pour la semaine type\n4. Actions pour améliorer le taux de transformation en caisse`;
-    },
-  },
-  {
-    id: 'web',
-    label: 'Performance web',
-    icon: '🌐',
-    build: (data: MagasinData) => {
-      const webKpis = [
-        `Poids digital (CA web): ${data.poidsDigital ? data.poidsDigital + '%' : 'N/R'}`,
-        `Note Google: ${data.noteGoogle ? data.noteGoogle + '/5' : 'N/R'}`,
-        `Taux d'annulation commande: ${data.tauxAnnulationWeb ? data.tauxAnnulationWeb + '%' : 'N/R'}`,
-        `Satisfaction client web: ${data.satisfactionWeb ? data.satisfactionWeb + '/5' : 'N/R'}`,
-        `CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
-      ].join('\n');
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nDONNÉES WEB:\n${webKpis}\n\nDonne-moi:\n1. Plan d'action pour améliorer la note Google (objectif ≥ 4,2/5)\n2. Actions pour réduire le taux d'annulation commande (≤ 5%)\n3. Leviers pour augmenter le poids digital (objectif ≥ 30%)\n4. Script de demande d'avis Google en magasin, à utiliser dès aujourd'hui`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nAnalyse les données de marge présentes dans le contexte (Journal : top coefficient d'écoulement, écart PA/PV vs EP ; Benchmark : charges vs réseau, potentiel d'optimisation) et donne-moi :\n1. Les produits/familles avec le meilleur coefficient marge×rotation à renforcer\n2. Les postes de charges surdimensionnés vs réseau à traiter en priorité\n3. Comment améliorer le prix d'achat au comptoir (VPD, négociation, Piceasoft)\n4. Une action immédiate pour gagner de la marge dès cette semaine`;
     },
   },
   {
     id: 'rh',
-    label: 'Management équipe',
+    label: 'Équipe & RH',
     icon: '👥',
     build: (data: MagasinData) => {
-      const rhKpis = [
-        `Nb ETP: ${data.nbEtp || 'N/R'}`,
-        `Masse salariale: ${data.masseSalarialePct ? data.masseSalarialePct + '%' : 'N/R'}`,
-        `Taux turnover: ${data.tauxTurnover ? data.tauxTurnover + '%' : 'N/R'}`,
-        `CA par ETP: ${data.caAnnuel && data.nbEtp ? Math.round(data.caAnnuel / data.nbEtp).toLocaleString('fr-FR') + ' €' : 'N/R'}`,
-        `CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}`,
-      ].join('\n');
-      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nDONNÉES RH:\n${rhKpis}\n\nDonne-moi:\n1. Analyse de mon ratio CA/ETP vs benchmark EasyCash\n2. Actions concrètes pour réduire le turnover\n3. Plan de montée en compétences GPA pour l'équipe\n4. Rituels managériaux hebdomadaires pour ancrer les routines`;
+      return `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}\n\nAnalyse les données RH présentes dans le contexte (Simulateur : CA, ETP, masse salariale %, turnover) et donne-moi :\n1. Analyse du ratio CA/ETP et de la masse salariale vs benchmark réseau (≤15% CA)\n2. Si turnover élevé : actions concrètes pour le réduire\n3. Plan de montée en compétences GPA prioritaire pour l'équipe\n4. Rituel managérial à instaurer cette semaine`;
     },
   },
   {
@@ -159,7 +108,7 @@ const PROMPT_TEMPLATES = [
     label: 'Question libre',
     icon: '✏️',
     build: (data: MagasinData) => {
-      return `${SYSTEM_PROMPT}\n\nContexte magasin EasyCash:\n- Nom: ${data.nom || 'Non renseigné'}\n- Phase: ${data.phase}\n- CA annuel: ${data.caAnnuel ? data.caAnnuel.toLocaleString('fr-FR') + ' €' : 'N/R'}\n\n`;
+      return `${SYSTEM_PROMPT}\n\nContexte magasin EasyCash:\n- Nom: ${data.nom || 'Non renseigné'}\n- Phase: ${data.phase}\n\n`;
     },
   },
 ];
@@ -204,17 +153,12 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
     try {
       await navigator.clipboard.writeText(prompt);
       setCopied(true);
-    } catch (e) {
+    } catch {
       // Clipboard might fail in some contexts — still open Claude
     }
     window.open('https://claude.ai/new', '_blank');
     setTimeout(() => setCopied(false), 3000);
   }
-
-  const alerts = getAlerts(data);
-  const scores = getCategoryScores(data);
-  const cats = ['rentabilite', 'stock', 'commerce', 'rh'] as const;
-  const catLabels: Record<string, string> = { rentabilite: 'Rentabilité', stock: 'Stock', commerce: 'Commerce', rh: 'RH' };
 
   const histoireCtxPreview  = magasinNom ? getHistoireContext(magasinNom) : '';
   const simuCtxPreview      = magasinNom ? getSimulateurContext(magasinNom) : '';
@@ -240,50 +184,21 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
         </p>
       </div>
 
-      {/* Context snapshot */}
-      {data.nom && (
-        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4 space-y-3">
-          <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Contexte chargé — {data.nom}</h3>
-
-          {/* Scores KPI manuels */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {cats.map(c => (
-              <div key={c} className="text-center">
-                <div className={`text-xl font-black ${scores[c] >= 65 ? 'text-green-600' : scores[c] >= 35 ? 'text-orange-500' : 'text-red-600'}`}>
-                  {Math.round(scores[c])}
-                </div>
-                <div className="text-xs text-[#6B7280]">{catLabels[c]}</div>
-              </div>
+      {/* Modules actifs */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4 space-y-2">
+        <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">
+          {data.nom ? `Contexte chargé — ${data.nom}` : 'Modules inclus dans le prompt'}
+        </p>
+        {activeModules.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {activeModules.map(m => (
+              <span key={m} className="text-xs px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700">{m} ✓</span>
             ))}
           </div>
-
-          {alerts.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {alerts.slice(0, 6).map(a => (
-                <span key={String(a.key)} className={`text-xs px-2 py-0.5 rounded-full ${a.status === 'danger' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
-                  {a.label}
-                </span>
-              ))}
-              {alerts.length > 6 && <span className="text-xs text-[#6B7280]">+{alerts.length - 6} autres</span>}
-            </div>
-          )}
-
-          {/* Modules actifs dans le contexte */}
-          {activeModules.length > 0 && (
-            <div>
-              <p className="text-[10px] text-[#6B7280] mb-1.5 uppercase tracking-wider font-semibold">Modules inclus dans le prompt</p>
-              <div className="flex flex-wrap gap-1.5">
-                {activeModules.map(m => (
-                  <span key={m} className="text-xs px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700">{m} ✓</span>
-                ))}
-                {!activeModules.length && (
-                  <span className="text-xs text-[#9CA3AF] italic">Aucun module renseigné — remplissez d&apos;abord Journal, Simulateur, etc.</span>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        ) : (
+          <p className="text-xs text-[#9CA3AF] italic">Aucun module renseigné — remplissez Journal, Simulateur, Benchmark ou Histoire pour enrichir le prompt.</p>
+        )}
+      </div>
 
       {/* Template selection */}
       <div>
@@ -344,7 +259,7 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
         <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-3">
           <h3 className="font-semibold text-sm text-[#1A1A1A]">Comment ça marche ?</h3>
           <ol className="space-y-2 text-sm text-[#6B7280]">
-            <li className="flex gap-2"><span className="text-[#E30613] font-bold">1.</span><span>Saisissez vos données dans le <strong className="text-[#1A1A1A]">Dashboard</strong></span></li>
+            <li className="flex gap-2"><span className="text-[#E30613] font-bold">1.</span><span>Renseignez vos données dans <strong className="text-[#1A1A1A]">Journal</strong>, <strong className="text-[#1A1A1A]">Simulateur</strong>, <strong className="text-[#1A1A1A]">Benchmark</strong> ou <strong className="text-[#1A1A1A]">Routines</strong></span></li>
             <li className="flex gap-2"><span className="text-[#E30613] font-bold">2.</span><span>Choisissez le type d&apos;analyse ci-dessus</span></li>
             <li className="flex gap-2"><span className="text-[#E30613] font-bold">3.</span><span>Cliquez <strong className="text-[#1A1A1A]">Copier &amp; ouvrir Claude</strong> — le prompt enrichi est copié</span></li>
             <li className="flex gap-2"><span className="text-[#E30613] font-bold">4.</span><span>Sur claude.ai, collez le prompt (Ctrl+V / Cmd+V) et envoyez</span></li>
