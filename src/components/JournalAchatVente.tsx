@@ -1964,6 +1964,28 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     return {totalAll,withDVall,noDVall:totalAll-withDVall,aberrantAll,dvRowsCount:dvRows.length,aberrantF,noOutFCount:noOutF.length,curMean:avg(dvRows),capMean:avgCap(dvRows),noOutMean:avg(noOutF),top3Plat,top3Buy,verdict};
   },[stored,filteredRows]);
 
+  // Debug: seuil rotation rapide (visible panel — remove once validated)
+  const debugSeuilRotation=useMemo(()=>{
+    const sample=topRotations.slice(0,5);
+    const rows=sample.map(s=>{
+      const raw=s.famille||'';
+      const applied=getSeuilDelaiPepite(raw);
+      const fc=detectFamilyCode(raw);
+      const expected=(['BOR','BOPI','BMAR','BMON'] as string[]).includes(fc)?90:30;
+      return {modele:s.modele,raw,applied,fc,expected,coherent:applied===expected};
+    });
+    const titleSeuil=selectedFamily!=='all'&&(['BOR','BOPI','BMAR','BMON'] as string[]).includes(selectedFamily)?90:30;
+    const mismatchCount=topRotations.filter(s=>{
+      const raw=s.famille||'';
+      const applied=getSeuilDelaiPepite(raw);
+      const fc=detectFamilyCode(raw);
+      const expected=(['BOR','BOPI','BMAR','BMON'] as string[]).includes(fc)?90:30;
+      return applied!==expected;
+    }).length;
+    const titleFilterMismatch=rows.some(r=>r.applied!==titleSeuil);
+    return {rows,titleSeuil,mismatchCount,titleFilterMismatch,total:topRotations.length};
+  },[topRotations,selectedFamily]);
+
   // ACTION 2: family-aware brand/platform widget data
   const topBrands=useMemo(()=>{
     const brands=new Map<string,number>();
@@ -2667,7 +2689,94 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
               `💡 Écart PV vs cote EP vente — Sur ces ${ctx}, votre prix de vente moyen est à ${fmtEc(v)} vs la cote réseau. À vous de juger si cet écart traduit un positionnement local volontaire ou s'il mérite un ajustement.`;
             const ra=recoAchat(rotEcartPA,'rotations rapides');
             const rv=recoVente(rotEcartPV,'rotations rapides');
-            return (
+            return (<>
+              {/* 🔍 DEBUG — Seuil rotation rapide (temporaire) */}
+              <div className="border-2 border-dashed border-rose-400 bg-rose-50 rounded-xl p-4 space-y-4 text-xs">
+                <p className="font-bold text-rose-800 text-sm">🔍 DEBUG — Seuil « rotation rapide » : cohérence famille / seuil appliqué / titre</p>
+
+                <div className="space-y-1">
+                  <p className="font-semibold text-rose-700">1 — DÉTECTION FAMILLE (source : colonne sous-famille CSV) :</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                    <span>Filtre actif (selectedFamily) :</span>
+                    <span className="font-semibold">{selectedFamily}</span>
+                    <span>Familles détectées :</span>
+                    <span className="font-semibold">[{detectedFamilies.join(', ')||'aucune'}]</span>
+                    <span>Type de valeur passée au filtre :</span>
+                    <span className="font-semibold">s.famille = texte brut CSV — <strong>pas</strong> le FamilyCode</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="font-semibold text-rose-700">2 — MAPPING DÉFINI (getSeuilDelaiPepite) :</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                    <span>Méthode :</span>
+                    <span className="font-semibold">Analyse textuelle (includes) sur texte brut CSV</span>
+                    <span>→ 90j si contient :</span>
+                    <span className="font-mono text-[10px] font-semibold">&apos;bijouterie or&apos; | &apos;plaqu&apos; | &apos;pierres&apos; | &apos;bopi&apos; | &apos;maroquinerie&apos; | &apos;montre&apos;</span>
+                    <span>→ 30j sinon :</span>
+                    <span className="font-semibold">toutes autres familles (défaut)</span>
+                    <span className="text-orange-700 font-semibold">⚠️ Risque :</span>
+                    <span className="font-semibold text-orange-700">Si Athena exporte le CODE court (BOR / BOPI) au lieu du libellé → seuil 30j au lieu de 90j</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="font-semibold text-rose-700">3 — APPLICATION PAR MODÈLE (5 premiers Top Rotations) :</p>
+                  {debugSeuilRotation.rows.length>0?(
+                    <div className="overflow-x-auto rounded-lg border border-rose-200">
+                      <table className="text-[10px] w-full border-collapse min-w-[580px]">
+                        <thead><tr className="bg-rose-100">
+                          {['Modèle','Famille brute CSV','FamilyCode détecté','Seuil appliqué','Seuil attendu','Verdict'].map(h=>(
+                            <th key={h} className="px-2 py-1 text-left font-semibold text-rose-800">{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>{debugSeuilRotation.rows.map((d,i)=>(
+                          <tr key={i} className={i%2===0?'bg-white':'bg-rose-50'}>
+                            <td className="px-2 py-1.5 font-medium max-w-[140px] truncate">{d.modele}</td>
+                            <td className="px-2 py-1.5 font-mono text-[9px]">{d.raw||'—'}</td>
+                            <td className="px-2 py-1.5 font-semibold">{d.fc}</td>
+                            <td className="px-2 py-1.5 font-semibold text-center">{d.applied}j</td>
+                            <td className="px-2 py-1.5 font-semibold text-center">{d.expected}j</td>
+                            <td className={`px-2 py-1.5 font-semibold ${d.coherent?'text-green-700':'text-red-600'}`}>{d.coherent?'✅ COHÉRENT':'❌ INCOHÉRENT'}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  ):<p className="text-rose-700 italic pl-2">Aucun modèle dans Top Rotations — importez un journal ou ajustez la période.</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <p className="font-semibold text-rose-700">4 — TRAÇABILITÉ :</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                    <span>Famille transmise en paramètre :</span>
+                    <span className="font-semibold">✅ OUI — s.famille (texte brut) passé directement à getSeuilDelaiPepite(s.famille)</span>
+                    <span>Fallback si famille vide :</span>
+                    <span className="font-semibold">✅ OUI — retourne 30j si !sousfamille</span>
+                    <span>Seuil titre (FamilyCode hard-codé) :</span>
+                    <span className="font-semibold">{debugSeuilRotation.titleSeuil}j — liste [&apos;BOR&apos;,&apos;BOPI&apos;,&apos;BMAR&apos;,&apos;BMON&apos;] appliquée sur selectedFamily</span>
+                    <span>Seuil filtre effectif :</span>
+                    <span className="font-semibold">Variable par modèle — getSeuilDelaiPepite(s.famille) sur texte brut</span>
+                  </div>
+                </div>
+
+                <div className={`rounded-lg px-4 py-2.5 space-y-1 ${debugSeuilRotation.mismatchCount>0||debugSeuilRotation.titleFilterMismatch?'bg-red-100 border border-red-300':'bg-green-100 border border-green-300'}`}>
+                  <p className={`font-bold ${debugSeuilRotation.mismatchCount>0||debugSeuilRotation.titleFilterMismatch?'text-red-700':'text-green-700'}`}>5 — VERDICT :</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                    <span>Incohérences seuil appliqué vs attendu :</span>
+                    <span className={`font-semibold ${debugSeuilRotation.mismatchCount>0?'text-red-600':'text-green-700'}`}>{debugSeuilRotation.mismatchCount} / {debugSeuilRotation.total} modèles</span>
+                    <span>Titre ≠ filtre effectif :</span>
+                    <span className={`font-semibold ${debugSeuilRotation.titleFilterMismatch?'text-orange-600':'text-green-700'}`}>{debugSeuilRotation.titleFilterMismatch?`⚠️ OUI — titre affiche ${debugSeuilRotation.titleSeuil}j mais certains modèles filtrés sur base différente`:'✅ NON — cohérent'}</span>
+                    <span>Conclusion :</span>
+                    <span className={`font-semibold ${debugSeuilRotation.mismatchCount>0?'text-red-600':'text-green-700'}`}>
+                      {debugSeuilRotation.mismatchCount>0
+                        ?`❌ getSeuilDelaiPepite() analyse le texte brut — si Athena exporte les codes courts (BOR/BOPI...) le seuil sera 30j au lieu de 90j`
+                        :'✅ Les seuils sont cohérents pour les données importées'}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-rose-600 italic">Cet encart DEBUG sera retiré une fois le seuil validé.</p>
+              </div>
+
               <SectionTable
                 title={`⚡ TOP ROTATIONS (délai moyen < ${selectedFamily!=='all'&&['BOR','BOPI','BMAR','BMON'].includes(selectedFamily)?'90':'30'} jours)`}
                 cnt={`${topRotations.length} modèle${topRotations.length!==1?'s':''} · min 3 ventes`}
@@ -2709,7 +2818,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                   </div>
                 }
               />
-            );
+            </>);
           })()}
 
           {/* Section 6: Top Volume */}
