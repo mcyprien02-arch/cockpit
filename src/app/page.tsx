@@ -17,21 +17,25 @@ import BenchmarkFinancier from '@/components/BenchmarkFinancier';
 import GrilleAchat from '@/components/GrilleAchat';
 import { detectSpiral } from '@/lib/spiral';
 
-const TABS = [
+const MAIN_TABS = [
   { id: 'dashboard',   label: 'Dashboard' },
   { id: 'objectifs',   label: '🎯 Objectifs' },
   { id: 'plan',        label: "📋 Plan d'Action" },
   { id: 'journal',     label: '📊 Journal' },
   { id: 'bijouterie',  label: '💍 Bijouterie' },
   { id: 'benchmark',   label: '📊 Benchmark' },
-  { id: 'grille-achat', label: '📋 Grille Achat' },
   { id: 'couverture',  label: '🗂 Gamme' },
   { id: 'routines',    label: '🔁 Routines' },
   { id: 'competences', label: '🎓 Compétences' },
   { id: 'simulateur',  label: '💰 Simulateur' },
   { id: 'assistant',   label: '🤖 Assistant IA' },
 ] as const;
-type TabId = typeof TABS[number]['id'];
+
+const ANNEXE_TABS = [
+  { id: 'grille-achat', label: '📋 Grille Achat' },
+] as const;
+
+type TabId = typeof MAIN_TABS[number]['id'] | typeof ANNEXE_TABS[number]['id'];
 
 function getMagasinsKey() { return 'ec_magasins'; }
 function getDataKey(nom: string) { return `ec_data_${nom}`; }
@@ -127,7 +131,7 @@ export default function App() {
 
           {/* Tabs */}
           <div className="flex overflow-x-auto -mb-px scrollbar-hide">
-            {TABS.map(t => (
+            {MAIN_TABS.map(t => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
@@ -135,6 +139,20 @@ export default function App() {
                   tab === t.id
                     ? 'text-white border-white'
                     : 'text-white/60 border-transparent hover:text-white/90'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+            <span className="self-end pb-2.5 px-1.5 text-white/25 text-xs select-none flex-shrink-0">│</span>
+            {ANNEXE_TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-3 py-2.5 text-xs whitespace-nowrap border-b-2 flex-shrink-0 transition-colors italic ${
+                  tab === t.id
+                    ? 'text-white/80 border-white/50 font-semibold'
+                    : 'text-white/40 border-transparent hover:text-white/70'
                 }`}
               >
                 {t.label}
