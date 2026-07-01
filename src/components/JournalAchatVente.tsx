@@ -40,6 +40,8 @@ interface CRow {
 interface StoredImport { importedAt: string; rows: CRow[]; dateMin: string|null; dateMax: string|null; }
 interface GammeModele { produit: string; marque: string; plateforme: string; key_normalisee: string; inTop20: boolean; }
 interface GammeReseau { famille: string; date_import: string; nb_modeles: number; nb_top20: number; modeles: GammeModele[]; }
+interface TrancheDef { label: string; min: number; max: number; }
+interface TrancheStats { label: string; nbVentes: number; valeurVentes: number; margeTotal: number; tauxMarge: number; delaiMoyen: number|null; margeUnitaire: number; pctCA: number; }
 
 export interface ModelStats {
   modele: string; famille: string; qteVendue: number; delaiMoyen: number|null;
@@ -486,6 +488,18 @@ function detectBORType(libelle: string): string {
   return 'Non catégorisé';
 }
 
+// ── tranches de prix par famille (section Performance par tranche de prix) ─────
+const TRANCHES_PAR_FAMILLE: Partial<Record<FamilyCode, TrancheDef[]>> = {
+  TLCE: [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}],
+  ITAB: [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}],
+  IPOR: [{label:'< 200 €',min:0,max:200},{label:'200-500 €',min:200,max:500},{label:'500-800 €',min:500,max:800},{label:'> 800 €',min:800,max:Infinity}],
+  JCDR: [{label:'< 10 €',min:0,max:10},{label:'10-20 €',min:10,max:20},{label:'20-40 €',min:20,max:40},{label:'> 40 €',min:40,max:Infinity}],
+  JCON: [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}],
+  JPOR: [{label:'< 50 €',min:0,max:50},{label:'50-100 €',min:50,max:100},{label:'100-200 €',min:100,max:200},{label:'> 200 €',min:200,max:Infinity}],
+  BMAR: [{label:'< 50 €',min:0,max:50},{label:'50-150 €',min:50,max:150},{label:'150-300 €',min:150,max:300},{label:'> 300 €',min:300,max:Infinity}],
+  BMON: [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}],
+};
+
 interface PriceRange { lo: number; hi: number; label: string; }
 const PRICE_RANGES: Record<string, PriceRange[]> = {
   STD:  [{lo:0,hi:100,label:'0-100€'},{lo:100,hi:300,label:'100-300€'},{lo:300,hi:700,label:'300-700€'},{lo:700,hi:Infinity,label:'+700€'}],
@@ -711,6 +725,28 @@ function computeAcheteurs(rows: CRow[]): AcheteurStats[] {
   }).sort((a,b)=>b.tauxMarge-a.tauxMarge);
 }
 
+// ── tranche de prix computation ───────────────────────────────────────────────
+function computeTranchePrix(rows: CRow[], tranches: TrancheDef[]): TrancheStats[] {
+  const groups = tranches.map(t=>({...t,pas:[] as number[],pvs:[] as number[],dvs:[] as number[]}));
+  for (const r of rows) {
+    const g=groups.find(g=>r.pv>=g.min&&r.pv<g.max);
+    if (g){g.pas.push(r.pa);g.pvs.push(r.pv);if(r.dv&&r.dv>0)g.dvs.push(r.dv);}
+  }
+  const totalCA=groups.reduce((s,g)=>s+g.pvs.reduce((ss,v)=>ss+v,0),0);
+  return groups.map(g=>{
+    const nb=g.pvs.length;
+    const vv=Math.round(g.pvs.reduce((s,v)=>s+v,0));
+    const mt=Math.round(g.pvs.reduce((s,v,i)=>s+v-g.pas[i],0));
+    return {
+      label:g.label, nbVentes:nb, valeurVentes:vv, margeTotal:mt,
+      tauxMarge:vv>0?Math.round(mt/vv*100):0,
+      delaiMoyen:g.dvs.length>0?Math.round(g.dvs.reduce((s,v)=>s+v,0)/g.dvs.length):null,
+      margeUnitaire:nb>0?Math.round(mt/nb):0,
+      pctCA:totalCA>0?Math.round(vv/totalCA*100):0,
+    };
+  });
+}
+
 // ── gamme réseau helpers ──────────────────────────────────────────────────────
 function normGamme(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
@@ -872,13 +908,35 @@ export function getJournalContext(magasinNom: string): string {
       if (brandB.length>0) familyLines.push(`IPOR — Top marques : ${brandB.slice(0,3).map(b=>b.label).join(', ')}.`);
     }
 
+    // Performance par tranche de prix
+    const famCounts=new Map<FamilyCode,number>();
+    for(const r of stored.rows){const fc=detectFamilyCode(r.f);if(fc!=='OTHER')famCounts.set(fc,(famCounts.get(fc)??0)+1);}
+    const domFamTr=Array.from(famCounts.entries()).sort((a,b)=>b[1]-a[1]).map(([fc])=>fc).find(fc=>fc!=='BOR'&&fc!=='BOPI'&&!!TRANCHES_PAR_FAMILLE[fc]);
+    let trancheLine='';
+    if(domFamTr){
+      const tDefs=TRANCHES_PAR_FAMILLE[domFamTr]!;
+      const tRows=stored.rows.filter(r=>detectFamilyCode(r.f)===domFamTr&&r.g!=='D');
+      const ts=computeTranchePrix(tRows,tDefs);
+      const withV=ts.filter(t=>t.nbVentes>0);
+      if(withV.length>0){
+        const ss=withV.reduce((best,t)=>t.tauxMarge*t.margeTotal>best.tauxMarge*best.margeTotal?t:best);
+        const alertC=withV.filter(t=>t.pctCA>=10&&t.delaiMoyen!==null&&t.label!==ss.label).sort((a,b)=>(b.delaiMoyen??0)-(a.delaiMoyen??0))[0]??null;
+        const repartition=ts.map(t=>`${t.label}: ${t.pctCA}%`).join(' / ');
+        trancheLine=[
+          `Performance par tranche de prix (${domFamTr}) : ${repartition}`,
+          `Sweet spot : ${ss.label} — taux marge ${ss.tauxMarge}%, marge unit. ${ss.margeUnitaire}€, délai ${ss.delaiMoyen!==null?ss.delaiMoyen+'j':'N/A'}`,
+          alertC?`Tranche à surveiller : ${alertC.label} — délai ${alertC.delaiMoyen}j, mobilisation cash`:'',
+        ].filter(Boolean).join('\n');
+      }
+    }
+
     return [
       `\nAnalyse journal ${magasinNom} · ${stored.rows.length.toLocaleString('fr-FR')} ventes (grades A/B/C) · ${period}.`,
       `Top rotations (<30j, min 3 ventes) : ${topRot||'aucun'}. Pépites locales : ${pepites||'aucune'}.`,
       epVG!=null?`Politique vente vs cote EP : écart ${fmtE(epVG)}.`:'',
       epAG!=null?`Politique achat vs cote EP : écart ${fmtE(epAG)}.`:'',
       rotEPLine, coeffEPLine, volEPLine, pepLocLine,
-      marchLine, coeffLine, flopsLine,
+      marchLine, trancheLine, coeffLine, flopsLine,
       topBrands?`Segments dominants (volume) : ${topBrands}.`:'',
       srcLine, achLine,
       ...familyLines,
@@ -1357,6 +1415,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
   const [toast,          setToast]          = useState<string|null>(null);
   const [gammes,         setGammes]         = useState<Record<string,GammeReseau>>({});
   const [gammeOpen,      setGammeOpen]      = useState(false);
+  const [trancheOpen,    setTrancheOpen]    = useState(true);
   const [gammeImport,    setGammeImport]    = useState<{step:'confirm'|'choose';detected:FamilyCode|null;chosen:string;parsedRows:Record<string,unknown>[];}|null>(null);
   const fileRef     = useRef<HTMLInputElement>(null);
   const gammeFileRef= useRef<HTMLInputElement>(null);
@@ -1675,6 +1734,38 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
   const volEcartPA =useMemo(()=>wAvg(topVolume,s=>s.ecartEPA),[topVolume]);
   const volEcartPV =useMemo(()=>wAvg(topVolume,s=>s.ecartEP), [topVolume]);
 
+  // Performance par tranche de prix
+  const trancheFamily=useMemo(():FamilyCode|null=>{
+    if(selectedFamily!=='all'){
+      const fc=selectedFamily as FamilyCode;
+      if(fc==='BOR'||fc==='BOPI') return null;
+      return TRANCHES_PAR_FAMILLE[fc]?fc:null;
+    }
+    return detectedFamilies.find(fc=>fc!=='BOR'&&fc!=='BOPI'&&!!TRANCHES_PAR_FAMILLE[fc])||null;
+  },[selectedFamily,detectedFamilies]);
+
+  const trancheRows=useMemo(()=>{
+    if(!trancheFamily) return [];
+    if(selectedFamily!=='all') return filteredRows;
+    return filteredRows.filter(r=>detectFamilyCode(r.f)===trancheFamily);
+  },[trancheFamily,filteredRows,selectedFamily]);
+
+  const trancheStats=useMemo(():TrancheStats[]=>{
+    if(!trancheFamily) return [];
+    const defs=TRANCHES_PAR_FAMILLE[trancheFamily];
+    if(!defs) return [];
+    return computeTranchePrix(trancheRows,defs);
+  },[trancheFamily,trancheRows]);
+
+  const sweetSpotData=useMemo(()=>{
+    const withV=trancheStats.filter(t=>t.nbVentes>0);
+    if(!withV.length) return {sweetSpot:null,trancheAlert:null};
+    const sweetSpot=withV.reduce((best,t)=>t.tauxMarge*t.margeTotal>best.tauxMarge*best.margeTotal?t:best);
+    const alertC=withV.filter(t=>t.pctCA>=10&&t.delaiMoyen!==null&&t.label!==sweetSpot.label)
+      .sort((a,b)=>(b.delaiMoyen??0)-(a.delaiMoyen??0))[0]??null;
+    return {sweetSpot,trancheAlert:alertC};
+  },[trancheStats]);
+
   const globalEPVente=useMemo(():number|null=>{
     const ms=stats.filter(s=>s.epMoyen!=null&&s.epMoyen>0);
     const tq=ms.reduce((s,m)=>s+m.qteVendue,0);
@@ -1981,6 +2072,77 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
               <p className="text-xs text-[#9CA3AF] italic px-1">💡 La marque ou plateforme avec le meilleur taux de marge et le délai le plus court est celle à prioriser au rachat comptoir.</p>
             </div>
           )}
+
+          {/* Section 2b: Performance par tranche de prix */}
+          {trancheFamily&&trancheStats.length>0&&(()=>{
+            const {sweetSpot,trancheAlert}=sweetSpotData;
+            const withV=trancheStats.filter(t=>t.nbVentes>0);
+            const showMultiFamilyNote=selectedFamily==='all'&&detectedFamilies.length>1;
+            return (
+              <div className="border border-[#E0E0E0] rounded-xl overflow-hidden">
+                <button onClick={()=>setTrancheOpen(o=>!o)} className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-[#FAFAFA] transition-colors text-left">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-bold text-[#1A1A1A]">💰 Performance par tranche de prix</span>
+                    <span className="text-xs text-[#9CA3AF]">— Identifier le sweet spot prix de votre magasin{showMultiFamilyNote?` (${trancheFamily} — famille dominante)`:''}</span>
+                  </div>
+                  <span className="text-[#9CA3AF] text-xs ml-2 flex-shrink-0">{trancheOpen?'▲':'▼'}</span>
+                </button>
+                {trancheOpen&&(
+                  <div className="px-4 py-4 border-t border-[#E0E0E0] space-y-3">
+                    {withV.length===0?(
+                      <p className="text-xs text-[#9CA3AF] italic">Aucune vente sur cette période pour cette famille.</p>
+                    ):(
+                      <>
+                        <div className="overflow-x-auto rounded-lg border border-[#E0E0E0]">
+                          <table className="text-xs w-full border-collapse">
+                            <thead>
+                              <tr>
+                                <th className={TH}>Tranche prix</th>
+                                <th className={THR}>Nb ventes</th>
+                                <th className={THR}>% du CA</th>
+                                <th className={THR}>Marge totale (€)</th>
+                                <th className={THR}>Taux marge (%)</th>
+                                <th className={THR}>Délai moyen (j)</th>
+                                <th className={THR}>Marge unit. moy. (€)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {trancheStats.map((t,i)=>{
+                                const isSS=sweetSpot?.label===t.label;
+                                const isAlert=trancheAlert?.label===t.label;
+                                const rowBg=isSS?'bg-green-50':isAlert?'bg-orange-50':i%2===0?'bg-white':'bg-[#FAFAFA]';
+                                return (
+                                  <tr key={i} className={rowBg}>
+                                    <td className={TD}>
+                                      <span className="font-medium">{t.label}</span>
+                                      {isSS&&<span className="ml-1.5 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">⭐ Sweet spot</span>}
+                                      {isAlert&&<span className="ml-1.5 text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">⚠️ Surveiller</span>}
+                                    </td>
+                                    <td className={TDR}>{t.nbVentes>0?t.nbVentes:'—'}</td>
+                                    <td className={TDR}>{t.nbVentes>0?`${t.pctCA} %`:'—'}</td>
+                                    <td className={TDR}>{t.nbVentes>0?<span className={t.margeTotal<0?'text-red-600 font-semibold':''}>{fmtK(t.margeTotal)} €</span>:'—'}</td>
+                                    <td className={TDR}>{t.nbVentes>0?<span className={t.tauxMarge>=35?'text-green-600 font-semibold':t.tauxMarge<20?'text-red-600':''}>{t.tauxMarge} %</span>:'—'}</td>
+                                    <td className={TDR}>{t.nbVentes>0&&t.delaiMoyen!==null?`${t.delaiMoyen} j`:'—'}</td>
+                                    <td className={TDR}>{t.nbVentes>0?`${fmtK(t.margeUnitaire)} €`:'—'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {sweetSpot&&(
+                          <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-4 py-3 space-y-2 text-xs text-[#1A1A1A]">
+                            <p>⭐ <strong>Votre sweet spot</strong> — La tranche <strong>{sweetSpot.label}</strong> est la plus performante sur cette famille (taux de marge <strong>{sweetSpot.tauxMarge}%</strong>, délai <strong>{sweetSpot.delaiMoyen!==null?`${sweetSpot.delaiMoyen} j`:'N/A'}</strong>, marge unit. moyenne <strong>{fmtK(sweetSpot.margeUnitaire)} €</strong>). Orientez vos acheteurs au comptoir pour sourcer davantage dans cette gamme de prix.</p>
+                            {trancheAlert&&<p>⚠️ <strong>À surveiller</strong> — La tranche <strong>{trancheAlert.label}</strong> mobilise du cash (délai <strong>{trancheAlert.delaiMoyen} j</strong>) pour une marge unitaire de <strong>{fmtK(trancheAlert.margeUnitaire)} €</strong>. À calibrer selon votre trésorerie disponible et votre vitesse de rotation cible.</p>}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Section 3: Sourcing */}
           {hasSourcingData&&(
