@@ -1000,8 +1000,8 @@ export function getJournalContext(magasinNom: string): string {
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function Badge({ qty }: { qty: number }) {
-  if (qty>=10) return <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ml-1.5 whitespace-nowrap font-medium">✅ Très fiable</span>;
-  if (qty>=5)  return <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-green-50 text-green-600 ml-1.5 whitespace-nowrap font-medium">🟢 Fiable</span>;
+  if (qty>=10) return <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ml-1.5 whitespace-nowrap font-medium">✅ Valeur sûre +</span>;
+  if (qty>=5)  return <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-green-50 text-green-600 ml-1.5 whitespace-nowrap font-medium">🟢 Valeur sûre</span>;
   if (qty>=3)  return <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700 ml-1.5 whitespace-nowrap font-medium">🟡 Tendance</span>;
   return           <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 ml-1.5 whitespace-nowrap font-medium">🔴 Faible</span>;
 }
@@ -1113,7 +1113,7 @@ function SectionTable({ title, cnt, alert, rows, cols, emptyMsg, extra }: {
 
 type TableFilter = 'all' | 'pepites' | 'fiables' | 'top20';
 interface TableSortOpt { key: string; label: string; fn: (a: ModelStats, b: ModelStats) => number; }
-const FILTER_LABELS: Record<TableFilter, string> = { all: 'Tout', pepites: '🌍 Pépites locales', fiables: '✅ Très fiables (≥10)', top20: '⚡ Top 20' };
+const FILTER_LABELS: Record<TableFilter, string> = { all: 'Tout', pepites: '🌍 Pépites locales', fiables: '✅ Valeurs sûres + (≥10)', top20: '⚡ Top 20' };
 
 function TableWithControls({ title, rows, cols, emptyMsg, extra, pepiteLocaleSet, sortOpts }: {
   title: string; rows: ModelStats[]; cols: ColDef[]; emptyMsg?: string; extra?: ReactNode;
@@ -2634,12 +2634,12 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
           <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-4">
             <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Recommandations stratégiques</h3>
             <ul className="space-y-2.5 text-sm">
-              <li><span className="font-semibold text-[#1A1A1A]">⚡ Rotation rapide (&lt; 30j, 🟢 ou ✅) :</span>{' '}<span className="text-[#6B7280]">{topRotations.filter(r=>r.qteVendue>=5).slice(0,5).map(r=>`${r.modele} (${r.delaiMoyen}j)`).join(', ')||'Aucun modèle fiable sur cette période.'}</span></li>
+              <li><span className="font-semibold text-[#1A1A1A]">⚡ Rotation rapide (&lt; 30j, 🟢 ou ✅) :</span>{' '}<span className="text-[#6B7280]">{topRotations.filter(r=>r.qteVendue>=5).slice(0,5).map(r=>`${r.modele} (${r.delaiMoyen}j)`).join(', ')||'Aucune valeur sûre sur cette période.'}</span></li>
               <li><span className="font-semibold text-[#E30613]">💎 Pépites locales :</span>{' '}<span className="text-[#6B7280]">{pepites.length>0?pepites.map(p=>p.modele).join(', '):'Aucune pépite détectée — élargissez la période.'}</span></li>
               {flops.length>0&&<li><span className="font-semibold text-red-600">🔴 Flops à traiter en priorité :</span>{' '}<span className="text-[#6B7280]">{flops.slice(0,3).map(f=>`${f.modele} (${f.delaiMoyen}j, ${fmtE(f.ecartEP!)})`).join(', ')}</span></li>}
             </ul>
             <div className="bg-[#FFF5F5] border border-[#FECACA] rounded-lg px-4 py-3 text-xs text-[#1A1A1A]">
-              <strong>Action prioritaire :</strong> intégrer les pépites locales fiables dans votre gamme prioritaire. Croisez avec le module <strong>Couverture de gamme</strong>.
+              <strong>Action prioritaire :</strong> intégrer les pépites locales valeurs sûres dans votre gamme prioritaire. Croisez avec le module <strong>Couverture de gamme</strong>.
             </div>
             {onAddAction&&(
               <button onClick={addToPAP} className="w-full bg-[#E30613] hover:bg-[#B8050F] text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition-colors">
