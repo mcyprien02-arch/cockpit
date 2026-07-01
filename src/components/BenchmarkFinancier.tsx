@@ -85,10 +85,10 @@ const DEFAULT_MOYENNES: MoyennesReseau = {
 const SANTE_INDICATEURS: SanteIndicateur[] = [
   {
     key: 'taux_marge_net',
-    label: 'Taux de marge net TTC',
+    label: 'Taux de marge brute (% CA TTC)',
     cible: '38–39 %',
     evaluate(v) { return v >= 38 ? 'vert' : v >= 36 ? 'orange' : 'rouge'; },
-    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF 38-39 %. Pistes : vérifier mix rayon, EasyPrice, gestion stock, ventes complémentaires, démarque.`; },
+    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF 38-39 %. Marge brute = (CA TTC − coût d'achat marchandises) / CA TTC — avant charges d'exploitation. Pistes : mix rayon, EasyPrice, sourcing, ventes complémentaires, démarque.`; },
   },
   {
     key: 'charges_externes',
@@ -109,7 +109,7 @@ const SANTE_INDICATEURS: SanteIndicateur[] = [
     label: 'EBE — % du CA HT',
     cible: '≥ 8 %',
     evaluate(v) { return v >= 8 ? 'vert' : v >= 5 ? 'orange' : 'rouge'; },
-    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ≥8 %. L'EBE dépend directement du taux de marge net, des charges externes et de la masse salariale. Identifier le levier prioritaire.`; },
+    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ≥8 %. L'EBE dépend directement du taux de marge brute, des charges externes et de la masse salariale. Identifier le levier prioritaire.`; },
   },
   {
     key: 'rcai',
@@ -731,6 +731,11 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
                 </tbody>
               </table>
             </div>
+
+            {/* Note formule marge brute */}
+            <p className="text-[10px] text-[#9CA3AF] italic">
+              ℹ️ <strong>Taux de marge brute</strong> = (CA TTC − coût d&apos;achat des marchandises) / CA TTC. Indicateur <em>avant</em> charges d&apos;exploitation (loyer, personnel, etc.). La marge <em>nette</em> d&apos;exploitation correspond à l&apos;EBE ci-dessous.
+            </p>
 
             {/* Synthèse automatique */}
             {santeSummary.nbSaisied > 0 && (
