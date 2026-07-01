@@ -7,6 +7,8 @@ import { getJournalContext } from '@/components/JournalAchatVente';
 import { getRoutinesContext } from '@/components/Routines';
 import { getVisionContext } from '@/components/Objectifs';
 import { getBenchmarkContext } from '@/components/BenchmarkFinancier';
+import { getSimulateurContext } from '@/components/Simulateur';
+import { getHistoireContext } from '@/components/Dashboard';
 
 interface Props {
   data: MagasinData;
@@ -166,11 +168,15 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
     if (!tpl) return;
     setSelectedTemplate(id);
     const base = tpl.build(data, actions);
+    const histoireCtx   = magasinNom ? getHistoireContext(magasinNom) : '';
+    const simuCtx       = magasinNom ? getSimulateurContext(magasinNom) : '';
     const journalCtx    = magasinNom ? getJournalContext(magasinNom) : '';
     const routinesCtx   = magasinNom ? getRoutinesContext(magasinNom) : '';
     const visionCtx     = magasinNom ? getVisionContext(magasinNom) : '';
     const benchmarkCtx  = magasinNom ? getBenchmarkContext(magasinNom) : '';
     let built = base;
+    if (histoireCtx)  built += `\n\nHISTOIRE DU MAGASIN :${histoireCtx}`;
+    if (simuCtx)      built += `\n\nÉQUIPE & RH :${simuCtx}`;
     if (journalCtx)   built += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
     if (routinesCtx)  built += `\n\nROUTINES HEBDOMADAIRES :${routinesCtx}`;
     if (visionCtx)    built += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
@@ -195,6 +201,21 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
   const cats = ['rentabilite', 'stock', 'commerce', 'rh'] as const;
   const catLabels: Record<string, string> = { rentabilite: 'Rentabilité', stock: 'Stock', commerce: 'Commerce', rh: 'RH' };
 
+  const histoireCtxPreview  = magasinNom ? getHistoireContext(magasinNom) : '';
+  const simuCtxPreview      = magasinNom ? getSimulateurContext(magasinNom) : '';
+  const journalCtxPreview   = magasinNom ? getJournalContext(magasinNom) : '';
+  const routinesCtxPreview  = magasinNom ? getRoutinesContext(magasinNom) : '';
+  const visionCtxPreview    = magasinNom ? getVisionContext(magasinNom) : '';
+  const benchmarkCtxPreview = magasinNom ? getBenchmarkContext(magasinNom) : '';
+  const activeModules = [
+    histoireCtxPreview  && '📖 Histoire',
+    simuCtxPreview      && '💰 Équipe/RH',
+    journalCtxPreview   && '📊 Journal',
+    routinesCtxPreview  && '🔁 Routines',
+    visionCtxPreview    && '🎯 Vision',
+    benchmarkCtxPreview && '📊 Benchmark',
+  ].filter(Boolean) as string[];
+
   return (
     <div className="space-y-5">
       <div>
@@ -206,8 +227,10 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
 
       {/* Context snapshot */}
       {data.nom && (
-        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
-          <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Contexte chargé — {data.nom}</h3>
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4 space-y-3">
+          <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Contexte chargé — {data.nom}</h3>
+
+          {/* Scores KPI manuels */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {cats.map(c => (
               <div key={c} className="text-center">
@@ -218,14 +241,30 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
               </div>
             ))}
           </div>
+
           {alerts.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {alerts.slice(0, 6).map(a => (
                 <span key={String(a.key)} className={`text-xs px-2 py-0.5 rounded-full ${a.status === 'danger' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
                   {a.label}
                 </span>
               ))}
               {alerts.length > 6 && <span className="text-xs text-[#6B7280]">+{alerts.length - 6} autres</span>}
+            </div>
+          )}
+
+          {/* Modules actifs dans le contexte */}
+          {activeModules.length > 0 && (
+            <div>
+              <p className="text-[10px] text-[#6B7280] mb-1.5 uppercase tracking-wider font-semibold">Modules inclus dans le prompt</p>
+              <div className="flex flex-wrap gap-1.5">
+                {activeModules.map(m => (
+                  <span key={m} className="text-xs px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700">{m} ✓</span>
+                ))}
+                {!activeModules.length && (
+                  <span className="text-xs text-[#9CA3AF] italic">Aucun module renseigné — remplissez d&apos;abord Journal, Simulateur, etc.</span>
+                )}
+              </div>
             </div>
           )}
         </div>

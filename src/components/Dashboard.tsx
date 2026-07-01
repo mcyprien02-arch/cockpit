@@ -26,6 +26,23 @@ const HISTOIRE_EMPTY: HistoireStore = { typePdV: '', anneeOuverture: '', effecti
 
 interface SimuSummary { ca: number; etp: number; msPct: number; masseSal: number; turnover: number | null }
 
+export function getHistoireContext(nom: string): string {
+  try {
+    const s = localStorage.getItem(`histoire_${nom}`);
+    if (!s) return '';
+    const h = JSON.parse(s) as HistoireStore;
+    const parts = [
+      h.typePdV && `Type PdV: ${h.typePdV}`,
+      h.anneeOuverture && `Ouverture: ${h.anneeOuverture}`,
+      h.effectif && `Effectif: ${h.effectif}`,
+      h.specificites && `Spécificités locales: ${h.specificites}`,
+      h.defis && `Défis actuels: ${h.defis}`,
+      h.objectifsPerso && `Objectifs personnels: ${h.objectifsPerso}`,
+    ].filter(Boolean);
+    return parts.length ? parts.join(' | ') : '';
+  } catch { return ''; }
+}
+
 function readSimuSummary(nom: string): SimuSummary | null {
   try {
     const s = localStorage.getItem(`equipe_${nom}`);
