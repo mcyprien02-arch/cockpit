@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction } from '@/types';
 import { getJournalContext } from '@/components/JournalAchatVente';
 import { getRoutinesContext } from '@/components/Routines';
@@ -8,9 +8,7 @@ import { getVisionContext } from '@/components/Objectifs';
 import { getBenchmarkContext } from '@/components/BenchmarkFinancier';
 import { getSimulateurContext } from '@/components/Simulateur';
 import { getHistoireContext } from '@/components/Dashboard';
-import CommentaireConsultant from './CommentaireConsultant';
-import PhraseExplicative from './PhraseExplicative';
-import NotesReunion from './NotesReunion';
+import ZonesModule from './ZonesModule';
 
 interface Props {
   data: MagasinData;
@@ -100,29 +98,31 @@ function buildDiagnosticPrompt(
     benchmarkCtx && 'Benchmark financier',
   ].filter(Boolean).join(', ');
 
+  // Return minimal placeholder when nothing is filled yet
+  if (!filledModules && !actionStr) {
+    return 'Remplissez au moins un module (Histoire, Journal, Benchmark, Simulateur…) pour générer le contexte.';
+  }
+
   let prompt = `${SYSTEM_PROMPT}\n\nMAGASIN: ${data.nom || 'Non renseigné'} — Phase: ${data.phase}`;
 
-  if (actionStr) prompt += `\n\nACTIONS EN COURS:\n${actionStr}`;
-  if (histoireCtx)  prompt += `\n\nHISTOIRE DU MAGASIN :${histoireCtx}`;
-  if (simuCtx)      prompt += `\n\nÉQUIPE & RH :${simuCtx}`;
-  if (journalCtx)   prompt += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
-  if (routinesCtx)  prompt += `\n\nROUTINES HEBDOMADAIRES :${routinesCtx}`;
-  if (visionCtx)    prompt += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
-  if (benchmarkCtx) prompt += `\n\nBENCHMARK FINANCIER :${benchmarkCtx}`;
+  if (actionStr)     prompt += `\n\nACTIONS EN COURS:\n${actionStr}`;
+  if (histoireCtx)   prompt += `\n\nHISTOIRE DU MAGASIN :${histoireCtx}`;
+  if (simuCtx)       prompt += `\n\nÉQUIPE & RH :${simuCtx}`;
+  if (journalCtx)    prompt += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
+  if (routinesCtx)   prompt += `\n\nROUTINES HEBDOMADAIRES :${routinesCtx}`;
+  if (visionCtx)     prompt += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
+  if (benchmarkCtx)  prompt += `\n\nBENCHMARK FINANCIER :${benchmarkCtx}`;
 
-  prompt += `\n\nMODULES DISPONIBLES : ${filledModules || 'aucun module renseigné'}\n\nProduis un diagnostic complet structuré :\n1. Points forts identifiés dans les données\n2. Problèmes prioritaires avec leur impact financier estimé\n3. Plan d'action concret (3 actions max, priorisées P1/P2/P3)\n4. Indicateur à surveiller chaque semaine`;
+  prompt += `\n\nMODULES DISPONIBLES : ${filledModules}\n\nProduis un diagnostic complet structuré :\n1. Points forts identifiés dans les données\n2. Problèmes prioritaires avec leur impact financier estimé\n3. Plan d'action concret (3 actions max, priorisées P1/P2/P3)\n4. Indicateur à surveiller chaque semaine`;
 
   return prompt;
 }
 
 export default function AssistantIA({ data, actions, magasinNom }: Props) {
-  const [prompt, setPrompt] = useState('');
   const [livePrompt, setLivePrompt] = useState('');
   const [showLive, setShowLive] = useState(true);
   const [copied, setCopied] = useState(false);
-  const autoRan = useRef(false);
 
-  // Live preview — rebuilt from localStorage every 1.5s
   useEffect(() => {
     const update = () => setLivePrompt(buildDiagnosticPrompt(data, actions, magasinNom ?? ''));
     update();
@@ -131,27 +131,11 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function generate() {
-    const p = buildDiagnosticPrompt(data, actions, magasinNom ?? '');
-    setPrompt(p);
-    setCopied(false);
-  }
-
-  useEffect(() => {
-    if (!autoRan.current) {
-      autoRan.current = true;
-      generate();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   async function copyAndOpen() {
     try {
-      await navigator.clipboard.writeText(prompt);
+      await navigator.clipboard.writeText(livePrompt);
       setCopied(true);
-    } catch {
-      // Clipboard might fail in some contexts — still open Claude
-    }
+    } catch {}
     window.open('https://claude.ai/new', '_blank');
     setTimeout(() => setCopied(false), 3000);
   }
@@ -170,6 +154,8 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
     visionCtxPreview    && '🎯 Vision',
     benchmarkCtxPreview && '📈 Benchmark',
   ].filter(Boolean) as string[];
+
+  const hasData = activeModules.length > 0;
 
   return (
     <div className="space-y-5">
@@ -196,7 +182,7 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
         )}
       </div>
 
-      {/* Live prompt preview */}
+      {/* Live prompt preview — single source of truth */}
       <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
         <button
           className="w-full flex items-center justify-between px-4 py-3 text-left"
@@ -207,7 +193,7 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
             <span className="text-[10px] text-[#10B981] font-semibold bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full">mis à jour en direct</span>
           </div>
           <div className="flex items-center gap-2 shrink-0 ml-2">
-            <span className="text-[10px] text-[#9CA3AF]">{livePrompt.length} car.</span>
+            {hasData && <span className="text-[10px] text-[#9CA3AF]">{livePrompt.length} car.</span>}
             <span className="text-[#9CA3AF] text-xs">{showLive ? '▲' : '▼'}</span>
           </div>
         </button>
@@ -220,62 +206,25 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
         )}
       </div>
 
-      {/* Single diagnostic button */}
-      <button
-        onClick={generate}
-        className="w-full flex items-center justify-center gap-2 bg-[#E30613] hover:bg-[#B8050F] text-white font-semibold py-3 rounded-xl text-sm transition-colors"
-      >
-        🔍 Générer le diagnostic
-      </button>
-
-      {/* Prompt editor */}
-      {prompt && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-[#1A1A1A]">Prompt généré</h3>
-            <span className="text-xs text-[#6B7280]">{prompt.length} caractères</span>
-          </div>
-          <textarea
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            rows={12}
-            className="w-full bg-white border border-[#E0E0E0] rounded-xl px-4 py-3 text-sm text-[#1A1A1A] font-mono resize-none focus:outline-none focus:border-[#E30613]"
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={copyAndOpen}
-              className="flex-1 bg-[#E30613] hover:bg-[#B8050F] text-white font-semibold py-3 rounded-xl text-sm transition-colors"
-            >
-              {copied ? '✓ Copié ! Claude s\'ouvre...' : 'Copier & ouvrir Claude'}
-            </button>
-            <button
-              onClick={() => { navigator.clipboard.writeText(prompt).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-              className="bg-white border border-[#E0E0E0] hover:bg-[#F5F5F5] text-[#1A1A1A] font-semibold py-3 px-4 rounded-xl text-sm transition-colors"
-            >
-              Copier
-            </button>
-          </div>
-          <p className="text-xs text-[#6B7280] text-center">
-            Le prompt sera copié dans votre presse-papier. Collez-le dans Claude sur claude.ai.
-          </p>
+      {/* Copy — only shown when there is real data to send */}
+      {hasData && (
+        <div className="flex gap-2">
+          <button
+            onClick={copyAndOpen}
+            className="flex-1 bg-[#E30613] hover:bg-[#B8050F] text-white font-semibold py-3 rounded-xl text-sm transition-colors"
+          >
+            {copied ? '✓ Copié ! Claude s\'ouvre...' : 'Copier & ouvrir Claude'}
+          </button>
+          <button
+            onClick={() => { navigator.clipboard.writeText(livePrompt).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+            className="bg-white border border-[#E0E0E0] hover:bg-[#F5F5F5] text-[#1A1A1A] font-semibold py-3 px-4 rounded-xl text-sm transition-colors"
+          >
+            Copier
+          </button>
         </div>
       )}
 
-      {/* How it works */}
-      {!prompt && (
-        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-3">
-          <h3 className="font-semibold text-sm text-[#1A1A1A]">Comment ça marche ?</h3>
-          <ol className="space-y-2 text-sm text-[#6B7280]">
-            <li className="flex gap-2"><span className="text-[#E30613] font-bold">1.</span><span>Renseignez vos données dans <strong className="text-[#1A1A1A]">Journal</strong>, <strong className="text-[#1A1A1A]">Simulateur</strong>, <strong className="text-[#1A1A1A]">Benchmark</strong> ou <strong className="text-[#1A1A1A]">Histoire</strong></span></li>
-            <li className="flex gap-2"><span className="text-[#E30613] font-bold">2.</span><span>Cliquez <strong className="text-[#1A1A1A]">Générer le diagnostic</strong> — seuls les modules remplis sont inclus</span></li>
-            <li className="flex gap-2"><span className="text-[#E30613] font-bold">3.</span><span>Cliquez <strong className="text-[#1A1A1A]">Copier &amp; ouvrir Claude</strong> et collez sur claude.ai</span></li>
-          </ol>
-        </div>
-      )}
-
-      <PhraseExplicative moduleKey="assistantia" defaultText="Diagnostic automatique qui croise tous les modules remplis pour proposer un plan d'action priorisé." />
-      <CommentaireConsultant moduleKey="assistantia" magasinNom={magasinNom || ''} />
-      <NotesReunion moduleKey="assistantia" />
+      <ZonesModule moduleKey="assistantia" />
     </div>
   );
 }

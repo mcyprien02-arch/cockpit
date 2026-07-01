@@ -2,9 +2,7 @@
 
 import { useState, useRef } from 'react';
 import type { MagasinData, PAPAction, ActionAxe, StoredStatut } from '@/types';
-import CommentaireConsultant from './CommentaireConsultant';
-import NotesReunion from './NotesReunion';
-import PhraseExplicative from './PhraseExplicative';
+import ZonesModule from './ZonesModule';
 
 interface Props {
   data: MagasinData;
@@ -502,9 +500,7 @@ export default function PlanAction({ data, actions, onSave }: Props) {
         )}
       </div>
 
-      <PhraseExplicative moduleKey="planaction" defaultText="Centralise toutes les actions remontées par les modules dans un planning unique." />
-      <CommentaireConsultant moduleKey="planaction" magasinNom={data.nom || ''} />
-      <NotesReunion moduleKey="planaction" />
+      <ZonesModule moduleKey="planaction" />
     </div>
   );
 }

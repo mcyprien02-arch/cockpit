@@ -3,9 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { PAPAction, ActionAxe, StoredStatut } from '@/types';
 import { getDelaiMoyenParFamille, detectFamilyCode } from './JournalAchatVente';
-import CommentaireConsultant from './CommentaireConsultant';
-import NotesReunion from './NotesReunion';
-import PhraseExplicative from './PhraseExplicative';
+import ZonesModule from './ZonesModule';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -757,9 +755,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
         )}
       </div>
 
-      <PhraseExplicative moduleKey="objectifs" defaultText="Convertit l'objectif de marge mensuel en besoin de sourcing réel, ajusté au stock et à la marge déjà réalisée." />
-      <CommentaireConsultant moduleKey="objectifs" magasinNom={magasinNom} />
-      <NotesReunion moduleKey="objectifs" />
+      <ZonesModule moduleKey="objectifs" />
     </div>
   );
 }

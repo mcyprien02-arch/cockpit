@@ -2,9 +2,7 @@
 
 import { useState } from 'react';
 import type { PAPAction } from '@/types';
-import CommentaireConsultant from './CommentaireConsultant';
-import NotesReunion from './NotesReunion';
-import PhraseExplicative from './PhraseExplicative';
+import ZonesModule from './ZonesModule';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -620,9 +618,7 @@ export default function Competences({ magasinNom, onAddAction }: Props) {
         </div>
       )}
 
-      <PhraseExplicative moduleKey="competences" defaultText="Cartographie les 26 compétences clés de l'équipe et détecte les dépendances critiques." />
-      <CommentaireConsultant moduleKey="competences" magasinNom={magasinNom} />
-      <NotesReunion moduleKey="competences" />
+      <ZonesModule moduleKey="competences" />
     </div>
   );
 }

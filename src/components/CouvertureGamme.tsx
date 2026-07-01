@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import type { PAPAction } from '@/types';
-import CommentaireConsultant from './CommentaireConsultant';
-import NotesReunion from './NotesReunion';
-import PhraseExplicative from './PhraseExplicative';
+import ZonesModule from './ZonesModule';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -408,9 +406,7 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
         Stock cible = Valeur de référence réseau × Qté par modèle. Stock actuel = Stock cible × Couverture. Score priorité = (Poids marge × Taux marge) / Délai vente. Estimations indicatives basées sur les valeurs saisies — ne constituent pas un engagement financier.
       </p>
 
-      <PhraseExplicative moduleKey="gamme" defaultText="Identifie les manques de gamme par famille et leur impact potentiel sur la marge." />
-      <CommentaireConsultant moduleKey="gamme" magasinNom={magasinNom} />
-      <NotesReunion moduleKey="gamme" />
+      <ZonesModule moduleKey="gamme" />
     </div>
   );
 }
