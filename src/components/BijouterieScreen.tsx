@@ -409,16 +409,6 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
     }).sort((a,b)=>b.margeTotal-a.margeTotal);
   },[filteredRows]);
 
-  const sweetSpotType = useMemo(()=>{
-    const candidates=byTypeBijou.filter(t=>t.type!=='Fonte/Or brut'&&t.nbVentes>=3&&t.delaiMoyen!=null);
-    if (!candidates.length) return null;
-    return candidates.reduce((best,t)=>{
-      const score=t.tauxMarge/(t.delaiMoyen??999);
-      const bestScore=best.tauxMarge/(best.delaiMoyen??999);
-      return score>bestScore?t:best;
-    });
-  },[byTypeBijou]);
-
   const byTranchePrix = useMemo(()=>{
     const totalCA=filteredRows.reduce((s,r)=>s+r.pv,0);
     return TRANCHES_PRIX.map(tr=>{
@@ -553,12 +543,11 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
     const lines=[
       `Analyse Bijouterie — ${allRows.length} articles (BOR:${borCount}, BOPI:${bopiCount}) · ${filteredRows.length} ventes A/B/C · ${fonteRows.length} fonte`,
       `Valeur achat:${fmtK(overview.va)}€ · Vente:${fmtK(overview.vv)}€ · Marge:${fmtK(overview.marge)}€ (${overview.tauxMarge}%)`,
-      sweetSpotType?`Sweet spot type: ${sweetSpotType.type} (taux marge ${sweetSpotType.tauxMarge}%, délai ${sweetSpotType.delaiMoyen}j)`:'',
       tresGenereux18k.length>0?`Acheteurs très généreux (18k): ${tresGenereux18k.map(a=>a.nom).join(', ')}`:'',
       fonteStats?`Fonte: ${fonteStats.nbLignes} lignes · ${fonteStats.poidsTotal}g · PA moy ${fonteStats.paMoyenG??'—'}€/g`:'',
     ].filter(Boolean).join('\n');
     try { localStorage.setItem(`bij_summary_${magasinNom}`,lines); } catch {}
-  },[overview,allRows,borCount,bopiCount,filteredRows,fonteRows,sweetSpotType,byAcheteurParTitre,fonteStats,magasinNom]);
+  },[overview,allRows,borCount,bopiCount,filteredRows,fonteRows,byAcheteurParTitre,fonteStats,magasinNom]);
 
   function TagBadge({ tag }: { tag: AcheteurRow['tag'] }) {
     if (!tag) return null;
@@ -846,10 +835,9 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
                     <th className={THR}>Délai moyen (j)</th><th className={THR}>PV moyen (€)</th><th className={THR}>PA moy./g (€/g)</th>
                   </tr></thead>
                   <tbody>{byTypeBijou.map((t,i)=>{
-                    const isSS=sweetSpotType?.type===t.type;
                     return (
-                      <tr key={i} className={isSS?'bg-green-50':i%2===0?'bg-white':'bg-[#FAFAFA]'}>
-                        <td className={TD}><span className="font-medium">{t.type}</span>{isSS&&<span className="ml-1.5 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">⭐ Sweet spot</span>}</td>
+                      <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                        <td className={TD}><span className="font-medium">{t.type}</span></td>
                         <td className={TDR}>{t.nbVentes}</td><td className={TDR}>{t.pctCA}%</td>
                         <td className={TDR}><span className={t.margeTotal<0?'text-red-600 font-semibold':''}>{fmtK(t.margeTotal)} €</span></td>
                         <td className={TDR}><span className={t.tauxMarge>=30?'text-green-600 font-semibold':t.tauxMarge<15?'text-red-600':''}>{t.tauxMarge}%</span></td>
@@ -1085,19 +1073,6 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
           <div className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-3">
             <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Recommandations stratégiques</h3>
             <div className="space-y-2">
-              {sweetSpotType&&(
-                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3">
-                  <p className="text-xs text-green-800">
-                    <strong>⭐ Sweet spot identifié :</strong> le type <strong>{sweetSpotType.type}</strong>
-                    {byTranchePoids.filter(t=>t.nbVentes>0).sort((a,b)=>(b.pctVolume??0)-(a.pctVolume??0))[0]&&<> pour la tranche de poids <strong>{byTranchePoids.filter(t=>t.nbVentes>0).sort((a,b)=>(b.pctVolume??0)-(a.pctVolume??0))[0].label}</strong></>}
-                    {' '}— taux de marge {sweetSpotType.tauxMarge}%, délai {sweetSpotType.delaiMoyen!=null?`${sweetSpotType.delaiMoyen}j`:'—'}. À prioriser au sourcing comptoir.
-                  </p>
-                  {onAddAction&&(papAdded.has('sweetspot')
-                    ?<span className="text-xs text-green-700 font-semibold bg-green-100 border border-green-300 rounded-full px-3 py-1 whitespace-nowrap">✓ Ajouté</span>
-                    :<button onClick={()=>addToPAP('sweetspot',`Prioriser les achats de type ${sweetSpotType.type}`,`Sweet spot identifié : type ${sweetSpotType.type}, taux marge ${sweetSpotType.tauxMarge}%, délai ${sweetSpotType.delaiMoyen??'—'}j. À prioriser au sourcing comptoir.`)} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
-                  )}
-                </div>
-              )}
               {(()=>{
                 const g18=byAcheteurParTitre.find(g=>g.titreKey==='18 carats (750)');
                 const genereux=g18?.acheteurs.filter(a=>a.tag==='tres_genereux'||a.tag==='genereux')??[];
@@ -1128,7 +1103,7 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
                   )}
                 </div>
               )}
-              {!sweetSpotType&&byAcheteurParTitre.every(g=>g.insuffisant)&&!fonteStats&&(
+              {byAcheteurParTitre.every(g=>g.insuffisant)&&!fonteStats&&(
                 <p className="text-xs text-[#9CA3AF] italic">Données insuffisantes pour générer des recommandations automatiques.</p>
               )}
             </div>
@@ -1144,7 +1119,7 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
         <div className="space-y-6">
           <div>
             <h3 className="text-sm font-bold text-[#1A1A1A]">📈 Gamme vs réseau — Benchmarks par famille</h3>
-            <p className="text-xs text-[#9CA3AF] mt-0.5">Répartition réelle des ventes (données importées dans l&apos;onglet Analyse) comparée aux benchmarks réseau EasyCash. Données basées sur le prix EP.</p>
+            <p className="text-xs text-[#9CA3AF] mt-0.5">Répartition réelle des ventes comparée aux benchmarks réseau EasyCash. Prix EP utilisé si disponible, sinon prix de vente.</p>
           </div>
           {allRows.length===0&&(
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 text-xs text-amber-800">
@@ -1153,10 +1128,10 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {BENCHMARKS_GAMME.map(def=>{
-              const rows=allRows.filter(r=>r.famCode===def.fc&&r.ep!=null&&(r.ep as number)>0);
+              const rows=allRows.filter(r=>r.famCode===def.fc&&((r.ep!=null&&(r.ep as number)>0)||r.pv>0));
               const total=rows.length;
               const trancheData=def.tranches.map(tr=>{
-                const n=rows.filter(r=>(r.ep as number)>=tr.min&&(r.ep as number)<tr.max).length;
+                const n=rows.filter(r=>{const p=(r.ep!=null&&(r.ep as number)>0)?(r.ep as number):r.pv;return p>=tr.min&&p<tr.max;}).length;
                 const real=total>0?Math.round(n/total*100):null;
                 const ecart=real!=null?real-tr.bench:null;
                 const badge=ecart==null?null:Math.abs(ecart)<=5?'vert':Math.abs(ecart)<=15?'orange':'rouge';

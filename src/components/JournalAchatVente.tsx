@@ -978,8 +978,6 @@ export function getJournalContext(magasinNom: string): string {
         const repartition=ts.map(t=>`${t.label}: ${t.pctCA}%`).join(' / ');
         trancheLine=[
           `Performance par tranche de prix (${domFamTr}) : ${repartition}`,
-          `Sweet spot : ${ss.label} — taux marge ${ss.tauxMarge}%, marge unit. ${ss.margeUnitaire}€, délai ${ss.delaiMoyen!==null?ss.delaiMoyen+'j':'N/A'}`,
-          alertC?`Tranche à surveiller : ${alertC.label} — délai ${alertC.delaiMoyen}j, mobilisation cash`:'',
         ].filter(Boolean).join('\n');
       }
     }
@@ -1894,14 +1892,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     return computeTranchePrix(trancheRows, getTranchesPrix(trancheFamily));
   },[trancheFamily,trancheRows]);
 
-  const sweetSpotData=useMemo(()=>{
-    const withV=trancheStats.filter(t=>t.nbVentes>0);
-    if(!withV.length) return {sweetSpot:null,trancheAlert:null};
-    const sweetSpot=withV.reduce((best,t)=>t.tauxMarge*t.margeTotal>best.tauxMarge*best.margeTotal?t:best);
-    const alertC=withV.filter(t=>t.pctCA>=10&&t.delaiMoyen!==null&&t.label!==sweetSpot.label)
-      .sort((a,b)=>(b.delaiMoyen??0)-(a.delaiMoyen??0))[0]??null;
-    return {sweetSpot,trancheAlert:alertC};
-  },[trancheStats]);
 
   const globalEPVente=useMemo(():number|null=>{
     const ms=stats.filter(s=>s.epMoyen!=null&&s.epMoyen>0);
@@ -2225,7 +2215,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
 
           {/* Section 2b: Performance par tranche de prix */}
           {trancheFamily&&trancheStats.length>0&&(()=>{
-            const {sweetSpot,trancheAlert}=sweetSpotData;
             const withV=trancheStats.filter(t=>t.nbVentes>0);
             const showMultiFamilyNote=selectedFamily==='all'&&detectedFamilies.length>1;
             return (
@@ -2258,15 +2247,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                             </thead>
                             <tbody>
                               {trancheStats.map((t,i)=>{
-                                const isSS=sweetSpot?.label===t.label;
-                                const isAlert=trancheAlert?.label===t.label;
-                                const rowBg=isSS?'bg-green-50':isAlert?'bg-orange-50':i%2===0?'bg-white':'bg-[#FAFAFA]';
                                 return (
-                                  <tr key={i} className={rowBg}>
+                                  <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
                                     <td className={TD}>
                                       <span className="font-medium">{t.label}</span>
-                                      {isSS&&<span className="ml-1.5 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">⭐ Sweet spot</span>}
-                                      {isAlert&&<span className="ml-1.5 text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">⚠️ Surveiller</span>}
                                     </td>
                                     <td className={TDR}>{t.nbVentes>0?t.nbVentes:'—'}</td>
                                     <td className={TDR}>{t.nbVentes>0?`${t.pctCA} %`:'—'}</td>
@@ -2280,12 +2264,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                             </tbody>
                           </table>
                         </div>
-                        {sweetSpot&&(
-                          <div className="bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-4 py-3 space-y-2 text-xs text-[#1A1A1A]">
-                            <p>⭐ <strong>Votre sweet spot</strong> — La tranche <strong>{sweetSpot.label}</strong> est la plus performante sur cette famille (taux de marge <strong>{sweetSpot.tauxMarge}%</strong>, délai <strong>{sweetSpot.delaiMoyen!==null?`${sweetSpot.delaiMoyen} j`:'N/A'}</strong>, marge unit. moyenne <strong>{fmtK(sweetSpot.margeUnitaire)} €</strong>). Orientez vos acheteurs au comptoir pour sourcer davantage dans cette gamme de prix.</p>
-                            {trancheAlert&&<p>⚠️ <strong>À surveiller</strong> — La tranche <strong>{trancheAlert.label}</strong> mobilise du cash (délai <strong>{trancheAlert.delaiMoyen} j</strong>) pour une marge unitaire de <strong>{fmtK(trancheAlert.margeUnitaire)} €</strong>. À calibrer selon votre trésorerie disponible et votre vitesse de rotation cible.</p>}
-                          </div>
-                        )}
                       </>
                     )}
                   </div>
