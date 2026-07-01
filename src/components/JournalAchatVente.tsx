@@ -38,7 +38,7 @@ interface CRow {
   an?: string; ap?: string; // acheteur (buyer) nom/prénom — for BOR canal
 }
 interface StoredImport { importedAt: string; rows: CRow[]; dateMin: string|null; dateMax: string|null; }
-interface GammeModele { produit: string; marque: string; plateforme: string; key_normalisee: string; inTop20: boolean; }
+interface GammeModele { produit: string; marque: string; plateforme: string; key_normalisee: string; inTop20: boolean; pctVol?: number; cumPct?: number; }
 interface GammeReseau { famille: string; date_import: string; nb_modeles: number; nb_top20: number; modeles: GammeModele[]; }
 interface TrancheDef { label: string; min: number; max: number; }
 interface TrancheStats { label: string; nbVentes: number; valeurVentes: number; margeTotal: number; tauxMarge: number; delaiMoyen: number|null; margeUnitaire: number; pctCA: number; }
@@ -954,6 +954,71 @@ function Badge({ qty }: { qty: number }) {
   if (qty>=3)  return <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700 ml-1.5 whitespace-nowrap font-medium">🟡 Tendance</span>;
   return           <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 ml-1.5 whitespace-nowrap font-medium">🔴 Faible</span>;
 }
+function GammeDetailPanel({gamme,filter,setFilter}:{gamme:GammeReseau;filter:'all'|'top20'|'other';setFilter:(f:'all'|'top20'|'other')=>void}){
+  const filtered=filter==='all'?gamme.modeles:filter==='top20'?gamme.modeles.filter(m=>m.inTop20):gamme.modeles.filter(m=>!m.inTop20);
+  const hasVol=gamme.modeles.some(m=>m.pctVol!=null);
+  const matchLabel=gamme.nb_top20<gamme.nb_modeles
+    ?`${gamme.nb_top20} utilisés pour le matching pépites locales (Top 20% volume cumulé)`
+    :'Tous les modèles utilisés pour le matching (volume non détecté ou gamme courte)';
+  return (
+    <div className="border border-[#E0E0E0] border-t-0 rounded-b-xl bg-[#F5F5F5] px-4 py-4 space-y-3">
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div>
+          <p className="text-xs font-semibold text-[#1A1A1A]">📋 Gamme {gamme.famille} importée — détail des modèles</p>
+          <p className="text-[10px] text-[#6B7280] mt-0.5">{gamme.nb_modeles} modèles importés · {matchLabel}</p>
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {(['all','top20','other'] as const).map(f=>(
+            <button key={f} onClick={()=>setFilter(f)} className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${filter===f?'bg-[#E30613] text-white':'bg-white border border-[#E0E0E0] text-[#6B7280] hover:border-[#E30613]'}`}>
+              {f==='all'?`Tous les modèles (${gamme.nb_modeles})`:f==='top20'?`✅ Top 20% matching (${gamme.nb_top20})`:`⚪ Hors matching (${gamme.nb_modeles-gamme.nb_top20})`}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-auto rounded-xl border border-[#E0E0E0]" style={{maxHeight:'500px'}}>
+        <table className="text-[10px] w-full border-collapse min-w-[560px]">
+          <thead>
+            <tr>{['#','Produit','Marque','Plateforme',...(hasVol?['% Volume','Cumul %']:[]),'Statut matching','Key normalisée'].map((l,i)=>(
+              <th key={i} className="px-3 py-2 text-left font-semibold bg-[#374151] text-white whitespace-nowrap sticky top-0">{l}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {filtered.map((m,i)=>{
+              const orig=gamme.modeles.indexOf(m)+1;
+              return (
+                <tr key={i} className={m.inTop20?'bg-green-50 hover:bg-green-100':'bg-white hover:bg-[#FAFAFA]'}>
+                  <td className="px-3 py-1.5 text-[#9CA3AF] text-center w-8">{orig}</td>
+                  <td className="px-3 py-1.5 font-medium text-[#1A1A1A] max-w-[180px]"><span className="block truncate">{m.produit||'—'}</span></td>
+                  <td className="px-3 py-1.5 text-[#6B7280] whitespace-nowrap">{m.marque||'—'}</td>
+                  <td className="px-3 py-1.5 text-[#6B7280] whitespace-nowrap">{m.plateforme||'—'}</td>
+                  {hasVol&&<td className="px-3 py-1.5 text-right text-[#6B7280]">{m.pctVol!=null?`${m.pctVol}%`:'—'}</td>}
+                  {hasVol&&<td className="px-3 py-1.5 text-right text-[#6B7280]">{m.cumPct!=null?`${m.cumPct}%`:'—'}</td>}
+                  <td className="px-3 py-1.5 whitespace-nowrap">
+                    {m.inTop20
+                      ?<span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">✅ Utilisé pour matching</span>
+                      :<span className="bg-gray-100 text-[#6B7280] px-1.5 py-0.5 rounded text-[9px] font-semibold">⚪ Hors matching</span>
+                    }
+                  </td>
+                  <td className="px-3 py-1.5 italic text-[#9CA3AF] max-w-[180px]"><span className="block truncate">{m.key_normalisee||'—'}</span></td>
+                </tr>
+              );
+            })}
+            {filtered.length===0&&(
+              <tr><td colSpan={hasVol?8:6} className="px-4 py-6 text-center text-[#9CA3AF] italic text-xs">Aucun modèle dans ce filtre.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="bg-white border border-[#E0E0E0] rounded-lg px-4 py-3 space-y-1 text-[10px] text-[#6B7280]">
+        <p className="font-semibold text-[#1A1A1A] text-xs">💡 Comprendre ce tableau :</p>
+        <p>— Les modèles <strong className="text-green-700">✅ verts</strong> sont ceux que l&apos;outil utilise pour identifier les pépites locales dans votre Top Rotations, Top Coefficient et Top Volumes.</p>
+        <p>— Si un modèle de votre journal n&apos;apparaît pas dans cette liste, il sera marqué <strong>🌍 Pépite locale</strong> (absent de la référence nationale → à sourcer en priorité au comptoir).</p>
+        <p>— La colonne <em>Key normalisée</em> montre comment l&apos;outil simplifie le libellé pour comparer avec votre journal Athéna (sans accents, minuscules, sans ponctuation).</p>
+      </div>
+    </div>
+  );
+}
+
 function EcartCell({v}:{v:number|null}){
   if(v===null) return <span className="text-[#D1D5DB]">—</span>;
   return <span className="font-semibold text-[#374151]">{v>0?'+':''}{v.toFixed(1)}%</span>;
@@ -1417,6 +1482,8 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
   const [toast,          setToast]          = useState<string|null>(null);
   const [gammes,         setGammes]         = useState<Record<string,GammeReseau>>({});
   const [gammeOpen,      setGammeOpen]      = useState(false);
+  const [gammeDetailOpen,setGammeDetailOpen]= useState<string|null>(null);
+  const [gammeDetailFilter,setGammeDetailFilter]= useState<'all'|'top20'|'other'>('all');
   const [trancheOpen,    setTrancheOpen]    = useState(true);
   const [gammeImport,    setGammeImport]    = useState<{step:'confirm'|'choose';detected:FamilyCode|null;chosen:string;parsedRows:Record<string,unknown>[];}|null>(null);
   const fileRef     = useRef<HTMLInputElement>(null);
@@ -1600,7 +1667,13 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
       if(totalVol>0&&cumVol>=totalVol*0.2) break;
     }
     if(inTop20.size===0&&parsed.length>0) inTop20.add(parsed[0].key);
-    const modeles:GammeModele[]=parsed.map(r=>({produit:r.produit,marque:r.marque,plateforme:r.plateforme,key_normalisee:r.key,inTop20:inTop20.has(r.key)}));
+    let cumVol2=0;
+    const modeles:GammeModele[]=parsed.map(r=>{
+      const pctVol=totalVol>0?Math.round(r.qte/totalVol*1000)/10:undefined;
+      cumVol2+=r.qte;
+      const cumPct=totalVol>0?Math.round(cumVol2/totalVol*1000)/10:undefined;
+      return {produit:r.produit,marque:r.marque,plateforme:r.plateforme,key_normalisee:r.key,inTop20:inTop20.has(r.key),pctVol,cumPct};
+    });
     const nb_top20=modeles.filter(m=>m.inTop20).length;
     const gamme:GammeReseau={famille,date_import:new Date().toISOString().slice(0,10),nb_modeles:modeles.length,nb_top20,modeles};
     setGammes(g=>({...g,[famille]:gamme}));
@@ -1898,15 +1971,27 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             <div className="space-y-1.5">
               {(['JCDR','JCON','TLCE','JPOR'] as FamilyCode[]).map(fc=>{
                 const g=gammes[fc];
+                const detailOpen=gammeDetailOpen===fc;
                 return (
-                  <div key={fc} className="flex items-center gap-2 text-xs">
-                    <span className="font-semibold text-[#1A1A1A] w-14">{fc}</span>
-                    {g?(
-                      <span className="text-green-700">✅ Importée le {g.date_import} — {g.nb_modeles} modèles{g.nb_top20<g.nb_modeles?` (${g.nb_top20} en Top 20% volume)`:''}</span>
-                    ):(
-                      <span className="text-[#9CA3AF]">Non importée</span>
+                  <div key={fc} className="space-y-0">
+                    <div className={`flex items-center gap-2 text-xs py-1 ${detailOpen?'':''}` }>
+                      <span className="font-semibold text-[#1A1A1A] w-14 flex-shrink-0">{fc}</span>
+                      {g?(
+                        <span className="text-green-700 flex-1">✅ Importée le {g.date_import} — {g.nb_modeles} modèles{g.nb_top20<g.nb_modeles?` (${g.nb_top20} en Top 20% volume)`:''}</span>
+                      ):(
+                        <span className="text-[#9CA3AF] flex-1">Non importée</span>
+                      )}
+                      {g&&(
+                        <button
+                          onClick={()=>{setGammeDetailOpen(prev=>prev===fc?null:fc);setGammeDetailFilter('all');}}
+                          className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-colors flex-shrink-0 ${detailOpen?'bg-[#E30613] text-white border-[#E30613]':'border-[#E0E0E0] text-[#6B7280] hover:border-[#E30613] hover:text-[#E30613]'}`}
+                        >👁 {detailOpen?'Fermer':'Voir les produits'}</button>
+                      )}
+                      {g&&<button onClick={()=>{localStorage.removeItem(`gamme_reseau_${fc}`);setGammes(gm=>{const n={...gm};delete n[fc];return n;});if(gammeDetailOpen===fc)setGammeDetailOpen(null);}} className="text-[#9CA3AF] hover:text-red-500 ml-1 text-[10px] flex-shrink-0">🗑</button>}
+                    </div>
+                    {g&&detailOpen&&(
+                      <GammeDetailPanel gamme={g} filter={gammeDetailFilter} setFilter={setGammeDetailFilter}/>
                     )}
-                    {g&&<button onClick={()=>{localStorage.removeItem(`gamme_reseau_${fc}`);setGammes(gm=>{const n={...gm};delete n[fc];return n;});}} className="text-[#9CA3AF] hover:text-red-500 ml-2 text-[10px]">🗑</button>}
                   </div>
                 );
               })}
