@@ -149,6 +149,11 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
   const caParEtp = totalEtp > 0 && caAnnuel > 0 ? caAnnuel / totalEtp : 0;
   const margeParEtp = totalEtp > 0 && caAnnuel > 0 ? (caAnnuel * tauxMarge / 100) / totalEtp : 0;
 
+  // Référence réseau : 1 ETP / 250k€ CA
+  const etpOptimal = caAnnuel > 0 ? Math.round(caAnnuel / 250000) : 0;
+  const msBudgetMax = caAnnuel > 0 ? Math.round(caAnnuel * 0.15) : 0;
+  const msEcart = msBudgetMax > 0 ? Math.round(totalMasseSal - msBudgetMax) : 0;
+
   const effectifMoyenDisplay = rhStore.effectifMoyen !== null ? rhStore.effectifMoyen : totalEtp;
   const turnover = effectifMoyenDisplay > 0 ? (rhStore.departs / effectifMoyenDisplay) * 100 : 0;
   const turnoverColor = turnover <= 15 ? 'text-green-600' : turnover <= 30 ? 'text-orange-500' : 'text-red-600';
@@ -191,7 +196,10 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
               {caAnnuel > 0 ? `${masseSalPct.toFixed(1)}%` : '—'}
             </div>
             <div className="text-xs text-[#6B7280]">Masse salariale</div>
-            <div className="text-xs text-[#9CA3AF]">cible ≤15%</div>
+            <div className="text-xs text-[#9CA3AF]">cible ≤15% réseau</div>
+            {msBudgetMax > 0 && (
+              <div className="text-[10px] text-[#9CA3AF] mt-0.5">max {msBudgetMax.toLocaleString('fr-FR')} €</div>
+            )}
           </div>
           <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
             <div className="text-2xl font-black text-[#1A1A1A]">{(totalMasseSal / 1000).toFixed(0)}k€</div>
@@ -206,16 +214,19 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
         {/* Alert: masse salariale > 15% */}
         {caAnnuel > 0 && masseSalPct > 15 && onAddAction && (
           <div className="flex items-center justify-between gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5">
-            <p className="text-xs text-orange-700"><strong>⚠ Masse salariale à {masseSalPct.toFixed(1)}%</strong> — cible ≤ 15% du CA</p>
+            <p className="text-xs text-orange-700">
+              <strong>⚠ Masse salariale à {masseSalPct.toFixed(1)}%</strong> — cible réseau ≤ 15% du CA
+              {msEcart > 0 && <span> — surcoût : <strong>{msEcart.toLocaleString('fr-FR')} €</strong> vs budget max</span>}
+            </p>
             <button onClick={() => {
               const e = new Date(); e.setDate(e.getDate() + 14);
-              onAddAction({ id: String(Date.now()), titre: `Simulateur — Masse salariale à ${masseSalPct.toFixed(1)}% du CA (cible ≤ 15%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Masse salariale actuelle : ${masseSalPct.toFixed(1)}% du CA (${Math.round(totalMasseSal).toLocaleString('fr-FR')} €). Analyser les plannings et les contrats pour réduire l'écart.`, echeance: e.toISOString().slice(0, 10), priorite: masseSalPct > 18 ? 1 : 2, gain: Math.round(totalMasseSal - caAnnuel * 0.15), statut: 'À faire' });
+              onAddAction({ id: String(Date.now()), titre: `Simulateur — Masse salariale à ${masseSalPct.toFixed(1)}% du CA (cible ≤ 15%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Masse salariale actuelle : ${masseSalPct.toFixed(1)}% du CA (${Math.round(totalMasseSal).toLocaleString('fr-FR')} €). Budget max réseau (15%) : ${msBudgetMax.toLocaleString('fr-FR')} €. Surcoût estimé : ${msEcart.toLocaleString('fr-FR')} €. Analyser les plannings et les contrats pour réduire l'écart.`, echeance: e.toISOString().slice(0, 10), priorite: masseSalPct > 18 ? 1 : 2, gain: msEcart, statut: 'À faire' });
             }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
           </div>
         )}
 
         {/* KPIs équipe — row 2 */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
             <div className={`text-2xl font-black ${caParEtp > 0 ? caColor(caParEtp) : 'text-[#6B7280]'}`}>
               {caParEtp > 0 ? `${(caParEtp / 1000).toFixed(0)}k€` : '—'}
@@ -229,6 +240,24 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
             </div>
             <div className="text-xs text-[#6B7280]">Marge par ETP</div>
             <div className="text-xs text-[#9CA3AF]">vert &gt;90k · orange 60-90k · rouge &lt;60k</div>
+          </div>
+          <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
+            <div className={`text-2xl font-black ${
+              etpOptimal === 0 ? 'text-[#6B7280]'
+              : Math.abs(totalEtp - etpOptimal) <= 0.5 ? 'text-green-600'
+              : totalEtp < etpOptimal - 0.5 ? 'text-orange-500'
+              : 'text-orange-500'
+            }`}>
+              {etpOptimal > 0 ? etpOptimal : '—'}
+            </div>
+            <div className="text-xs text-[#6B7280]">ETP cible réseau</div>
+            <div className="text-xs text-[#9CA3AF]">
+              {etpOptimal > 0 && totalEtp > 0
+                ? totalEtp < etpOptimal - 0.5 ? `actuel ${totalEtp.toFixed(1)} — sous-dim.`
+                  : totalEtp > etpOptimal + 0.5 ? `actuel ${totalEtp.toFixed(1)} — sur-dim.`
+                  : `actuel ${totalEtp.toFixed(1)} — OK`
+                : '1 ETP / 250k€ CA'}
+            </div>
           </div>
         </div>
 
@@ -423,7 +452,7 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
         </button>
         {showExplain && (
           <div className="border-t border-[#E0E0E0] px-4 py-4 text-xs text-[#6B7280] space-y-2 leading-relaxed">
-            <p><strong className="text-[#1A1A1A]">Masse salariale %</strong> = Coût salarial chargé annuel / CA annuel. Cible : ≤15% en maturité.</p>
+            <p><strong className="text-[#1A1A1A]">Masse salariale %</strong> = Coût salarial chargé annuel / CA annuel. Cible réseau : ≤15% (moyenne DAF toutes tranches confondues). Les magasins de moins de 800k€ CA affichent structurellement des ratios plus élevés en raison des charges fixes incompressibles.</p>
             <p><strong className="text-[#1A1A1A]">Coût chargé</strong> = salaire brut × heures × 12 × 1.42 (charges patronales estimées France).</p>
             <p><strong className="text-[#1A1A1A]">CA par ETP</strong> = CA annuel / nb ETP. Benchmark réseau : 250 000 €. Vert : 200-300k, orange : 150-200k ou 300-400k, rouge sinon.</p>
             <p><strong className="text-[#1A1A1A]">Marge par ETP</strong> = (CA × taux marge) / nb ETP. Vert : &gt;90k€, orange : 60-90k€, rouge : &lt;60k€.</p>
