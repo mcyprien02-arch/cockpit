@@ -78,7 +78,7 @@ export function getSimulateurContext(magasinNom: string): string {
       if (rhData.departs > 0) rhCtx = ` | Turnover: ${turnover.toFixed(0)}% (${rhData.departs} départs / ${eff.toFixed(1)} ETP moy)`;
     }
     if (totalEtp === 0) return '';
-    return `[Simulateur RH] CA: ${ca.toLocaleString('fr-FR')} € | Marge: ${marge}% | ETP: ${totalEtp.toFixed(1)} | MS: ${msPct.toFixed(1)}% CA | Coût annuel: ${Math.round(totalMS).toLocaleString('fr-FR')} €${rhCtx}`;
+    return `[Simulateur RH] CA: ${ca.toLocaleString('fr-FR')} € | Marge brute: ${marge}% | ETP: ${totalEtp.toFixed(1)} | MS: ${msPct.toFixed(1)}% CA | Coût annuel: ${Math.round(totalMS).toLocaleString('fr-FR')} €${rhCtx}`;
   } catch { return ''; }
 }
 
@@ -178,7 +178,7 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
             />
           </div>
           <div>
-            <label className="text-xs text-[#6B7280] block mb-1">Taux de marge (%)</label>
+            <label className="text-xs text-[#6B7280] block mb-1">Taux de marge brute (%)</label>
             <input
               type="number"
               value={tauxMarge || ''}
@@ -238,7 +238,7 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
             <div className={`text-2xl font-black ${margeParEtp > 0 ? margeColor(margeParEtp) : 'text-[#6B7280]'}`}>
               {margeParEtp > 0 ? `${(margeParEtp / 1000).toFixed(0)}k€` : '—'}
             </div>
-            <div className="text-xs text-[#6B7280]">Marge par ETP</div>
+            <div className="text-xs text-[#6B7280]">Marge brute par ETP</div>
             <div className="text-xs text-[#9CA3AF]">vert &gt;90k · orange 60-90k · rouge &lt;60k</div>
           </div>
           <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
