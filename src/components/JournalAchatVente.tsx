@@ -2331,8 +2331,8 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
               <h3 className="text-sm font-bold text-[#1A1A1A]">👥 Performance acheteurs magasin <span className="text-xs font-normal text-[#9CA3AF]">achats comptoir · min 5 achats</span></h3>
               <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
                 <table className="text-xs w-full border-collapse">
-                  <thead><tr>{['Acheteur','Nb achats','Val. achats (€)','Marge totale (€)','Taux marge (%)','Écart EP achat (%)','Délai moyen (j)'].map((l,i)=>(
-                    <th key={i} className={i===0?TH:THR}>{l}</th>
+                  <thead><tr>{['Acheteur','Nb achats','Val. achats (€)','Marge totale (€)','Taux marge (%)','Écart EP achat (%)','Délai moyen (j)','Action'].map((l,i)=>(
+                    <th key={i} className={i===0||i===7?TH:THR}>{l}</th>
                   ))}</tr></thead>
                   <tbody>{acheteurs.map((a,i)=>(
                     <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
@@ -2343,6 +2343,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                       <td className={TDR}><span className={a.tauxMarge>=40?'text-green-600 font-semibold':a.tauxMarge<30?'text-orange-500':''}>{a.tauxMarge} %</span></td>
                       <td className={TDR}>{a.ecartEPAchat!==null?<span className={Math.abs(a.ecartEPAchat)<=5?'text-green-600':'text-orange-500'}>{fmtE(a.ecartEPAchat)}</span>:'—'}</td>
                       <td className={TDR}>{a.delaiMoyen!==null?`${a.delaiMoyen} j`:'—'}</td>
+                      <td className={TD}>{onAddAction&&(
+                        <button onClick={()=>{const e=new Date();e.setDate(e.getDate()+14);onAddAction({id:String(Date.now()),titre:`Journal — Briefer l'acheteur ${a.nom}`,axe:'Management',pilote:'Franchisé',copilote:'',description:`Acheteur ${a.nom} : taux marge ${a.tauxMarge}%, délai moyen ${a.delaiMoyen??'—'}j. Briefer sur les objectifs VPD et la cote EasyPrice.`,echeance:e.toISOString().slice(0,10),priorite:2,gain:0,statut:'À faire'});setToast(`✓ Action ajoutée : ${a.nom}`);setTimeout(()=>setToast(null),3000);}}
+                          className="px-2 py-1 bg-[#E30613] text-white text-[10px] font-semibold rounded-lg hover:bg-red-700 transition-colors whitespace-nowrap">+ PAP</button>
+                      )}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -2440,6 +2444,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                   {label:'Invest. type',right:true,render:s=>s.paMoyen>0?<span className="text-[#E30613] font-semibold">{fmtK(s.paMoyen)} €/u</span>:'—'},
                   {label:'PA vs EP achat',right:true,render:s=><EcartCell v={s.ecartEPA??null}/>},
                   {label:'PV vs EP vente',right:true,render:s=><EcartCell v={s.ecartEP??null}/>},
+                  {label:'Action',render:s=>onAddAction?(
+                    <button onClick={()=>{const e=new Date();e.setDate(e.getDate()+14);onAddAction({id:String(Date.now()),titre:`Journal — Répliquer le sourcing du modèle ${s.modele}`,axe:'Stock',pilote:'Franchisé',copilote:'',description:`Modèle en rotation rapide (${s.delaiMoyen??'—'}j) — marge unit. ${s.margeUnitaire}€. Répliquer le sourcing comptoir sur cette référence.`,echeance:e.toISOString().slice(0,10),priorite:1,gain:s.margeUnitaire,statut:'À faire'});setToast(`✓ Action ajoutée : ${s.modele}`);setTimeout(()=>setToast(null),3000);}}
+                      className="px-2 py-1 bg-[#E30613] text-white text-[10px] font-semibold rounded-lg hover:bg-red-700 transition-colors whitespace-nowrap">+ PAP</button>
+                  ):null},
                 ]}
                 emptyMsg={`Aucun modèle (≥ 3 ventes) avec délai moyen < ${seuilRotationRapide.seuil}j sur cette période.`}
                 extra={
@@ -2588,8 +2596,8 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
               <>
                 <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
                   <table className="text-xs w-full border-collapse">
-                    <thead><tr>{['Modèle','Plateforme/Marque','Qté','Délai moyen (j)','PV moyen (€)','Cote EP (€)','Écart %'].map((l,i)=>(
-                      <th key={i} className={i===0?TH:THR}>{l}</th>
+                    <thead><tr>{['Modèle','Plateforme/Marque','Qté','Délai moyen (j)','PV moyen (€)','Cote EP (€)','Écart %','Action'].map((l,i)=>(
+                      <th key={i} className={i===0||i===7?TH:THR}>{l}</th>
                     ))}</tr></thead>
                     <tbody>{flops.map((s,i)=>(
                       <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
@@ -2605,6 +2613,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                             :'bg-orange-100 text-orange-700 font-semibold px-1.5 py-0.5 rounded'
                           }>{fmtE(s.ecartEP!)}</span>
                         </td>
+                        <td className={TD}>{onAddAction&&(
+                          <button onClick={()=>{const e=new Date();e.setDate(e.getDate()+14);onAddAction({id:String(Date.now()),titre:`Journal — Déstocker / Animer ${s.modele}`,axe:'Commerce',pilote:'Franchisé',copilote:'',description:`Modèle lent (${s.delaiMoyen??'—'}j, écart EP ${fmtE(s.ecartEP!)}) — Animer en vitrine ou ajuster le prix pour accélérer la rotation.`,echeance:e.toISOString().slice(0,10),priorite:2,gain:0,statut:'À faire'});setToast(`✓ Action ajoutée : ${s.modele}`);setTimeout(()=>setToast(null),3000);}}
+                            className="px-2 py-1 bg-[#E30613] text-white text-[10px] font-semibold rounded-lg hover:bg-red-700 transition-colors whitespace-nowrap">+ PAP</button>
+                        )}</td>
                       </tr>
                     ))}</tbody>
                   </table>

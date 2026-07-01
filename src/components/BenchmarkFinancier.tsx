@@ -825,6 +825,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
                   <th className={THR}>Écart (€)</th>
                   <th className={THR}>Écart (%)</th>
                   <th className={THR}>Statut</th>
+                  <th className={TH}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -847,6 +848,15 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
                     </td>
                     <td className={TDR}>
                       {r.saisied ? statusBadge(r.status) : <span className="text-[#D1D5DB]">—</span>}
+                    </td>
+                    <td className="px-3 py-2 border-t border-[#F0F0F0]">
+                      {r.saisied && (r.status === 'rouge' || r.status === 'orange') && onAddAction && (
+                        papAdded.has(r.key) ? (
+                          <span className="text-[10px] text-green-700 font-semibold">✓</span>
+                        ) : (
+                          <button onClick={() => addToPAP(r)} className="text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap transition-colors">+ PAP</button>
+                        )
+                      )}
                     </td>
                   </tr>
                 ))}

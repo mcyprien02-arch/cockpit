@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import type { PAPAction } from '@/types';
 
-interface Props { magasinNom: string; isCriticalSpiral?: boolean; }
+interface Props { magasinNom: string; isCriticalSpiral?: boolean; onAddAction?: (action: PAPAction) => void; }
 
 interface EquipeRow {
   id: string;
@@ -49,7 +50,7 @@ function margeColor(v: number) {
   return 'text-red-600';
 }
 
-export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
+export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }: Props) {
   const equipeKey = `equipe_${magasinNom}`;
 
   const [equipeStore, setEquipeStore] = useState<EquipeStore>(() => {
@@ -153,6 +154,17 @@ export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
           </div>
         </div>
 
+        {/* Alert: masse salariale > 15% */}
+        {caAnnuel > 0 && masseSalPct > 15 && onAddAction && (
+          <div className="flex items-center justify-between gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5">
+            <p className="text-xs text-orange-700"><strong>⚠ Masse salariale à {masseSalPct.toFixed(1)}%</strong> — cible ≤ 15% du CA</p>
+            <button onClick={() => {
+              const e = new Date(); e.setDate(e.getDate() + 14);
+              onAddAction({ id: String(Date.now()), titre: `Simulateur — Masse salariale à ${masseSalPct.toFixed(1)}% du CA (cible ≤ 15%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Masse salariale actuelle : ${masseSalPct.toFixed(1)}% du CA (${Math.round(totalMasseSal).toLocaleString('fr-FR')} €). Analyser les plannings et les contrats pour réduire l'écart.`, echeance: e.toISOString().slice(0, 10), priorite: masseSalPct > 18 ? 1 : 2, gain: Math.round(totalMasseSal - caAnnuel * 0.15), statut: 'À faire' });
+            }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
+          </div>
+        )}
+
         {/* KPIs équipe — row 2 */}
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
@@ -196,6 +208,18 @@ export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
               <p className="text-green-700">✓ Dimensionnement équipe cohérent avec le CA</p>
             )}
             <p className="text-xs text-[#6B7280] mt-2">Note : ces seuils sont indicatifs. Un magasin centre-ville avec forte saisonnalité peut justifier plus d&apos;ETP qu&apos;un magasin périphérique.</p>
+            {onAddAction && (ratioCAEtp > 400000 || ratioCAEtp < 180000) && (
+              <button onClick={() => {
+                const e = new Date(); e.setDate(e.getDate() + 14);
+                const titre = ratioCAEtp > 400000
+                  ? `Simulateur — Dimensionnement équipe insuffisant (${totalEtp.toFixed(1)} ETP pour ${caAnnuel.toLocaleString('fr-FR')} €)`
+                  : `Simulateur — Masse salariale sur-dimensionnée (${masseSalPct.toFixed(1)}% du CA)`;
+                const description = ratioCAEtp > 400000
+                  ? `CA/ETP = ${Math.round(ratioCAEtp).toLocaleString('fr-FR')} € vs benchmark 250 000 €. Envisager un recrutement pour absorber la charge.`
+                  : `${totalEtp.toFixed(1)} ETP pour ${caAnnuel.toLocaleString('fr-FR')} € CA. CA/ETP = ${Math.round(ratioCAEtp).toLocaleString('fr-FR')} € vs benchmark 250 000 €. Analyser les contrats à faible charge.`;
+                onAddAction({ id: String(Date.now()), titre, axe: 'Management', pilote: 'Franchisé', copilote: '', description, echeance: e.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
+              }} className="mt-2 text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
+            )}
           </div>
         )}
 

@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import type { PAPAction } from '@/types';
 
-interface Props { magasinNom: string; }
+interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
 type FreqKey = 'quotidien' | '3x' | '2x' | '1x' | 'mensuel';
 interface RoutineDef { id: string; label: string; freq: FreqKey; detail: string; monthly?: boolean; }
@@ -206,7 +207,7 @@ export function getRoutinesContext(magasinNom: string): string {
 }
 
 // ── Composant ─────────────────────────────────────────────────────────────────
-export default function Routines({ magasinNom }: Props) {
+export default function Routines({ magasinNom, onAddAction }: Props) {
   const [offset, setOffset] = useState(0);
   const [weekData, setWeekData] = useState<WeekData>(() => loadWeek(magasinNom, 0));
   const [tooltipId, setTooltipId] = useState<string | null>(null);
@@ -633,6 +634,12 @@ export default function Routines({ magasinNom }: Props) {
               ? '📈 Bon rythme. Continuez à consolider vos automatismes.'
               : "🏆 Routines installées. C'est le secret des magasins performants."}
         </p>
+        {pct < 50 && onAddAction && (
+          <button onClick={() => {
+            const e = new Date(); e.setDate(e.getDate() + 14);
+            onAddAction({ id: String(Date.now()), titre: `Routines — Mettre en place les routines hebdomadaires (score ${pct}%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Score routines semaine en cours : ${pct}% (${metCount}/${scoreableRoutines.length}). Planifier une revue hebdomadaire pour ancrer les bons réflexes.`, echeance: e.toISOString().slice(0, 10), priorite: 2, gain: 0, statut: 'À faire' });
+          }} className="mt-2 text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
+        )}
       </div>
 
       {/* Progression 12 semaines */}

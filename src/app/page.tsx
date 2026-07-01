@@ -161,10 +161,10 @@ export default function App() {
         {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} onNavigateToBijouterie={() => setTab('bijouterie')} />}
         {tab === 'bijouterie'  && <BijouterieScreen  magasinNom={currentNom} onNavigateToJournal={() => setTab('journal')} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'benchmark'   && <BenchmarkFinancier magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} />}
-        {tab === 'routines'    && <Routines          magasinNom={currentNom} />}
-        {tab === 'competences' && <Competences       magasinNom={currentNom} />}
-        {tab === 'simulateur'  && <Simulateur        magasinNom={currentNom} isCriticalSpiral={isCritical} />}
+        {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'routines'    && <Routines          magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'competences' && <Competences       magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
+        {tab === 'simulateur'  && <Simulateur        magasinNom={currentNom} isCriticalSpiral={isCritical} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'assistant'   && <AssistantIA       data={data} actions={actions} magasinNom={currentNom} />}
       </main>
 

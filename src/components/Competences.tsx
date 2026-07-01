@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import type { PAPAction } from '@/types';
 
-interface Props { magasinNom: string; }
+interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
 interface Collaborateur {
   id: string;
@@ -177,7 +178,7 @@ async function exportCompetences(magasinNom: string, collab: Collaborateur[]) {
   }
 }
 
-export default function Competences({ magasinNom }: Props) {
+export default function Competences({ magasinNom, onAddAction }: Props) {
   const storageKey = `comp_${magasinNom}`;
 
   const [collab, setCollab] = useState<Collaborateur[]>(() => {
@@ -440,14 +441,30 @@ export default function Competences({ magasinNom }: Props) {
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 space-y-1.5">
               <p className="text-xs font-semibold text-red-700 mb-2">Alertes équipe</p>
               {dependencyAlerts.map(a => (
-                <p key={`dep-${a.comp}`} className="text-xs text-red-600">
-                  ⚠ <strong>{a.comp}</strong> repose sur <strong>{a.prenom}</strong> seul (seul niveau 2) — risque dépendance
-                </p>
+                <div key={`dep-${a.comp}`} className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-red-600">
+                    ⚠ <strong>{a.comp}</strong> repose sur <strong>{a.prenom}</strong> seul (seul niveau 2) — risque dépendance
+                  </p>
+                  {onAddAction && (
+                    <button onClick={() => {
+                      const e = new Date(); e.setDate(e.getDate() + 14);
+                      onAddAction({ id: String(Date.now()), titre: `Compétences — Former un 2ème niveau sur ${a.comp}`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Dépendance critique : ${a.comp} repose uniquement sur ${a.prenom}. Former un second collaborateur pour réduire le risque d'absence.`, echeance: e.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
+                    }} className="text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
+                  )}
+                </div>
               ))}
               {noMasteryAlerts.map(c => (
-                <p key={`nm-${c.id}`} className="text-xs text-red-600">
-                  ⚠ <strong>{c.prenom}</strong> : aucune compétence niveau 2 — besoin formation
-                </p>
+                <div key={`nm-${c.id}`} className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-red-600">
+                    ⚠ <strong>{c.prenom}</strong> : aucune compétence niveau 2 — besoin formation
+                  </p>
+                  {onAddAction && (
+                    <button onClick={() => {
+                      const e = new Date(); e.setDate(e.getDate() + 14);
+                      onAddAction({ id: String(Date.now()), titre: `Compétences — Plan de formation pour ${c.prenom}`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `${c.prenom} n'a aucune compétence au niveau 2. Planifier un parcours de montée en compétence prioritaire.`, echeance: e.toISOString().slice(0, 10), priorite: 2, gain: 0, statut: 'À faire' });
+                    }} className="text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
+                  )}
+                </div>
               ))}
             </div>
           )}

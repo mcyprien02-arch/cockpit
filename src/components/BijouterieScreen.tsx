@@ -929,7 +929,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
                               <th className={TH}>Acheteur</th><th className={THR}>Nb achats</th>
                               <th className={THR}>Poids racheté (g)</th><th className={THR}>Val. achat (€)</th>
                               <th className={THR}>PA moy. au gramme (€/g)</th><th className={THR}>Marge totale (€)</th>
-                              <th className={THR}>Taux marge (%)</th><th className={THR}>Délai moyen (j)</th><th className={TH}>Tag</th>
+                              <th className={THR}>Taux marge (%)</th><th className={THR}>Délai moyen (j)</th><th className={TH}>Tag</th><th className={TH}>Action</th>
                             </tr></thead>
                             <tbody>{grp.acheteurs.map((a,i)=>(
                               <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
@@ -942,6 +942,9 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
                                 <td className={TDR}><span className={a.tauxMarge<10?'text-red-600':a.tauxMarge>=25?'text-green-600':''}>{a.tauxMarge}%</span></td>
                                 <td className={TDR}>{a.delaiMoyen!=null?`${a.delaiMoyen} j`:'—'}</td>
                                 <td className="px-3 py-2 border-t border-[#F0F0F0]"><TagBadge tag={a.tag} /></td>
+                                <td className="px-3 py-2 border-t border-[#F0F0F0]">{a.tag==='tres_genereux'&&onAddAction&&(
+                                  <button onClick={()=>addToPAP(`acheteur_${grp.titreKey}_${a.nom}`,`Bijouterie — Briefer l'acheteur ${a.nom||'Inconnu'} sur la marge ${grp.titreLabel}`,`Acheteur très généreux sur ${grp.titreLabel} (PA moy. ${a.prixMoyenG!=null?fmtG(a.prixMoyenG):'-'}€/g). Recadrer sur la médiane magasin (${grp.medianeG!=null?fmtG(grp.medianeG):'-'}€/g).`)} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap transition-colors">+ PAP</button>
+                                )}</td>
                               </tr>
                             ))}</tbody>
                           </table>
@@ -1027,7 +1030,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
                   <thead><tr>
                     <th className={TH}>Libellé produit</th><th className={TH}>Type</th>
                     <th className={THR}>Poids (g)</th><th className={THR}>PA (€)</th><th className={THR}>PV (€)</th>
-                    <th className={THR}>Délai (j)</th><th className={THR}>Cote EP (€)</th><th className={THR}>Écart %</th>
+                    <th className={THR}>Délai (j)</th><th className={THR}>Cote EP (€)</th><th className={THR}>Écart %</th><th className={TH}>Action</th>
                   </tr></thead>
                   <tbody>{flops.map((f,i)=>(
                     <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
@@ -1039,6 +1042,9 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
                       <td className={TDR}><span className="text-red-600 font-semibold">{f.dv} j</span></td>
                       <td className={TDR}>{fmtK(f.ep)} €</td>
                       <td className={TDR}><span className={`font-semibold ${Math.abs(f.ecartEP)>30?'text-red-600':'text-orange-600'}`}>{f.ecartEP>0?'+':''}{f.ecartEP}%</span></td>
+                      <td className={TD}>{onAddAction&&(
+                        <button onClick={()=>addToPAP(`pieceLente_${f.lib}`,`Bijouterie — Animer ${f.lib.slice(0,40)}`,`Pièce lente (${f.dv}j, écart EP ${f.ecartEP>0?'+':''}${f.ecartEP}%). Animer en vitrine ou ajuster le prix de vente.`)} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap transition-colors">+ PAP</button>
+                      )}</td>
                     </tr>
                   ))}</tbody>
                 </table>
