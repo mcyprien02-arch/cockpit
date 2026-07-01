@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PAPAction } from '@/types';
 import CommentaireConsultant from './CommentaireConsultant';
+import NotesReunion from './NotesReunion';
 import PhraseExplicative from './PhraseExplicative';
 
 interface Props { magasinNom: string; isCriticalSpiral?: boolean; onAddAction?: (action: PAPAction) => void; }
@@ -479,6 +480,7 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
 
       <PhraseExplicative moduleKey="simulateur" defaultText="Calcule la masse salariale, le ratio CA/ETP et le turnover pour piloter l'équipe." />
       <CommentaireConsultant moduleKey="simulateur" magasinNom={magasinNom} />
+      <NotesReunion moduleKey="simulateur" />
     </div>
   );
 }

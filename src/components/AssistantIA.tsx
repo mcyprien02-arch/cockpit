@@ -10,6 +10,7 @@ import { getSimulateurContext } from '@/components/Simulateur';
 import { getHistoireContext } from '@/components/Dashboard';
 import CommentaireConsultant from './CommentaireConsultant';
 import PhraseExplicative from './PhraseExplicative';
+import NotesReunion from './NotesReunion';
 
 interface Props {
   data: MagasinData;
@@ -274,6 +275,7 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
 
       <PhraseExplicative moduleKey="assistantia" defaultText="Diagnostic automatique qui croise tous les modules remplis pour proposer un plan d'action priorisé." />
       <CommentaireConsultant moduleKey="assistantia" magasinNom={magasinNom || ''} />
+      <NotesReunion moduleKey="assistantia" />
     </div>
   );
 }

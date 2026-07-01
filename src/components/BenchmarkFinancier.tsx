@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
 import CommentaireConsultant from './CommentaireConsultant';
+import NotesReunion from './NotesReunion';
 import PhraseExplicative from './PhraseExplicative';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1319,6 +1320,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
 
       <PhraseExplicative moduleKey="benchmark" defaultText="Compare le compte de résultat du magasin aux ratios réseau 2024 (marge nette, charges, EBE), moyenne et médiane." />
       <CommentaireConsultant moduleKey="benchmark" magasinNom={magasinNom} />
+      <NotesReunion moduleKey="benchmark" />
 
       {/* ── Clear data ── */}
       <div className="flex justify-end pt-2">

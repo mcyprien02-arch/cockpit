@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { detectTypeBijou, extractPoidsFromLib } from '@/lib/bijouUtils';
 import CommentaireConsultant from './CommentaireConsultant';
+import NotesReunion from './NotesReunion';
 import PhraseExplicative from './PhraseExplicative';
 import type { PAPAction } from '@/types';
 
@@ -1242,6 +1243,7 @@ const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[al
 
       <PhraseExplicative moduleKey="bijouterie" defaultText="Module spécialisé Or qui calcule médiane, marge par titre carat, et compare le canal fonte vs vitrine." />
       <CommentaireConsultant moduleKey="bijouterie" magasinNom={magasinNom} />
+      <NotesReunion moduleKey="bijouterie" />
     </div>
   );
 }

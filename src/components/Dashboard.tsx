@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import type { MagasinData, PAPAction, Phase } from '@/types';
 import { DEFAULT_DATA } from '@/types';
 import CommentaireConsultant from './CommentaireConsultant';
+import NotesReunion from './NotesReunion';
 import PhraseExplicative from './PhraseExplicative';
 
 interface Props {
@@ -397,6 +398,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
 
       <PhraseExplicative moduleKey="histoire" defaultText="Permet au franchisé de décrire son contexte (ancienneté, défis, objectifs) pour que l'Assistant IA personnalise ses recommandations à sa situation réelle." />
       {data.nom && <CommentaireConsultant moduleKey="histoire" magasinNom={data.nom} />}
+      <NotesReunion moduleKey="histoire" />
 
       {/* Modal — qualitative config only */}
       {showModal && (

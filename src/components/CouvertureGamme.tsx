@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import type { PAPAction } from '@/types';
 import CommentaireConsultant from './CommentaireConsultant';
+import NotesReunion from './NotesReunion';
 import PhraseExplicative from './PhraseExplicative';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
@@ -409,6 +410,7 @@ export default function CouvertureGamme({ magasinNom, onAddAction }: Props) {
 
       <PhraseExplicative moduleKey="gamme" defaultText="Identifie les manques de gamme par famille et leur impact potentiel sur la marge." />
       <CommentaireConsultant moduleKey="gamme" magasinNom={magasinNom} />
+      <NotesReunion moduleKey="gamme" />
     </div>
   );
 }
