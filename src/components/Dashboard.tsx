@@ -193,7 +193,7 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
     try { const s = localStorage.getItem(`histoire_${data.nom}`); return s ? JSON.parse(s) as HistoireStore : HISTOIRE_EMPTY; }
     catch { return HISTOIRE_EMPTY; }
   });
-  const [showHistoire, setShowHistoire] = useState(false);
+  const [showHistoire, setShowHistoire] = useState(true);
 
   useEffect(() => { setForm({ ...DEFAULT_DATA, ...data }); }, [data]);
 
@@ -395,12 +395,18 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-[#6B7280] block mb-1">Type de point de vente</label>
-                  <input
+                  <select
                     className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
                     value={histoire.typePdV}
                     onChange={e => saveHistoire({ ...histoire, typePdV: e.target.value })}
-                    placeholder="ex: Centre-ville, Zone commerciale…"
-                  />
+                  >
+                    <option value="">— Choisir —</option>
+                    <option value="Centre-ville">Centre-ville</option>
+                    <option value="Périphérie / Zone commerciale">Périphérie / Zone commerciale</option>
+                    <option value="Centre commercial">Centre commercial</option>
+                    <option value="Retail park">Retail park</option>
+                    <option value="Autre">Autre</option>
+                  </select>
                 </div>
                 <div>
                   <label className="text-xs text-[#6B7280] block mb-1">Année d&apos;ouverture</label>
