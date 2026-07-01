@@ -1915,6 +1915,55 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     return {total,pct,noEPA,noEP,noDV,noPAorPV,totalStats,glEPVinc,glEPAinc,rotExclNoDelay,rotShownNoEP,coeffExcl,flopsExcl,filtTotal,filtWithDV,rotWithEPA,rotWithEPV,rotTotal:topRotations.length};
   },[stored,stats,filteredRows,topRotations]);
 
+  // Debug: delay calculation audit (visible panel — remove once validated)
+  const debugDelais=useMemo(()=>{
+    if(!stored||!filteredRows.length) return null;
+    const allRows=stored.rows;
+    const totalAll=allRows.length;
+    const withDVall=allRows.filter(r=>r.dv&&r.dv>0).length;
+    const aberrantAll=allRows.filter(r=>r.dv&&r.dv>365).length;
+    // Filtered rows stats
+    const fRows=filteredRows;
+    const dvRows=fRows.filter(r=>r.dv&&r.dv>0);
+    const aberrantF=dvRows.filter(r=>r.dv!>365).length;
+    const noOutF=dvRows.filter(r=>r.dv!<=365);
+    const avg=(arr:{dv:number|null|undefined}[])=>arr.length>0?Math.round(arr.reduce((s,r)=>s+(r.dv??0),0)/arr.length):null;
+    const avgCap=(arr:typeof dvRows)=>arr.length>0?Math.round(arr.reduce((s,r)=>s+Math.min(r.dv!,365),0)/arr.length):null;
+    // Top 3 platforms
+    const platMap=new Map<string,{dvs:number[]}>();
+    for(const r of fRows){
+      const p=detectMarqueOuPlateforme(r.m,r.f);
+      if(!platMap.has(p)) platMap.set(p,{dvs:[]});
+      if(r.dv&&r.dv>0) platMap.get(p)!.dvs.push(r.dv);
+    }
+    const top3Plat=Array.from(platMap.entries()).filter(([,g])=>g.dvs.length>=3).sort((a,b)=>b[1].dvs.length-a[1].dvs.length).slice(0,3).map(([plat,g])=>{
+      const cur=Math.round(g.dvs.reduce((s,v)=>s+v,0)/g.dvs.length);
+      const noOut=g.dvs.filter(v=>v<=365);
+      const noOutAvg=noOut.length>0?Math.round(noOut.reduce((s,v)=>s+v,0)/noOut.length):null;
+      const capAvg=Math.round(g.dvs.reduce((s,v)=>s+Math.min(v,365),0)/g.dvs.length);
+      const ecart=noOutAvg!==null?Math.abs(cur-noOutAvg):0;
+      return {plat,cur,capAvg,noOutAvg,ecart,n:g.dvs.length,nOut:g.dvs.length-noOut.length};
+    });
+    // Top 3 buyers (by r.co, cv='P')
+    const buyMap=new Map<string,{dvs:number[]}>();
+    for(const r of fRows){
+      const buyer=(r.co??'').trim();
+      if(!buyer) continue;
+      if(!buyMap.has(buyer)) buyMap.set(buyer,{dvs:[]});
+      if(r.dv&&r.dv>0) buyMap.get(buyer)!.dvs.push(r.dv);
+    }
+    const top3Buy=Array.from(buyMap.entries()).filter(([,g])=>g.dvs.length>=3).sort((a,b)=>b[1].dvs.length-a[1].dvs.length).slice(0,3).map(([buyer,g])=>{
+      const cur=Math.round(g.dvs.reduce((s,v)=>s+v,0)/g.dvs.length);
+      const noOut=g.dvs.filter(v=>v<=365);
+      const noOutAvg=noOut.length>0?Math.round(noOut.reduce((s,v)=>s+v,0)/noOut.length):null;
+      const capAvg=Math.round(g.dvs.reduce((s,v)=>s+Math.min(v,365),0)/g.dvs.length);
+      const ecart=noOutAvg!==null?Math.abs(cur-noOutAvg):0;
+      return {buyer,cur,capAvg,noOutAvg,ecart,n:g.dvs.length,nOut:g.dvs.length-noOut.length};
+    });
+    const verdict=(e:number)=>e<2?'✅ fiable (<2j d\'écart)':e<=5?`⚠️ acceptable (${e}j — à documenter)`:`❌ à corriger (${e}j d'écart)`;
+    return {totalAll,withDVall,noDVall:totalAll-withDVall,aberrantAll,dvRowsCount:dvRows.length,aberrantF,noOutFCount:noOutF.length,curMean:avg(dvRows),capMean:avgCap(dvRows),noOutMean:avg(noOutF),top3Plat,top3Buy,verdict};
+  },[stored,filteredRows]);
+
   // ACTION 2: family-aware brand/platform widget data
   const topBrands=useMemo(()=>{
     const brands=new Map<string,number>();
@@ -2061,6 +2110,109 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
           </div>
         )}
       </div>
+
+      {/* 🔍 DEBUG — Fiabilité des délais moyens (temporaire) */}
+      {debugDelais&&(
+        <div className="border-2 border-dashed border-purple-400 bg-purple-50 rounded-xl p-4 space-y-4 text-xs">
+          <p className="font-bold text-purple-800 text-sm">🔍 DEBUG — Méthode de calcul des délais moyens</p>
+
+          {/* Nettoyage */}
+          <div className="space-y-1">
+            <p className="font-semibold text-purple-700">NETTOYAGE (sur l&apos;ensemble du fichier importé) :</p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+              <span>Total lignes journal :</span>
+              <span className="font-semibold">{debugDelais.totalAll.toLocaleString('fr-FR')}</span>
+              <span>Lignes avec délai renseigné (dv &gt; 0) :</span>
+              <span className="font-semibold">{debugDelais.withDVall.toLocaleString('fr-FR')} ({Math.round(debugDelais.withDVall/debugDelais.totalAll*100)}%)</span>
+              <span>Lignes sans délai (null/vide/0) :</span>
+              <span className="font-semibold">{debugDelais.noDVall.toLocaleString('fr-FR')} ({Math.round(debugDelais.noDVall/debugDelais.totalAll*100)}%)</span>
+              <span>Lignes avec délai aberrant (&gt; 365j) :</span>
+              <span className={`font-semibold ${debugDelais.aberrantAll>0?'text-orange-600':''}`}>{debugDelais.aberrantAll.toLocaleString('fr-FR')} ({Math.round(debugDelais.aberrantAll/debugDelais.totalAll*100)}%)</span>
+              <span>Traitement des aberrants :</span>
+              <span className="font-semibold text-orange-600">⚠️ Inclus tels quels — aucun plafonnement ni exclusion</span>
+            </div>
+          </div>
+
+          {/* Méthode */}
+          <div className="space-y-1">
+            <p className="font-semibold text-purple-700">CALCUL DES MOYENNES (période filtrée : {filteredRows.length.toLocaleString('fr-FR')} lignes) :</p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+              <span>Méthode utilisée :</span>
+              <span className="font-semibold">Moyenne arithmétique simple — chaque transaction = poids 1</span>
+              <span>Lignes incluses dans le calcul :</span>
+              <span className="font-semibold">Uniquement dv &gt; 0 ({debugDelais.dvRowsCount.toLocaleString('fr-FR')} lignes sur {filteredRows.length.toLocaleString('fr-FR')})</span>
+              <span>Lignes exclues du numérateur ET dénominateur :</span>
+              <span className="font-semibold">{(filteredRows.length-debugDelais.dvRowsCount).toLocaleString('fr-FR')} (dv null/0)</span>
+              <span>Aberrants dans période filtrée :</span>
+              <span className={`font-semibold ${debugDelais.aberrantF>0?'text-orange-600':''}`}>{debugDelais.aberrantF} lignes (dv &gt; 365j) — inclus tels quels</span>
+              <span>Délai moyen global actuel :</span>
+              <span className="font-semibold">{debugDelais.curMean!==null?`${debugDelais.curMean}j`:'N/A'}</span>
+              <span>Délai moyen si plafonnement à 365j :</span>
+              <span className="font-semibold">{debugDelais.capMean!==null?`${debugDelais.capMean}j`:'N/A'}</span>
+              <span>Délai moyen sans outliers (dv ≤ 365j) :</span>
+              <span className="font-semibold">{debugDelais.noOutMean!==null?`${debugDelais.noOutMean}j (sur ${debugDelais.noOutFCount} lignes)`:'N/A'}</span>
+            </div>
+          </div>
+
+          {/* Cross-check plateformes */}
+          {debugDelais.top3Plat.length>0&&(
+            <div className="space-y-1">
+              <p className="font-semibold text-purple-700">VÉRIFICATION CROISÉE — Performance par marque/plateforme (top {debugDelais.top3Plat.length}) :</p>
+              <div className="overflow-x-auto rounded-lg border border-purple-200">
+                <table className="text-[10px] w-full border-collapse min-w-[540px]">
+                  <thead><tr className="bg-purple-100">
+                    {['Plateforme/Marque','N lignes dv>0','Outliers (>365j)','Méthode actuelle','Avec plafonnement 365j','Sans outliers','Écart actuel/sans-outliers','Verdict'].map((l,i)=>(
+                      <th key={i} className="px-2 py-1.5 text-left font-semibold text-purple-900 whitespace-nowrap">{l}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>{debugDelais.top3Plat.map((d,i)=>(
+                    <tr key={i} className={i%2===0?'bg-white':'bg-purple-50'}>
+                      <td className="px-2 py-1.5 font-medium">{d.plat}</td>
+                      <td className="px-2 py-1.5 text-right">{d.n}</td>
+                      <td className={`px-2 py-1.5 text-right ${d.nOut>0?'text-orange-600 font-semibold':''}`}>{d.nOut}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold">{d.cur}j</td>
+                      <td className="px-2 py-1.5 text-right">{d.capAvg}j</td>
+                      <td className="px-2 py-1.5 text-right">{d.noOutAvg!==null?`${d.noOutAvg}j`:'—'}</td>
+                      <td className={`px-2 py-1.5 text-right font-semibold ${d.ecart>=5?'text-red-600':d.ecart>=2?'text-orange-500':'text-green-700'}`}>{d.noOutAvg!==null?`${d.ecart}j`:'—'}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{d.noOutAvg!==null?debugDelais.verdict(d.ecart):'N/A'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Cross-check acheteurs */}
+          {debugDelais.top3Buy.length>0&&(
+            <div className="space-y-1">
+              <p className="font-semibold text-purple-700">VÉRIFICATION CROISÉE — Performance acheteurs (top {debugDelais.top3Buy.length} par volume de rachats avec délai) :</p>
+              <div className="overflow-x-auto rounded-lg border border-purple-200">
+                <table className="text-[10px] w-full border-collapse min-w-[540px]">
+                  <thead><tr className="bg-purple-100">
+                    {['Acheteur','N rachats dv>0','Outliers (>365j)','Méthode actuelle','Avec plafonnement 365j','Sans outliers','Écart','Verdict'].map((l,i)=>(
+                      <th key={i} className="px-2 py-1.5 text-left font-semibold text-purple-900 whitespace-nowrap">{l}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>{debugDelais.top3Buy.map((d,i)=>(
+                    <tr key={i} className={i%2===0?'bg-white':'bg-purple-50'}>
+                      <td className="px-2 py-1.5 font-medium">{d.buyer}</td>
+                      <td className="px-2 py-1.5 text-right">{d.n}</td>
+                      <td className={`px-2 py-1.5 text-right ${d.nOut>0?'text-orange-600 font-semibold':''}`}>{d.nOut}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold">{d.cur}j</td>
+                      <td className="px-2 py-1.5 text-right">{d.capAvg}j</td>
+                      <td className="px-2 py-1.5 text-right">{d.noOutAvg!==null?`${d.noOutAvg}j`:'—'}</td>
+                      <td className={`px-2 py-1.5 text-right font-semibold ${d.ecart>=5?'text-red-600':d.ecart>=2?'text-orange-500':'text-green-700'}`}>{d.noOutAvg!==null?`${d.ecart}j`:'—'}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{d.noOutAvg!==null?debugDelais.verdict(d.ecart):'N/A'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[10px] text-purple-600 italic">Cet encart DEBUG sera retiré une fois la méthode de calcul validée et le correctif appliqué.</p>
+        </div>
+      )}
 
       {/* Global indicators */}
       {showGlobal&&(
