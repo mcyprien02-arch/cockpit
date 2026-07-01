@@ -398,9 +398,20 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
     localStorage.setItem(`inventaires_${magasinNom}_${invYear}`, JSON.stringify(newData));
   }
 
+  const [invShowHistory, setInvShowHistory] = useState(false);
+
   const invCurrentMonth = new Date().getMonth();
   const invIsCurrentYear = invYear === currentYear;
   const invUpToMonth = invIsCurrentYear ? invCurrentMonth : 11;
+
+  // Families due this month (monthly always, bimonthly on even months)
+  const invMonthDue = INV_GROUPES.flatMap(g =>
+    (g.freq === 'monthly' || (g.freq === 'bimonthly' && invCurrentMonth % 2 === 0))
+      ? g.familles.map(f => ({ f, g }))
+      : []
+  );
+  const invMonthTotal = invMonthDue.length;
+  const invMonthDone = invMonthDue.filter(({ f }) => !!(invData[f.code]?.[invCurrentMonth])).length;
 
   let invFait = 0, invPreconise = 0;
   for (const groupe of INV_GROUPES) {
@@ -759,136 +770,171 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
 
       {/* ── Inventaires tournants ─────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+
+        {/* Header */}
         <div className="px-4 py-2.5 bg-[#F5F5F5] border-b border-[#E0E0E0] flex items-center justify-between flex-wrap gap-2">
-          <h3 className="font-bold text-sm text-[#1A1A1A]">📋 Inventaires tournants</h3>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => changeInvYear(invYear - 1)}
-              className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-[#E0E0E0] hover:bg-[#EBEBEB] text-sm font-bold text-[#1A1A1A] transition-colors"
-            >‹</button>
-            <span className="text-sm font-bold text-[#1A1A1A] min-w-[40px] text-center">{invYear}</span>
-            <button
-              onClick={() => changeInvYear(invYear + 1)}
-              disabled={invYear >= currentYear}
-              className={`w-7 h-7 flex items-center justify-center rounded-lg border text-sm font-bold transition-colors ${
-                invYear >= currentYear
-                  ? 'bg-[#F5F5F5] border-[#E0E0E0] text-[#D1D5DB] cursor-not-allowed'
-                  : 'bg-white border-[#E0E0E0] hover:bg-[#EBEBEB] text-[#1A1A1A]'
-              }`}
-            >›</button>
-          </div>
-        </div>
-        <p className="px-4 pt-3 pb-2 text-xs italic text-[#6B7280]">
-          Les inventaires tournants sont la base d&apos;un pilotage stock fiable. Cochez quand vous les réalisez. Familles regroupées par fréquence préconisée.
-        </p>
-        {INV_GROUPES.map(groupe => (
-          <div key={groupe.id} className="border-t border-[#E0E0E0]">
-            <div className={`px-4 py-2 flex items-center gap-2 ${groupe.subBg}`}>
-              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${groupe.badgeCls}`}>
-                {groupe.badge}
+          <div className="flex items-center gap-3 flex-wrap">
+            <h3 className="font-bold text-sm text-[#1A1A1A]">📋 Inventaires tournants</h3>
+            {!invShowHistory && invIsCurrentYear && invMonthTotal > 0 && (
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                invMonthDone === invMonthTotal ? 'bg-green-100 text-green-700' :
+                invMonthDone > 0 ? 'bg-orange-100 text-orange-700' : 'bg-[#F0F0F0] text-[#9CA3AF]'
+              }`}>
+                {invMonthDone}/{invMonthTotal} ce mois
               </span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-[#FAFAFA] border-b border-[#E0E0E0]">
-                    <th className="text-left px-4 py-2 text-[#6B7280] font-semibold min-w-[150px] sticky left-0 bg-[#FAFAFA] z-10 border-r border-[#E0E0E0]">
-                      Famille
-                    </th>
-                    {MONTHS.map((m, mi) => (
-                      <th key={m} className={`text-center py-2 font-semibold w-9 ${
-                        invIsCurrentYear && mi === invCurrentMonth ? 'text-[#E30613] font-black' :
-                        invIsCurrentYear && mi > invCurrentMonth  ? 'text-[#C0C0C0]' : 'text-[#6B7280]'
-                      }`}>{m}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F4F4F4]">
-                  {groupe.familles.map(f => {
-                    const checks = (invData[f.code] ?? new Array<boolean>(12).fill(false)) as boolean[];
-                    const status = getInvRowStatus(checks, groupe.freq, invUpToMonth);
-                    const rowBg = status === 'green' ? 'bg-green-50' : status === 'orange' ? 'bg-orange-50' : 'bg-white';
-                    return (
-                      <tr key={f.code} className={rowBg}>
-                        <td className={`px-4 py-2 sticky left-0 z-10 border-r border-[#E0E0E0] ${rowBg}`}>
-                          <div className="flex items-start gap-1.5 flex-wrap">
-                            <span className={`font-mono text-[11px] font-bold ${
-                              status === 'green' ? 'text-green-700' : status === 'orange' ? 'text-orange-600' : 'text-[#374151]'
-                            }`}>{f.code}</span>
-                            {f.special && (
-                              <span className="text-[9px] font-semibold text-orange-600 bg-orange-100 border border-orange-200 px-1 py-0.5 rounded leading-none">
-                                {f.special}
-                              </span>
-                            )}
-                            <span className="text-[10px] text-[#9CA3AF] w-full leading-tight">{f.label}</span>
-                          </div>
-                        </td>
-                        {MONTHS.map((_, mi) => {
-                          const isFuture = invIsCurrentYear && mi > invCurrentMonth;
-                          const isChecked = checks[mi] ?? false;
-                          return (
-                            <td key={mi} className="text-center py-1.5 px-0.5">
-                              <button
-                                onClick={() => toggleInv(f.code, mi)}
-                                aria-label={`${f.code} — ${MONTHS[mi]} ${invYear}`}
-                                className={`w-7 h-7 rounded-md border-2 flex items-center justify-center mx-auto transition-all touch-manipulation ${
-                                  isChecked
-                                    ? 'bg-[#E30613] border-[#E30613] text-white'
-                                    : isFuture
-                                      ? 'bg-[#F9F9F9] border-[#EBEBEB] text-[#D1D5DB]'
-                                      : 'bg-white border-[#D1D5DB] hover:border-[#E30613]/60 active:bg-[#FFF5F5]'
-                                }`}
-                              >
-                                {isChecked && <span className="text-[10px] font-black leading-none">✓</span>}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            )}
           </div>
-        ))}
-        <div className="border-t border-[#E0E0E0] px-4 py-3 bg-[#FAFAFA]">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full border bg-[#F0F0F0] text-[#9CA3AF] border-[#E0E0E0]">
-              ⚪ Non préconisé ou à définir
-            </span>
+          <div className="flex items-center gap-2">
+            {invShowHistory && (
+              <>
+                <button onClick={() => changeInvYear(invYear - 1)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-[#E0E0E0] hover:bg-[#EBEBEB] text-sm font-bold text-[#1A1A1A] transition-colors">‹</button>
+                <span className="text-sm font-bold text-[#1A1A1A] min-w-[40px] text-center">{invYear}</span>
+                <button onClick={() => changeInvYear(invYear + 1)} disabled={invYear >= currentYear} className={`w-7 h-7 flex items-center justify-center rounded-lg border text-sm font-bold transition-colors ${invYear >= currentYear ? 'bg-[#F5F5F5] border-[#E0E0E0] text-[#D1D5DB] cursor-not-allowed' : 'bg-white border-[#E0E0E0] hover:bg-[#EBEBEB] text-[#1A1A1A]'}`}>›</button>
+              </>
+            )}
+            <button
+              onClick={() => setInvShowHistory(h => !h)}
+              className="text-xs text-[#6B7280] hover:text-[#1A1A1A] border border-[#E0E0E0] rounded-lg px-2.5 py-1 bg-white transition-colors"
+            >
+              {invShowHistory ? 'Vue mensuelle ↑' : 'Historique ↓'}
+            </button>
           </div>
-          <p className="text-xs text-[#9CA3AF] italic">
-            Familles spécifiques à votre magasin. Définissez vos propres fréquences avec votre animateur réseau.
-          </p>
         </div>
-        <div className="border-t border-[#E0E0E0] px-4 py-4">
-          <p className="text-sm text-[#1A1A1A]">
-            Cette année, <strong>{invFait}</strong> inventaires faits sur{' '}
-            <strong>{invPreconise}</strong> préconisés{' '}
-            <strong className={invPct >= 80 ? 'text-green-600' : invPct >= 50 ? 'text-orange-600' : 'text-red-600'}>
-              ({invPct}%)
-            </strong>.
-          </p>
-          {invPreconise > 0 && (
-            <>
-              <div className="mt-2 h-2 bg-[#E0E0E0] rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    invPct >= 80 ? 'bg-green-500' : invPct >= 50 ? 'bg-orange-400' : 'bg-red-400'
-                  }`}
-                  style={{ width: `${invPct}%` }}
-                />
+
+        {/* Vue mensuelle — checklist Ce mois */}
+        {!invShowHistory && (
+          <div className="divide-y divide-[#F0F0F0]">
+            {INV_GROUPES.map(groupe => {
+              const dueFamilies = groupe.freq === 'yearly'
+                ? groupe.familles
+                : groupe.freq === 'monthly'
+                  ? groupe.familles
+                  : invCurrentMonth % 2 === 0 ? groupe.familles : [];
+              if (!dueFamilies.length) return null;
+              return (
+                <div key={groupe.id} className={`px-4 py-3 ${groupe.subBg}`}>
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${groupe.badgeCls}`}>{groupe.badge}</span>
+                    {groupe.freq !== 'yearly' && (
+                      <span className="text-xs text-[#6B7280]">
+                        {dueFamilies.filter(f => !!(invData[f.code]?.[invCurrentMonth])).length}/{dueFamilies.length} faits
+                      </span>
+                    )}
+                    {groupe.freq === 'yearly' && (
+                      <span className="text-xs text-[#6B7280]">
+                        {dueFamilies.filter(f => (invData[f.code] ?? []).some(Boolean)).length}/{dueFamilies.length} faits {invIsCurrentYear ? 'cette année' : `en ${invYear}`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    {dueFamilies.map(f => {
+                      const isChecked = groupe.freq === 'yearly'
+                        ? (invData[f.code] ?? []).some(Boolean)
+                        : !!(invData[f.code]?.[invCurrentMonth]);
+                      return (
+                        <div key={f.code} className="flex items-center gap-3">
+                          <button
+                            onClick={() => groupe.freq === 'yearly'
+                              ? toggleInv(f.code, invCurrentMonth)
+                              : toggleInv(f.code, invCurrentMonth)
+                            }
+                            aria-label={`${f.code}`}
+                            className={`w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all touch-manipulation ${
+                              isChecked ? 'bg-[#E30613] border-[#E30613] text-white' : 'bg-white border-[#D1D5DB] hover:border-[#E30613]/60 active:bg-[#FFF5F5]'
+                            }`}
+                          >
+                            {isChecked && <span className="text-[10px] font-black leading-none">✓</span>}
+                          </button>
+                          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                            <span className="font-mono text-[11px] font-bold text-[#374151] flex-shrink-0">{f.code}</span>
+                            {f.special && <span className="text-[9px] font-semibold text-orange-600 bg-orange-100 border border-orange-200 px-1 py-0.5 rounded leading-none">{f.special}</span>}
+                            <span className="text-xs text-[#6B7280] truncate">{f.label}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Vue historique — tableau 12 mois */}
+        {invShowHistory && (
+          <>
+            <p className="px-4 pt-3 pb-2 text-xs italic text-[#6B7280]">
+              Cochez les mois où vous avez réalisé l&apos;inventaire. Familles regroupées par fréquence préconisée.
+            </p>
+            {INV_GROUPES.map(groupe => (
+              <div key={groupe.id} className="border-t border-[#E0E0E0]">
+                <div className={`px-4 py-2 flex items-center gap-2 ${groupe.subBg}`}>
+                  <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${groupe.badgeCls}`}>{groupe.badge}</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-[#FAFAFA] border-b border-[#E0E0E0]">
+                        <th className="text-left px-4 py-2 text-[#6B7280] font-semibold min-w-[150px] sticky left-0 bg-[#FAFAFA] z-10 border-r border-[#E0E0E0]">Famille</th>
+                        {MONTHS.map((m, mi) => (
+                          <th key={m} className={`text-center py-2 font-semibold w-9 ${
+                            invIsCurrentYear && mi === invCurrentMonth ? 'text-[#E30613] font-black' :
+                            invIsCurrentYear && mi > invCurrentMonth ? 'text-[#C0C0C0]' : 'text-[#6B7280]'
+                          }`}>{m}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#F4F4F4]">
+                      {groupe.familles.map(f => {
+                        const checks = (invData[f.code] ?? new Array<boolean>(12).fill(false)) as boolean[];
+                        const status = getInvRowStatus(checks, groupe.freq, invUpToMonth);
+                        const rowBg = status === 'green' ? 'bg-green-50' : status === 'orange' ? 'bg-orange-50' : 'bg-white';
+                        return (
+                          <tr key={f.code} className={rowBg}>
+                            <td className={`px-4 py-2 sticky left-0 z-10 border-r border-[#E0E0E0] ${rowBg}`}>
+                              <div className="flex items-start gap-1.5 flex-wrap">
+                                <span className={`font-mono text-[11px] font-bold ${status === 'green' ? 'text-green-700' : status === 'orange' ? 'text-orange-600' : 'text-[#374151]'}`}>{f.code}</span>
+                                {f.special && <span className="text-[9px] font-semibold text-orange-600 bg-orange-100 border border-orange-200 px-1 py-0.5 rounded leading-none">{f.special}</span>}
+                                <span className="text-[10px] text-[#9CA3AF] w-full leading-tight">{f.label}</span>
+                              </div>
+                            </td>
+                            {MONTHS.map((_, mi) => {
+                              const isFuture = invIsCurrentYear && mi > invCurrentMonth;
+                              const isChecked = checks[mi] ?? false;
+                              return (
+                                <td key={mi} className="text-center py-1.5 px-0.5">
+                                  <button
+                                    onClick={() => toggleInv(f.code, mi)}
+                                    aria-label={`${f.code} — ${MONTHS[mi]} ${invYear}`}
+                                    className={`w-7 h-7 rounded-md border-2 flex items-center justify-center mx-auto transition-all touch-manipulation ${
+                                      isChecked ? 'bg-[#E30613] border-[#E30613] text-white' :
+                                      isFuture ? 'bg-[#F9F9F9] border-[#EBEBEB] text-[#D1D5DB]' :
+                                      'bg-white border-[#D1D5DB] hover:border-[#E30613]/60 active:bg-[#FFF5F5]'
+                                    }`}
+                                  >
+                                    {isChecked && <span className="text-[10px] font-black leading-none">✓</span>}
+                                  </button>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <p className={`text-sm font-semibold mt-2 ${invPct < 50 ? 'text-red-600' : invPct <= 80 ? 'text-orange-600' : 'text-green-600'}`}>
-                {invPct < 50
-                  ? '🚨 Vos inventaires sont en retard. Le pilotage stock devient fragile.'
-                  : invPct <= 80
-                    ? '📊 Bon rythme. Maintenez la régularité.'
-                    : "🏆 Pilotage stock maîtrisé. C'est ce qui sépare les top magasins du reste."}
-              </p>
-            </>
-          )}
+            ))}
+          </>
+        )}
+
+        {/* Résumé annuel compact */}
+        <div className="border-t border-[#E0E0E0] px-4 py-3 flex items-center gap-3 bg-[#FAFAFA]">
+          <span className="text-xs text-[#6B7280] whitespace-nowrap">{invIsCurrentYear ? `${currentYear}` : invYear} : <strong className="text-[#1A1A1A]">{invFait}/{invPreconise}</strong></span>
+          <div className="flex-1 h-1.5 bg-[#E0E0E0] rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-300 ${invPct >= 80 ? 'bg-green-500' : invPct >= 50 ? 'bg-orange-400' : 'bg-red-400'}`} style={{ width: `${invPct}%` }} />
+          </div>
+          <span className={`text-xs font-bold whitespace-nowrap ${invPct >= 80 ? 'text-green-600' : invPct >= 50 ? 'text-orange-600' : 'text-red-600'}`}>{invPct}%</span>
         </div>
       </div>
 
