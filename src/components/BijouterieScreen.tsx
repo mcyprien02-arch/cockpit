@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { detectTypeBijou, extractPoidsFromLib } from '@/lib/bijouUtils';
 import type { PAPAction } from '@/types';
 
-interface Props { magasinNom: string; onNavigateToJournal?: () => void; onAddAction?: (action: PAPAction) => void; isAuditMode?: boolean; }
+interface Props { magasinNom: string; onNavigateToJournal?: () => void; onAddAction?: (action: PAPAction) => void; }
 
 type Periode = 'all'|'3m'|'6m'|'12m';
 type GradeFilter = 'all'|'A'|'B'|'C';
@@ -180,7 +180,7 @@ export function getBijouterieContext(magasinNom: string): string {
   try { const raw=localStorage.getItem(`bij_summary_${magasinNom}`); return raw??''; } catch { return ''; }
 }
 
-export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAddAction, isAuditMode }: Props) {
+export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAddAction }: Props) {
   const [allRows,        setAllRows]        = useState<BijRow[]>([]);
   const [periode,        setPeriode]        = useState<Periode>('all');
   const [grade,          setGrade]          = useState<GradeFilter>('all');
@@ -517,21 +517,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
     };
   },[fonteRows,fonteConfig]);
 
-  const auditAlerts = useMemo(()=>{
-    if (!allRows.length) return [];
-    const total=filteredRows.length;
-    const sansPoidsN=total>0?filteredRows.filter(r=>r.poids===null).length:0;
-    const pctSansPoids=total>0?sansPoidsN/total*100:0;
-    const autreN=filteredRows.filter(r=>r.type==='Autre').length;
-    const pctAutre=total>0?autreN/total*100:0;
-    const fonteNonConfig=!fonteConfig.useGradeD&&fonteConfig.keywords.length===0;
-    return [
-      pctSansPoids>5&&`⚠️ ${sansPoidsN} lignes (${pctSansPoids.toFixed(1)}%) sans poids détecté — vérifier le format "X,XX G" dans les libellés`,
-      pctAutre>10&&`⚠️ ${autreN} lignes (${pctAutre.toFixed(1)}%) classées "Autre" — les types bijoux ne sont pas bien détectés`,
-      fonteNonConfig&&`⚠️ Configuration fonte vide — aucun critère de détection fonte actif`,
-    ].filter(Boolean) as string[];
-  },[allRows,filteredRows,fonteConfig]);
-
   const margePotentielFonte = useMemo(()=>{
     if (!hasCookson||!fonteStats?.paMoyenG||!fonteStats.poidsTotal) return null;
     return Math.round(fonteStats.poidsTotal*(cooksonNum-fonteStats.paMoyenG));
@@ -582,9 +567,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h2 className="text-lg font-bold text-[#1A1A1A]">💍 Bijouterie · {magasinNom||'Magasin'}
-            {isAuditMode&&<span className="ml-2 text-xs font-bold bg-orange-500 text-white rounded px-2 py-0.5">MODE AUDIT ACTIF</span>}
-          </h2>
+          <h2 className="text-lg font-bold text-[#1A1A1A]">💍 Bijouterie · {magasinNom||'Magasin'}</h2>
           <p className="text-xs text-[#9CA3AF] mt-0.5">Analyse spécialisée BOR/BOPI — types de bijoux, tranches de poids, prix au gramme, acheteurs</p>
         </div>
         {onNavigateToJournal&&(
@@ -593,20 +576,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
           </button>
         )}
       </div>
-
-      {/* Audit panel */}
-      {isAuditMode&&allRows.length>0&&(
-        auditAlerts.length>0?(
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs space-y-1">
-            <p className="font-bold text-red-800">🚨 Vérification automatique — {allRows.length.toLocaleString('fr-FR')} lignes</p>
-            {auditAlerts.map((a,i)=><p key={i} className="text-red-700">{a}</p>)}
-          </div>
-        ):(
-          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-xs text-green-800">
-            <strong>🔍 Audit Bijouterie :</strong> ✅ Aucune incohérence sur {allRows.length.toLocaleString('fr-FR')} lignes.
-          </div>
-        )
-      )}
 
       {/* Drop zone */}
       <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}

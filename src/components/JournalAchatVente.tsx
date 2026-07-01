@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
 
-interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; isAuditMode?: boolean; }
+interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; }
 type Periode = 'all' | '3m' | '6m' | '12m';
 type FamilyCode = 'TLCE'|'JCON'|'JCDR'|'JPOR'|'BOR'|'BOPI'|'BMAR'|'BMON'|'IPOR'|'ITAB'|'UNKNOWN';
 
@@ -1564,7 +1564,7 @@ function FamilyBreakdownSection({ rows, canalRows, family, cookson, onCooksonCha
 }
 
 // ── main component ────────────────────────────────────────────────────────────
-export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateToBijouterie, isAuditMode }: Props) {
+export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateToBijouterie }: Props) {
   const [stored,         setStored]         = useState<StoredImport|null>(null);
   const [periode,        setPeriode]        = useState<Periode>('all');
   const [grade,          setGrade]          = useState('all');
@@ -1613,57 +1613,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     else localStorage.removeItem(`journal_cookson_${magasinNom}`);
   },[cookson,magasinNom]);
 
-  // PARTIE C — Diagnostic report in console after import
-  useEffect(()=>{
-    if (!stored||!stored.rows.length) return;
-    const familyCounts=new Map<string,number>();
-    const unknownFamilies=new Set<string>();
-    for (const r of stored.rows) {
-      const fc=detectFamilyCode(r.f);
-      const label=fc==='UNKNOWN'?`UNKNOWN (${r.f||'(vide)'})`:`${fc}`;
-      familyCounts.set(fc,(familyCounts.get(fc)??0)+1);
-      if (fc==='UNKNOWN'&&r.f.trim().length>=5) unknownFamilies.add(r.f.trim());
-    }
-    const rows=stored.rows;
-    const statsAll=computeStats(rows);
-    const MIN3all=(s:ModelStats)=>s.qteVendue>=3;
-    const perteSall=statsAll.filter(s=>MIN3all(s)&&s.margeTotal<0);
-    const faibleAll=statsAll.filter(s=>MIN3all(s)&&s.tauxMarge<20&&s.delaiMoyen!==null&&s.delaiMoyen>90&&s.margeTotal>=0); // global uses 90j
-    console.group(`[JournalAchatVente] Rapport diagnostic — ${magasinNom} — ${rows.length} lignes`);
-    console.log('=== Répartition par famille ===');
-    Array.from(familyCounts.entries()).sort((a,b)=>b[1]-a[1]).forEach(([fc,n])=>{
-      const pct=Math.round(n/rows.length*100);
-      console.log(`  ${fc.padEnd(6)} : ${n} lignes (${pct}%)`);
-    });
-    if (unknownFamilies.size>0) {
-      console.warn('=== Sous-familles non reconnues ===');
-      unknownFamilies.forEach(f=>console.warn(`  → "${f}"`));
-    }
-    console.log('=== Modèles à surveiller (toutes familles, min 3 ventes) ===');
-    console.log(`  🔴 Perte sèche : ${perteSall.length} modèle(s)`);
-    if (perteSall.length>0) perteSall.slice(0,5).forEach(s=>console.log(`     • ${s.modele} (marge totale ${s.margeTotal} €)`));
-    console.log(`  🟡 Faible rendement (taux marge < 20%, délai > 90j) : ${faibleAll.length} modèle(s)`);
-    if (faibleAll.length>0) faibleAll.slice(0,5).forEach(s=>console.log(`     • ${s.modele} (taux marge ${s.tauxMarge}%, délai ${s.delaiMoyen}j)`));
-    // Per-family non-catégorisé (for BOR and JCDR/JCON)
-    const borRows=rows.filter(r=>detectFamilyCode(r.f)==='BOR');
-    if (borRows.length>0) {
-      const borValid=borRows.filter(r=>isBORValid(r.m));
-      const nc=borValid.filter(r=>detectBORType(r.m)==='Non catégorisé').length;
-      console.log(`  BOR : ${borRows.length} brutes → ${borValid.length} valides → ${nc} Non catégorisé (${borValid.length>0?Math.round(nc/borValid.length*100):0}%)`);
-    }
-    const jcdrRows=rows.filter(r=>detectFamilyCode(r.f)==='JCDR');
-    if (jcdrRows.length>0) {
-      const nd=jcdrRows.filter(r=>detectPlatform(r.m)==='Plateforme non détectée').length;
-      console.log(`  JCDR : ${jcdrRows.length} lignes → ${nd} plateforme non détectée (${Math.round(nd/jcdrRows.length*100)}%)`);
-    }
-    const jconRows=rows.filter(r=>detectFamilyCode(r.f)==='JCON');
-    if (jconRows.length>0) {
-      const nd=jconRows.filter(r=>detectPlatform(r.m)==='Plateforme non détectée').length;
-      console.log(`  JCON : ${jconRows.length} lignes → ${nd} plateforme non détectée (${Math.round(nd/jconRows.length*100)}%)`);
-    }
-    console.groupEnd();
-  },[stored,magasinNom]);
-
   const processFile = useCallback(async (file: File)=>{
     setLoading(true); setError(null);
     try {
@@ -1706,7 +1655,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
         if (ep)  r.ep=ep;  if (epa) r.epa=epa;
         if (cv)  r.cv=cv;  if (fn)  r.fn=fn;  if (fp) r.fp=fp;
         if (co)  r.co=co;  if (an)  r.an=an;  if (ap) r.ap=ap;
-        if (rows.length<3) console.log('DEBUG row parsing:',{libelle:r.m,sousfamille_recue:r.f,grade:r.g,achatLib,fichetechLib});
         rows.push(r);
       }
       if (!rows.length) throw new Error('Aucune vente valide trouvée.');
@@ -2056,36 +2004,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
         </div>
       )}
 
-      <h2 className="text-lg font-bold text-[#1A1A1A]">Journal achat-vente · {magasinNom||'Magasin'}
-        {isAuditMode&&<span className="ml-2 text-xs font-bold bg-orange-500 text-white rounded px-2 py-0.5">MODE AUDIT ACTIF</span>}
-      </h2>
-
-      {/* Audit panel */}
-      {isAuditMode&&stored&&(()=>{
-        const total=stored.rows.length;
-        const unknownN=stored.rows.filter(r=>detectFamilyCode(r.f)==='UNKNOWN').length;
-        const pctUnk=total>0?unknownN/total*100:0;
-        const longDv=stored.rows.filter(r=>r.dv!==null&&r.dv>365).length;
-        const pctLong=total>0?longDv/total*100:0;
-        const epFamRows=stored.rows.filter(r=>EP_FAMILIES.includes(detectFamilyCode(r.f)));
-        const noEP=epFamRows.filter(r=>!r.ep||r.ep===0).length;
-        const pctNoEP=epFamRows.length>0?noEP/epFamRows.length*100:0;
-        const alerts=[
-          pctUnk>5&&`⚠️ ${unknownN} lignes (${pctUnk.toFixed(1)}%) avec famille UNKNOWN`,
-          pctLong>1&&`⚠️ ${longDv} lignes (${pctLong.toFixed(1)}%) avec délai > 365j`,
-          pctNoEP>20&&`⚠️ ${noEP}/${epFamRows.length} lignes EP (${pctNoEP.toFixed(0)}%) sans cote EP`,
-        ].filter(Boolean) as string[];
-        return alerts.length?(
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs space-y-1">
-            <p className="font-bold text-red-800">🚨 Vérification automatique — {total.toLocaleString('fr-FR')} lignes</p>
-            {alerts.map((a,i)=><p key={i} className="text-red-700">{a}</p>)}
-          </div>
-        ):(
-          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-xs text-green-800">
-            <strong>🔍 Audit Journal :</strong> ✅ Aucune incohérence sur {total.toLocaleString('fr-FR')} lignes.
-          </div>
-        );
-      })()}
+      <h2 className="text-lg font-bold text-[#1A1A1A]">Journal achat-vente · {magasinNom||'Magasin'}</h2>
 
       <div className="bg-white border border-[#E0E0E0] rounded-xl px-4 py-3 space-y-1.5">
         <p className="text-sm text-[#6B7280]">Importez votre export Athéna du journal achat-vente (CSV ou Excel) pour identifier les modèles qui tournent vite, qui génèrent de la marge, et les écarts avec la cote réseau.</p>
@@ -2247,68 +2166,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
           </div>
           <p className="text-xs text-[#9CA3AF] italic">Seuls les modèles avec ≥ 3 ventes sont affichés dans les sections ci-dessous. La fiabilité est indiquée par un badge coloré.</p>
 
-          {/* ── DEBUG — Détection famille ─────────────────────────────────────── */}
-          {(()=>{
-            const allRows = stored!.rows;
-            const sfCounts = new Map<string,number>();
-            const sfToFC = new Map<string,FamilyCode>();
-            for (const row of allRows) {
-              const sf = row.f;
-              sfCounts.set(sf,(sfCounts.get(sf)??0)+1);
-              if (!sfToFC.has(sf)) sfToFC.set(sf,detectFamilyCode(sf));
-            }
-            const total = allRows.length;
-            const recognized = [...sfCounts.entries()].filter(([sf])=>sfToFC.get(sf)!=='UNKNOWN');
-            const unrecognized = [...sfCounts.entries()].filter(([sf])=>sfToFC.get(sf)==='UNKNOWN');
-            const recognizedCount = recognized.reduce((s,[,n])=>s+n,0);
-            const unrecognizedCount = unrecognized.reduce((s,[,n])=>s+n,0);
-            // Dominant family (most rows, excluding BOR/BOPI/UNKNOWN)
-            const fcCounts = new Map<FamilyCode,number>();
-            for (const row of allRows) { const fc=detectFamilyCode(row.f); fcCounts.set(fc,(fcCounts.get(fc)??0)+1); }
-            const domFamily = [...fcCounts.entries()].sort((a,b)=>b[1]-a[1]).map(([fc])=>fc).find(fc=>fc!=='BOR'&&fc!=='BOPI'&&fc!=='UNKNOWN') ?? null;
-            const domPct = domFamily&&total>0?Math.round((fcCounts.get(domFamily)??0)/total*100):0;
-            const appliedTranches = domFamily?getTranchesPrix(domFamily):[];
-            const appliedSeuil = getSeuilRotationRapide(domFamily??'UNKNOWN');
-            return (
-              <div className="border-2 border-amber-400 bg-amber-50 rounded-lg px-4 py-3 text-xs font-mono space-y-1.5">
-                <p className="font-bold text-amber-800 text-sm">🔍 DEBUG — Détection famille (source : colonne Sous_famille CSV)</p>
-
-                <p className="font-bold text-amber-900">VALEURS UNIQUES DE SOUS_FAMILLE RENCONTRÉES :</p>
-                {[...sfCounts.entries()].sort((a,b)=>b[1]-a[1]).map(([sf,cnt])=>{
-                  const fc=sfToFC.get(sf)??'UNKNOWN';
-                  const ok=fc!=='UNKNOWN';
-                  return (
-                    <p key={sf} className={`pl-2 ${ok?'text-amber-900':'text-red-700 font-bold'}`}>
-                      &quot;{sf||'(vide)'}&quot; : <strong>{cnt}</strong> lignes → <strong>{fc}</strong> {ok?'✅':'❌'}
-                    </p>
-                  );
-                })}
-
-                {unrecognized.length>0&&(
-                  <>
-                    <p className="font-bold text-red-700">NON RECONNUES ({unrecognizedCount} lignes) :</p>
-                    {unrecognized.map(([sf,cnt])=>(
-                      <p key={sf} className="pl-2 text-red-700">&quot;{sf||'(vide)'}&quot; : {cnt} lignes → UNKNOWN ❌ (à ajouter au mapping)</p>
-                    ))}
-                  </>
-                )}
-
-                <p className="font-bold text-amber-900">FAMILLE DOMINANTE : <strong className="text-amber-800">{domFamily??'(aucune)'}</strong>{domFamily?` (${domPct}% des lignes)`:''}</p>
-                <p className="pl-2 text-amber-900">Tranches appliquées : {appliedTranches.length>0?appliedTranches.map(t=>t.label).join(' | '):'(aucune — famille BOR/BOPI/UNKNOWN)'}</p>
-                <p className="pl-2 text-amber-900">Seuil rotation rapide : <strong>{appliedSeuil}j</strong></p>
-
-                <p className="font-bold text-amber-900">STATUT GLOBAL :</p>
-                <p className="pl-2 text-amber-900">
-                  {unrecognizedCount===0
-                    ?<strong className="text-green-700">✅ Toutes les sous-familles reconnues ({recognizedCount}/{total})</strong>
-                    :<strong className="text-red-700">⚠️ {unrecognizedCount} ligne{unrecognizedCount>1?'s':''} non reconnue{unrecognizedCount>1?'s':''} ({Math.round(unrecognizedCount/total*100)}%) — mapper les valeurs ci-dessus dans detectFamilyCode()</strong>
-                  }
-                </p>
-              </div>
-            );
-          })()}
-          {/* ── END DEBUG ──────────────────────────────────────────────────────── */}
-
           {/* Bijouterie module bandeau */}
           {(selectedFamily==='BOR'||selectedFamily==='BOPI')&&onNavigateToBijouterie&&(
             <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -2382,40 +2239,6 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                 </button>
                 {trancheOpen&&(
                   <div className="px-4 py-4 border-t border-[#E0E0E0] space-y-3">
-                    {/* ── DEBUG DIAGNOSTIC ── temporaire ────────────────────────────── */}
-                    {(()=>{
-                      const tranchesDef=trancheFamily?getTranchesPrix(trancheFamily):[];
-                      const sommeTranches=trancheStats.reduce((s,t)=>s+t.nbVentes,0);
-                      const horsTransches=trancheRows.length-sommeTranches;
-                      const ecart=trancheRows.length-sommeTranches-horsTransches;
-                      const pvInvalid=trancheRows.filter(r=>!isFinite(r.pv)||r.pv<0).length;
-                      const sourcingTotal=sourcing.reduce((s,r)=>s+r.nbAchats,0);
-                      const topRotTotal=topRotations.reduce((s,t)=>s+t.qteVendue,0);
-                      return (
-                        <div className="border-2 border-amber-400 bg-amber-50 rounded-lg px-4 py-3 text-xs font-mono space-y-1.5">
-                          <p className="font-bold text-amber-800 text-sm">🔍 DEBUG — Diagnostic tranches prix (temporaire)</p>
-                          <p className="text-amber-900"><strong>ÉTAPE 1 — Famille détectée :</strong></p>
-                          <p className="pl-3 text-amber-900">trancheFamily = <strong className="text-amber-800">{String(trancheFamily)}</strong></p>
-                          <p className="pl-3 text-amber-900">Tranches appliquées ({tranchesDef.length}) : {tranchesDef.map(t=>t.label).join(' | ')}</p>
-                          <p className="text-amber-900"><strong>ÉTAPE 2 — Chaîne de filtrage :</strong></p>
-                          <p className="pl-3 text-amber-900">Lignes brutes (stored.rows) = <strong>{stored?.rows.length??'?'}</strong></p>
-                          <p className="pl-3 text-amber-900">Lignes filtrées (filteredRows) = <strong>{filteredRows.length}</strong></p>
-                          <p className="pl-3 text-amber-900">Lignes famille tranche (trancheRows) = <strong>{trancheRows.length}</strong></p>
-                          <p className="text-amber-900"><strong>ÉTAPE 3 — Répartition par tranche :</strong></p>
-                          {trancheStats.map((t,i)=>(
-                            <p key={i} className="pl-3 text-amber-900">{t.label} : <strong>{t.nbVentes}</strong> ventes</p>
-                          ))}
-                          <p className="pl-3 text-amber-900">Somme tranches = <strong>{sommeTranches}</strong></p>
-                          <p className="pl-3 text-amber-900">Hors tranches (PV hors bornes) = <strong className={horsTransches>0?'text-red-700':'text-amber-900'}>{horsTransches}</strong></p>
-                          {pvInvalid>0&&<p className="pl-3 text-red-700">⚠️ PV négatifs ou non-finis dans trancheRows : <strong>{pvInvalid}</strong></p>}
-                          <p className="text-amber-900"><strong>CONTRÔLE :</strong> {trancheRows.length} = {sommeTranches} + {horsTransches} → écart = <strong className={ecart!==0?'text-red-700':'text-green-700'}>{ecart}</strong> {ecart===0?'✅ OK':'❌ ANOMALIE DOUBLE-COMPTAGE'}</p>
-                          <p className="text-amber-900"><strong>ÉTAPE 4 — Vérif. croisée :</strong></p>
-                          <p className="pl-3 text-amber-900">sourcing.nbAchats total = <strong>{sourcingTotal}</strong></p>
-                          <p className="pl-3 text-amber-900">topRotations.qteVendue total = <strong>{topRotTotal}</strong></p>
-                        </div>
-                      );
-                    })()}
-                    {/* ── END DEBUG ─────────────────────────────────────────────────── */}
                     {withV.length===0?(
                       <p className="text-xs text-[#9CA3AF] italic">Aucune vente sur cette période pour cette famille.</p>
                     ):(
