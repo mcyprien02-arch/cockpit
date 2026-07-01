@@ -58,6 +58,12 @@ BENCHMARKS RÉSEAU EASYCASH :
 
 OUTILS ISEOR : VAH = (CA × Taux Marge) / Heures annuelles. Coût d'un dysfonctionnement = VAH × temps perdu × fréquence.
 
+ADAPTATION PAR PHASE DE VIE DU MAGASIN :
+- Lancement (0–2 ans) : Priorité à l'installation de la gamme, l'acquisition clients et la formation équipe. Seuils plus souples, encourager l'expérimentation. Souligne les quick wins.
+- Croissance (2–5 ans) : Focus sur l'optimisation de la rentabilité, la fidélisation et le digital. Objectifs intermédiaires entre lancement et maturité. Challenger sur les routines GPA.
+- Maturité (5+ ans) : Maximisation de la marge, GPA avancé, management de la performance. Standards réseau stricts. Identifier les gisements de productivité et les zones de confort à briser.
+Adapte impérativement le niveau d'exigence, les objectifs chiffrés et le ton de tes recommandations à la phase indiquée dans le contexte magasin. Ne cite pas la phase explicitement — intègre-la naturellement.
+
 RÈGLES DE RÉPONSE : Réponds en 5 phrases maximum. Direct, chiffré, actionnable. Utilise les benchmarks réseau. Priorise les actions à impact financier immédiat. Termine par une action à faire dans les 48h.`;
 
 const PROMPT_TEMPLATES = [
