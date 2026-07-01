@@ -21,8 +21,9 @@ interface HistoireStore {
   specificites: string;
   defis: string;
   objectifsPerso: string;
+  descriptionLibre: string;
 }
-const HISTOIRE_EMPTY: HistoireStore = { typePdV: '', anneeOuverture: '', effectif: '', specificites: '', defis: '', objectifsPerso: '' };
+const HISTOIRE_EMPTY: HistoireStore = { typePdV: '', anneeOuverture: '', effectif: '', specificites: '', defis: '', objectifsPerso: '', descriptionLibre: '' };
 
 interface SimuSummary { ca: number; etp: number; msPct: number; masseSal: number; turnover: number | null }
 
@@ -38,6 +39,7 @@ export function getHistoireContext(nom: string): string {
       h.specificites && `Spécificités locales: ${h.specificites}`,
       h.defis && `Défis actuels: ${h.defis}`,
       h.objectifsPerso && `Objectifs personnels: ${h.objectifsPerso}`,
+      h.descriptionLibre && `Description libre: ${h.descriptionLibre}`,
     ].filter(Boolean);
     return parts.length ? parts.join(' | ') : '';
   } catch { return ''; }
@@ -454,6 +456,16 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
                   value={histoire.defis}
                   onChange={e => saveHistoire({ ...histoire, defis: e.target.value })}
                   placeholder="ex: Stock âgé élevé sur téléphones, turnover équipe important…"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-[#6B7280] block mb-1">Comment décririez-vous votre activité avec vos mots ?</label>
+                <textarea
+                  className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613] resize-none"
+                  rows={4}
+                  value={histoire.descriptionLibre}
+                  onChange={e => saveHistoire({ ...histoire, descriptionLibre: e.target.value })}
+                  placeholder="Décrivez librement votre magasin, votre équipe, votre clientèle, ce qui rend votre point de vente unique…"
                 />
               </div>
             </div>
