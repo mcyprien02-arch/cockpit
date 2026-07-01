@@ -22,8 +22,8 @@ MODULES DE DONNÉES DISPONIBLES DANS CET OUTIL :
 - Simulateur RH : CA annuel, taux de marge, ETP, masse salariale % du CA, turnover
 - Journal Achat-Vente : rotation par modèle/famille, délai moyen d'écoulement, sourcing (% comptoir vs fournisseurs), marge totale, écart PA/PV vs EP réseau, top coefficient d'écoulement, pépites locales manquantes en gamme
 - Benchmark financier : santé globale vs DAF (% des postes de charges), top écarts défavorables vs réseau, potentiel d'optimisation en €
-- Vision & Objectifs : vision long terme, valeurs, cap commercial, objectifs mensuels par famille avec avancement %
-- Routines : taux de complétion par domaine (Commerce, Web & Digital, Pilotage, Management, GPA)
+- Vision & Objectifs : objectifs personnels, cap commercial, objectifs mensuels par famille avec avancement %
+- Routines : taux de complétion par domaine (Vente, Achat, Stock, Web, Management, GPA)
 Toutes les données du contexte proviennent exclusivement de ces modules. Ne demande pas d'indicateurs non présents.
 
 IMPACT BUSINESS PAR FAMILLE (couverture de gamme) :
@@ -39,13 +39,13 @@ COMPÉTENCES MÉTIER EASYCASH (26 compétences spécifiques) :
 - Stock & Pilotage (5) : Lecture côtes d'accélération, Mise à jour prix EasyPrice, Inventaire tournant, TOP 20 vieux stock, SAV client process complet
 - Management (4, responsables) : Briefing matinal équipe, Coaching individuel vente, Entretien individuel mensuel, Utilisation Intranet réseau
 
-ROUTINES HEBDOMADAIRES (7 blocs) :
-- Gamme (quotidien) : Checker gamme référence Athéna, Éditer appel de stock, Vérifier prix EasyPrice
-- Prix (3x/sem) : Mise à jour prix familles, Identifier vieux stock à ajuster, Lancer accélérations côtes alerte
-- Animation (quotidien/hebdo) : Mettre en avant bonnes affaires, Rotation vitrine nouveautés, Vérifier arguments réassurance, Consulter Plateforme Marketing
-- Équipe : Briefing matinal 5 min, Suivi EasyTraining
-- Pilotage : Intranet quotidien (CA/marge/stock âgé), Top 20 vieux stock 1x/sem, Suivi rattachement EasyBiz
-- Web & Digital : Checker avancement SAV (quotidien), Checker Gooday notation/avis (quotidien), Répondre aux avis Google (quotidien), Suivre annulations commandes (1x/sem)
+ROUTINES OPÉRATIONNELLES (6 domaines) :
+- Vente (quotidien) : Brief équipe matin sur CA veille, proposition Estaly systématique, suivi taux de transformation, vente additionnelle TLAC
+- Achat (quotidien) : Application VPD, test Piceasoft 100%, demande avis Google en transaction, brief acheteurs sur 3 modèles prioritaires
+- Stock (hebdo) : Identification TOP 20 immobilisation cash, accélérations sur invendus >15j, FIFO en réserve, point cash hebdomadaire
+- Web (quotidien) : Publication EC.fr, réponse cotations manuelles, sourcing marketplaces 15 min, réponse avis Google sous 24h
+- Management (quotidien) : Tour magasin avant ouverture, zoning équipe selon flux, présence en surface aux heures de pointe
+- GPA (quotidien/hebdo) : Vérification côte EasyPrice, MAJ prix Zebra sous 24h, couverture gamme Stock Max 0, appel de stock vitrine
 
 MÉTHODOLOGIE GPA (structure de pilotage) :
 - Gamme : inventaires tournants, ajustement assortiment, pilotage achat externe
@@ -53,7 +53,7 @@ MÉTHODOLOGIE GPA (structure de pilotage) :
 - Animation : contrats Estaly, ventes additionnelles, animation vitrine, demandes d'avis Google
 
 BENCHMARKS RÉSEAU EASYCASH (référence pour tes recommandations) :
-- Taux de marge : ≥ 40% (Lancement), ≥ 42% (Croissance), ≥ 44% (Maturité)
+- Taux de marge brute : ≥ 40% (Lancement), ≥ 42% (Croissance), ≥ 44% (Maturité)
 - Masse salariale : ≤ 15% du CA (cible DAF)
 - CA par ETP : ≥ 250 000 € (référence réseau)
 - Sourcing comptoir : > 60% des achats (pour préserver la marge)
