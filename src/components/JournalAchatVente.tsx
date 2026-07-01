@@ -1021,6 +1021,60 @@ export function getJournalContext(magasinNom: string): string {
   } catch { return ''; }
 }
 
+export interface SourcingModele {
+  modele: string; famille: string;
+  qteVendue: number; delaiMoyen: number | null;
+  paMoyen: number; epaMoyen: number | null;
+  type: 'rotation' | 'pepite';
+}
+
+export function getJournalSourcingData(magasinNom: string): SourcingModele[] {
+  try {
+    const s = localStorage.getItem(`journal_analyse_${magasinNom}`);
+    if (!s) return [];
+    const stored = JSON.parse(s) as StoredImport;
+    if (!Array.isArray(stored.rows) || !stored.rows.length) return [];
+    const stats = computeStats(stored.rows);
+    const MIN3 = (st: ModelStats) => st.qteVendue >= 3;
+
+    const topRotations = stats
+      .filter(st => MIN3(st) && st.delaiMoyen !== null && st.delaiMoyen < getSeuilDelaiPepite(st.famille))
+      .sort((a, b) => (a.delaiMoyen ?? 999) - (b.delaiMoyen ?? 999))
+      .slice(0, 15);
+
+    const rotSet = new Set(topRotations.map(r => r.modele.toLowerCase()));
+
+    const gammes: Record<string, GammeReseau> = {};
+    for (const fc of ['JCDR', 'JCON', 'TLCE', 'JPOR'] as FamilyCode[]) {
+      try { const gs = localStorage.getItem(`gamme_reseau_${fc}`); if (gs) gammes[fc] = JSON.parse(gs) as GammeReseau; } catch { /* ignore */ }
+    }
+
+    const pepiteSet = new Set<string>();
+    for (const st of stats) {
+      if (!MIN3(st)) continue;
+      const fc = detectFamilyCode(st.famille);
+      const famGamme = gammes[fc] ?? null;
+      if (!famGamme) continue;
+      if (!isInGamme(st.modele, famGamme)) pepiteSet.add(st.modele.toLowerCase());
+    }
+
+    const result: SourcingModele[] = topRotations.map(r => ({
+      modele: r.modele, famille: r.famille, qteVendue: r.qteVendue,
+      delaiMoyen: r.delaiMoyen, paMoyen: r.paMoyen, epaMoyen: r.epaMoyen,
+      type: pepiteSet.has(r.modele.toLowerCase()) ? 'pepite' : 'rotation',
+    }));
+
+    const pepiteOnly = stats
+      .filter(st => MIN3(st) && pepiteSet.has(st.modele.toLowerCase()) && !rotSet.has(st.modele.toLowerCase()))
+      .sort((a, b) => b.margeTotal - a.margeTotal)
+      .slice(0, 10)
+      .map(p => ({ modele: p.modele, famille: p.famille, qteVendue: p.qteVendue,
+        delaiMoyen: p.delaiMoyen, paMoyen: p.paMoyen, epaMoyen: p.epaMoyen, type: 'pepite' as const }));
+
+    return [...result, ...pepiteOnly];
+  } catch { return []; }
+}
+
 // ── UI helpers ────────────────────────────────────────────────────────────────
 function Badge({ qty }: { qty: number }) {
   if (qty>=10) return <span className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 ml-1.5 whitespace-nowrap font-medium">✅ Valeur sûre +</span>;
