@@ -4,48 +4,68 @@ import { useState, useMemo } from 'react';
 
 interface Props { magasinNom: string; }
 
-type FreqKey = 'quotidien' | '3x' | '1x';
-interface RoutineDef { id: string; label: string; freq: FreqKey; }
-interface BlocDef { icon: string; title: string; routines: RoutineDef[]; }
+type FreqKey = 'quotidien' | '3x' | '2x' | '1x' | 'mensuel';
+interface RoutineDef { id: string; label: string; freq: FreqKey; detail: string; monthly?: boolean; }
+interface BlocDef { icon: string; title: string; subtitle: string; headerBg: string; routines: RoutineDef[]; }
 type WeekData = Record<string, boolean[]>;
 
-const FREQ_DEFAULTS: Record<FreqKey, number> = { quotidien: 5, '3x': 3, '1x': 1 };
+const FREQ_DEFAULTS: Record<FreqKey, number> = { quotidien: 5, '3x': 3, '2x': 2, '1x': 1, mensuel: 0 };
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
 
-// Blocs GPA (Gamme / Prix / Animation) — methodology kept in code, not displayed to franchisee
-// Autodetermination theory (Deci & Ryan, 2000) — referenced internally only
 const BLOCS: BlocDef[] = [
-  { icon: '🛒', title: 'Gamme', routines: [
-    { id: 'g1', label: 'Checker gamme référence et identifier manquants (Athéna)', freq: 'quotidien' },
-    { id: 'g2', label: 'Éditer appel de stock pour les produits manquants', freq: 'quotidien' },
-    { id: 'g3', label: 'Vérifier prix de reprise sur EasyPrice', freq: 'quotidien' },
-  ]},
-  { icon: '💰', title: 'Prix', routines: [
-    { id: 'p1', label: 'Mise à jour prix par famille (Athéna → cote EasyPrice)', freq: '3x' },
-    { id: 'p2', label: 'Identifier produits vieux stock et ajuster prix', freq: '3x' },
-    { id: 'p3', label: "Lancer accélérations sur produits à risque (côtes d'alerte)", freq: '3x' },
-  ]},
-  { icon: '🎨', title: 'Animation', routines: [
-    { id: 'a1', label: 'Mettre en avant les bonnes affaires (prix barrés, étiquettes jaunes)', freq: 'quotidien' },
-    { id: 'a2', label: 'Faire la rotation des nouveautés en tête de vitrine', freq: '3x' },
-    { id: 'a3', label: 'Vérifier les arguments de réassurance (garantie, paiement plusieurs fois)', freq: '1x' },
-    { id: 'a4', label: "Consulter Plateforme Marketing pour idées d'animations", freq: '1x' },
-  ]},
-  { icon: '👥', title: 'Équipe', routines: [
-    { id: 'e1', label: 'Briefing matinal 5 min avant ouverture', freq: 'quotidien' },
-    { id: 'e3', label: 'Vérifier suivi EasyTraining de chaque collaborateur', freq: '1x' },
-  ]},
-  { icon: '📊', title: 'Pilotage', routines: [
-    { id: 'pi1', label: 'Consulter Intranet (CA, marge, stock âgé)', freq: 'quotidien' },
-    { id: 'pi3', label: 'Traiter Top 20 vieux stock une fois par semaine', freq: '1x' },
-  ]},
-  { icon: '🌐', title: 'Web & Digital', routines: [
-    { id: 'w1', label: "Checker l'avancement des SAV", freq: 'quotidien' },
-    { id: 'w2', label: 'Checker Gooday (notation et avis quotidiens)', freq: 'quotidien' },
-    { id: 'w3', label: 'Répondre aux avis Google', freq: 'quotidien' },
-    { id: 'w4', label: 'Suivre les annulations de commandes et comprendre les raisons', freq: '1x' },
-  ]},
+  {
+    icon: '🛒', title: 'Commerce & Sourcing',
+    subtitle: 'Les fondamentaux qui font tourner le magasin',
+    headerBg: 'bg-[#FFF5F5]',
+    routines: [
+      { id: 'cs1', label: 'Check gamme', freq: '1x',
+        detail: 'Identifier les produits manquants, éditer les appels de stock, vérifier les prix de reprise sur EasyPrice. (Intranet → Gestion magasin → Gamme référence/modèle)' },
+      { id: 'cs2', label: 'Mise à jour des prix', freq: '1x',
+        detail: 'Récupérer la cote EasyPrice par famille et ajuster le vieux stock par paliers. (Athéna → Stock → Mise à jour des prix)' },
+      { id: 'cs3', label: 'Animation vitrine', freq: '1x',
+        detail: 'Appliquer les 3 leviers en vitrine : prix barré visible, nouveautés en tête de gondole, arguments de réassurance affichés.' },
+      { id: 'cs4', label: 'Sourcing externe', freq: '2x',
+        detail: 'Aller checker les produits manquants en gamme sur les plateformes alternatives. Compléter le sourcing comptoir. (Leboncoin, Vinted, Vinted Pro)' },
+      { id: 'cs5', label: 'Visite concurrence', freq: 'mensuel', monthly: true,
+        detail: 'Veille tarifaire + détection des opportunités de gamme. Aller voir 1 à 2 concurrents par mois. (Cash Express, Easy Cash voisin, indépendants locaux)' },
+    ],
+  },
+  {
+    icon: '🌐', title: 'Web & Visibilité',
+    subtitle: 'Alimenter le canal digital et soigner la réputation en ligne',
+    headerBg: 'bg-blue-50',
+    routines: [
+      { id: 'wv1', label: 'Mise en ligne produits (EasyBiz)', freq: 'quotidien',
+        detail: 'Photographier et mettre en ligne les produits rachetés au comptoir. Alimentation continue du catalogue web.' },
+      { id: 'wv2', label: 'Publication réseaux sociaux', freq: '2x',
+        detail: 'Publier les nouveautés, les bonnes affaires du moment, les coulisses du magasin. Construire la communauté locale. (Instagram, TikTok, Facebook)' },
+      { id: 'wv3', label: "Demande d'avis Google après vente", freq: '1x',
+        detail: "Demander un avis Google à chaque client satisfait. Cible mensuelle : 10 nouveaux avis. Levier majeur de référencement local." },
+    ],
+  },
+  {
+    icon: '📊', title: 'Pilotage',
+    subtitle: 'Le réflexe chiffres et la rigueur opérationnelle',
+    headerBg: 'bg-purple-50',
+    routines: [
+      { id: 'pl1', label: 'Lecture des chiffres Athéna', freq: '1x',
+        detail: 'Consulter les chiffres clés de la semaine écoulée pour préparer le brief du lundi et identifier les sujets prioritaires.' },
+      { id: 'pl2', label: 'Traitement du bac SAV / Retours', freq: '1x',
+        detail: "Vider le bac de retours et SAV chaque semaine. Cible : aucun produit en attente depuis plus de 15 jours. Évite l'immobilisation de trésorerie et la frustration client." },
+    ],
+  },
+  {
+    icon: '👥', title: 'Management',
+    subtitle: "Les rituels qui structurent l'équipe et font monter chacun en autonomie",
+    headerBg: 'bg-amber-50',
+    routines: [
+      { id: 'mg1', label: 'Brief de semaine sur objectifs hebdomadaires', freq: '1x',
+        detail: "Présenter à l'équipe les objectifs de la semaine, les priorités, les chiffres de la semaine passée. 15 à 20 minutes en début de semaine pour aligner tout le monde." },
+      { id: 'mg2', label: 'Tour de table responsables de rayon (GPA + sujet libre)', freq: '1x',
+        detail: "Chaque responsable prend 5 min pour faire le point sur sa GPA (gamme, prix, animation) et partager un sujet libre (idée, alerte, projet, retour client). Cadre court et structuré qui responsabilise chaque pilier et fait remonter les signaux faibles. Sans cadre, le tour de table dérive en discussion informelle." },
+    ],
+  },
 ];
 
 const ALL_ROUTINES = BLOCS.flatMap(b => b.routines);
@@ -53,21 +73,14 @@ const ALL_ROUTINES = BLOCS.flatMap(b => b.routines);
 // ── Inventaires tournants ─────────────────────────────────────────────────────
 interface InvFamille { code: string; label: string; special?: string; }
 interface InvGroupe {
-  id: string;
-  badge: string;
-  badgeCls: string;
-  subBg: string;
-  freq: 'monthly' | 'bimonthly' | 'yearly';
-  familles: InvFamille[];
+  id: string; badge: string; badgeCls: string; subBg: string;
+  freq: 'monthly' | 'bimonthly' | 'yearly'; familles: InvFamille[];
 }
 
 const INV_GROUPES: InvGroupe[] = [
   {
-    id: 'a',
-    badge: '🔴 1 fois par mois',
-    badgeCls: 'bg-red-100 text-red-700 border-red-200',
-    subBg: 'bg-red-50/40',
-    freq: 'monthly',
+    id: 'a', badge: '🔴 1 fois par mois',
+    badgeCls: 'bg-red-100 text-red-700 border-red-200', subBg: 'bg-red-50/40', freq: 'monthly',
     familles: [
       { code: 'BOR',   label: 'Bijouterie — Or' },
       { code: 'BOPI',  label: 'Bijouterie — Op. Immédiate' },
@@ -84,11 +97,8 @@ const INV_GROUPES: InvGroupe[] = [
     ],
   },
   {
-    id: 'b',
-    badge: '🟠 6 fois par an',
-    badgeCls: 'bg-orange-100 text-orange-700 border-orange-200',
-    subBg: 'bg-orange-50/40',
-    freq: 'bimonthly',
+    id: 'b', badge: '🟠 6 fois par an',
+    badgeCls: 'bg-orange-100 text-orange-700 border-orange-200', subBg: 'bg-orange-50/40', freq: 'bimonthly',
     familles: [
       { code: 'BPLA', label: 'Bijouterie — Plaqué' },
       { code: 'BMAR', label: 'Bijouterie — Marque' },
@@ -99,11 +109,8 @@ const INV_GROUPES: InvGroupe[] = [
     ],
   },
   {
-    id: 'c',
-    badge: '🟢 1 fois par an',
-    badgeCls: 'bg-green-100 text-green-700 border-green-200',
-    subBg: 'bg-green-50/40',
-    freq: 'yearly',
+    id: 'c', badge: '🟢 1 fois par an',
+    badgeCls: 'bg-green-100 text-green-700 border-green-200', subBg: 'bg-green-50/40', freq: 'yearly',
     familles: [
       { code: 'DVD',  label: 'LS — DVD' },
       { code: 'ABLU', label: 'LS — Blu-Ray' },
@@ -113,11 +120,7 @@ const INV_GROUPES: InvGroupe[] = [
   },
 ];
 
-function getInvRowStatus(
-  checks: boolean[],
-  freq: 'monthly' | 'bimonthly' | 'yearly',
-  upToMonth: number
-): 'green' | 'orange' | 'gray' {
+function getInvRowStatus(checks: boolean[], freq: 'monthly' | 'bimonthly' | 'yearly', upToMonth: number): 'green' | 'orange' | 'gray' {
   const done = checks.slice(0, upToMonth + 1).filter(Boolean).length;
   if (freq === 'yearly') return done >= 1 ? 'green' : 'gray';
   const expected = freq === 'monthly' ? upToMonth + 1 : Math.ceil((upToMonth + 1) / 2);
@@ -163,18 +166,50 @@ function loadWeek(nom: string, off: number): WeekData {
 }
 
 function computeScore(data: WeekData, cibles: Record<string, number>): number {
-  const met = ALL_ROUTINES.filter(r => {
+  const scoreable = ALL_ROUTINES.filter(r => (cibles[r.id] ?? FREQ_DEFAULTS[r.freq]) > 0);
+  if (scoreable.length === 0) return 0;
+  const met = scoreable.filter(r => {
     const target = cibles[r.id] ?? FREQ_DEFAULTS[r.freq];
-    if (target === 0) return false;
     return (data[r.id] ?? []).filter(Boolean).length >= target;
   }).length;
-  return Math.round(met / ALL_ROUTINES.length * 100);
+  return Math.round(met / scoreable.length * 100);
+}
+
+// ── Context export for AssistantIA ────────────────────────────────────────────
+export function getRoutinesContext(magasinNom: string): string {
+  try {
+    const cibles: Record<string, number> = (() => {
+      try {
+        const s = localStorage.getItem(`cibles_routines_${magasinNom}`);
+        return s ? JSON.parse(s) as Record<string, number> : {};
+      } catch { return {}; }
+    })();
+    const weekData = loadWeek(magasinNom, 0);
+    if (Object.keys(weekData).length === 0) return '';
+    const lines: string[] = ['\nRoutines de la semaine en cours :'];
+    for (const bloc of BLOCS) {
+      const blocLines: string[] = [];
+      for (const r of bloc.routines) {
+        const target = cibles[r.id] ?? FREQ_DEFAULTS[r.freq];
+        if (target === 0) continue;
+        const done = (weekData[r.id] ?? []).filter(Boolean).length;
+        const status = done >= target ? '✅' : done > 0 ? '🔶' : '❌';
+        blocLines.push(`  ${status} ${r.label} : ${done}/${target}`);
+      }
+      if (blocLines.length > 0) {
+        lines.push(`${bloc.icon} ${bloc.title} :`);
+        lines.push(...blocLines);
+      }
+    }
+    return lines.join('\n');
+  } catch { return ''; }
 }
 
 // ── Composant ─────────────────────────────────────────────────────────────────
 export default function Routines({ magasinNom }: Props) {
   const [offset, setOffset] = useState(0);
   const [weekData, setWeekData] = useState<WeekData>(() => loadWeek(magasinNom, 0));
+  const [tooltipId, setTooltipId] = useState<string | null>(null);
 
   const [cibles, setCibles] = useState<Record<string, number>>(() => {
     if (typeof window === 'undefined') return {};
@@ -266,10 +301,11 @@ export default function Routines({ magasinNom }: Props) {
     return 'none';
   }
 
+  const scoreableRoutines = ALL_ROUTINES.filter(r => getTarget(r) > 0);
   const pct = computeScore(weekData, cibles);
-  const metCount = ALL_ROUTINES.filter(r => {
+  const metCount = scoreableRoutines.filter(r => {
     const target = getTarget(r);
-    return target > 0 && (weekData[r.id] ?? []).filter(Boolean).length >= target;
+    return (weekData[r.id] ?? []).filter(Boolean).length >= target;
   }).length;
 
   const history = useMemo(() => {
@@ -297,38 +333,11 @@ export default function Routines({ magasinNom }: Props) {
         <h2 className="text-lg font-bold text-[#1A1A1A]">
           🔁 Routines hebdomadaires{magasinNom ? ` — ${magasinNom}` : ''}
         </h2>
-        <p className="text-sm text-[#6B7280] mt-0.5">Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
+        <p className="text-sm text-[#6B7280] mt-0.5">4 blocs métier · 13 routines · Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
       </div>
 
       <div className="bg-[#FFF5F5] border border-[#E30613]/20 rounded-xl px-4 py-3 text-sm text-[#1A1A1A] leading-relaxed">
         Les outils ne suffisent pas. La performance vient de la régularité du suivi. Cochez chaque jour les routines accomplies et ajustez la cible hebdomadaire selon votre magasin.
-      </div>
-
-      {/* Geste métier hebdomadaire */}
-      <div className="bg-white border-l-4 border-[#E0E0E0] border-l-[#E30613] rounded-r-xl p-5 shadow-sm">
-        <h3 className="font-bold text-sm text-[#1A1A1A] mb-1">🎯 Le geste métier qui pilote tout</h3>
-        <p className="text-xs text-[#6B7280] italic mb-4">
-          Les routines ci-dessous soutiennent l&apos;exécution de ces fondamentaux. À garder en tête chaque semaine.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <p className="font-semibold text-sm text-[#1A1A1A] mb-2">1️⃣ Chaque semaine — les responsables rayons</p>
-            <ul className="space-y-1.5 text-sm text-[#6B7280]">
-              <li>• Remontent les trous de gamme aux acheteurs</li>
-              <li>• Éditent les appels de stock</li>
-              <li>• Vérifient les prix vieux stock vs cote EasyPrice</li>
-              <li>• Activent bonne affaire / nouveauté / réassurance si décalage</li>
-            </ul>
-          </div>
-          <div>
-            <p className="font-semibold text-sm text-[#1A1A1A] mb-2">2️⃣ Gamme magasin</p>
-            <ul className="space-y-1.5 text-sm text-[#6B7280]">
-              <li>• Gamme référence réseau (priorisée par le module Couverture de gamme)</li>
-              <li>• + 5 à 10 références locales tirées du journal des ventes</li>
-              <li>• Actualisation tous les 2 mois</li>
-            </ul>
-          </div>
-        </div>
       </div>
 
       {/* Navigation semaine */}
@@ -358,17 +367,18 @@ export default function Routines({ magasinNom }: Props) {
         </button>
       </div>
 
-      {/* Grille des routines — blocs 1 à 5 */}
+      {/* 4 blocs routines */}
       {BLOCS.map(bloc => (
-        <div key={bloc.title} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
-          <div className="px-4 py-2.5 bg-[#F5F5F5] border-b border-[#E0E0E0]">
+        <div key={bloc.title} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-visible">
+          <div className={`px-4 py-3 ${bloc.headerBg} border-b border-[#E0E0E0] rounded-t-xl`}>
             <h3 className="font-bold text-sm text-[#1A1A1A]">{bloc.icon} {bloc.title}</h3>
+            <p className="text-xs text-[#6B7280] mt-0.5">{bloc.subtitle}</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-xs" style={{ overflowX: 'visible' }}>
               <thead>
                 <tr className="border-b border-[#E0E0E0] bg-[#FAFAFA]">
-                  <th className="text-left px-4 py-2 text-[#6B7280] font-semibold min-w-[200px]">Routine</th>
+                  <th className="text-left px-4 py-2 text-[#6B7280] font-semibold min-w-[220px]">Routine</th>
                   {DAYS.map(d => (
                     <th key={d} className="text-center px-1 py-2 text-[#6B7280] font-semibold w-10">{d}</th>
                   ))}
@@ -381,16 +391,39 @@ export default function Routines({ magasinNom }: Props) {
                   const status = getStatus(routine, days);
                   const target = getTarget(routine);
                   const checked = days.filter(Boolean).length;
+                  const isTooltipOpen = tooltipId === routine.id;
                   return (
                     <tr key={routine.id} className={status === 'done' ? 'bg-green-50/40' : ''}>
                       <td className="px-4 py-3">
-                        <span className={`text-xs leading-snug block ${
-                          status === 'done' ? 'text-green-700 font-medium' :
-                          status === 'partial' ? 'text-orange-600' :
-                          'text-[#6B7280]'
-                        }`}>
-                          {routine.label}
-                        </span>
+                        <div className="relative">
+                          <div className="flex items-start gap-1.5 flex-wrap">
+                            <span className={`text-xs leading-snug ${
+                              status === 'done' ? 'text-green-700 font-medium' :
+                              status === 'partial' ? 'text-orange-600' :
+                              'text-[#6B7280]'
+                            }`}>
+                              {routine.label}
+                            </span>
+                            {routine.monthly && (
+                              <span className="text-[9px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-1.5 py-0.5 rounded-full whitespace-nowrap leading-none self-center">
+                                mensuel
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setTooltipId(isTooltipOpen ? null : routine.id)}
+                              className="text-[#C0C0C0] hover:text-[#6B7280] transition-colors text-[11px] leading-none self-center flex-shrink-0"
+                              title={routine.detail}
+                              aria-label="Voir le détail"
+                            >
+                              ℹ
+                            </button>
+                          </div>
+                          {isTooltipOpen && (
+                            <div className="mt-2 bg-[#1A1A1A] text-white text-[11px] p-3 rounded-xl shadow-xl leading-relaxed z-30 max-w-xs">
+                              {routine.detail}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       {days.map((isChecked, i) => (
                         <td key={i} className="text-center px-0.5 py-2">
@@ -418,11 +451,12 @@ export default function Routines({ magasinNom }: Props) {
                             className={`w-10 text-center border rounded px-1 py-1 text-xs font-bold focus:outline-none focus:border-[#E30613] ${
                               status === 'done' ? 'border-green-300 bg-green-50 text-green-700' :
                               status === 'partial' ? 'border-orange-300 bg-orange-50 text-orange-600' :
+                              routine.monthly ? 'border-purple-200 bg-purple-50 text-purple-600' :
                               'border-[#E0E0E0] bg-white text-[#6B7280]'
                             }`}
                           />
                           <span className="text-[10px] text-[#9CA3AF] leading-none">
-                            {checked > 0 ? `${checked}/` : ''}{target}j
+                            {checked > 0 ? `${checked}/` : ''}{target > 0 ? `${target}j` : routine.monthly ? '—' : `${target}j`}
                           </span>
                         </div>
                       </td>
@@ -435,18 +469,15 @@ export default function Routines({ magasinNom }: Props) {
         </div>
       ))}
 
-      {/* ── Bloc 6 — Inventaires tournants ───────────────────────────────────── */}
+      {/* ── Inventaires tournants ─────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
-        {/* Header + sélecteur année */}
         <div className="px-4 py-2.5 bg-[#F5F5F5] border-b border-[#E0E0E0] flex items-center justify-between flex-wrap gap-2">
           <h3 className="font-bold text-sm text-[#1A1A1A]">📋 Inventaires tournants</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={() => changeInvYear(invYear - 1)}
               className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-[#E0E0E0] hover:bg-[#EBEBEB] text-sm font-bold text-[#1A1A1A] transition-colors"
-            >
-              ‹
-            </button>
+            >‹</button>
             <span className="text-sm font-bold text-[#1A1A1A] min-w-[40px] text-center">{invYear}</span>
             <button
               onClick={() => changeInvYear(invYear + 1)}
@@ -456,27 +487,19 @@ export default function Routines({ magasinNom }: Props) {
                   ? 'bg-[#F5F5F5] border-[#E0E0E0] text-[#D1D5DB] cursor-not-allowed'
                   : 'bg-white border-[#E0E0E0] hover:bg-[#EBEBEB] text-[#1A1A1A]'
               }`}
-            >
-              ›
-            </button>
+            >›</button>
           </div>
         </div>
-
-        {/* Intro */}
         <p className="px-4 pt-3 pb-2 text-xs italic text-[#6B7280]">
           Les inventaires tournants sont la base d&apos;un pilotage stock fiable. Cochez quand vous les réalisez. Familles regroupées par fréquence préconisée.
         </p>
-
-        {/* Sous-blocs par fréquence */}
         {INV_GROUPES.map(groupe => (
           <div key={groupe.id} className="border-t border-[#E0E0E0]">
-            {/* Sous-header */}
             <div className={`px-4 py-2 flex items-center gap-2 ${groupe.subBg}`}>
               <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${groupe.badgeCls}`}>
                 {groupe.badge}
               </span>
             </div>
-            {/* Tableau */}
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
@@ -485,18 +508,10 @@ export default function Routines({ magasinNom }: Props) {
                       Famille
                     </th>
                     {MONTHS.map((m, mi) => (
-                      <th
-                        key={m}
-                        className={`text-center py-2 font-semibold w-9 ${
-                          invIsCurrentYear && mi === invCurrentMonth
-                            ? 'text-[#E30613] font-black'
-                            : invIsCurrentYear && mi > invCurrentMonth
-                              ? 'text-[#C0C0C0]'
-                              : 'text-[#6B7280]'
-                        }`}
-                      >
-                        {m}
-                      </th>
+                      <th key={m} className={`text-center py-2 font-semibold w-9 ${
+                        invIsCurrentYear && mi === invCurrentMonth ? 'text-[#E30613] font-black' :
+                        invIsCurrentYear && mi > invCurrentMonth  ? 'text-[#C0C0C0]' : 'text-[#6B7280]'
+                      }`}>{m}</th>
                     ))}
                   </tr>
                 </thead>
@@ -504,29 +519,20 @@ export default function Routines({ magasinNom }: Props) {
                   {groupe.familles.map(f => {
                     const checks = (invData[f.code] ?? new Array<boolean>(12).fill(false)) as boolean[];
                     const status = getInvRowStatus(checks, groupe.freq, invUpToMonth);
-                    const rowBg =
-                      status === 'green' ? 'bg-green-50' :
-                      status === 'orange' ? 'bg-orange-50' :
-                      'bg-white';
+                    const rowBg = status === 'green' ? 'bg-green-50' : status === 'orange' ? 'bg-orange-50' : 'bg-white';
                     return (
                       <tr key={f.code} className={rowBg}>
                         <td className={`px-4 py-2 sticky left-0 z-10 border-r border-[#E0E0E0] ${rowBg}`}>
                           <div className="flex items-start gap-1.5 flex-wrap">
                             <span className={`font-mono text-[11px] font-bold ${
-                              status === 'green' ? 'text-green-700' :
-                              status === 'orange' ? 'text-orange-600' :
-                              'text-[#374151]'
-                            }`}>
-                              {f.code}
-                            </span>
+                              status === 'green' ? 'text-green-700' : status === 'orange' ? 'text-orange-600' : 'text-[#374151]'
+                            }`}>{f.code}</span>
                             {f.special && (
                               <span className="text-[9px] font-semibold text-orange-600 bg-orange-100 border border-orange-200 px-1 py-0.5 rounded leading-none">
                                 {f.special}
                               </span>
                             )}
-                            <span className="text-[10px] text-[#9CA3AF] w-full leading-tight">
-                              {f.label}
-                            </span>
+                            <span className="text-[10px] text-[#9CA3AF] w-full leading-tight">{f.label}</span>
                           </div>
                         </td>
                         {MONTHS.map((_, mi) => {
@@ -558,8 +564,6 @@ export default function Routines({ magasinNom }: Props) {
             </div>
           </div>
         ))}
-
-        {/* 6D — Non préconisé */}
         <div className="border-t border-[#E0E0E0] px-4 py-3 bg-[#FAFAFA]">
           <div className="flex items-center gap-2 mb-1.5">
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full border bg-[#F0F0F0] text-[#9CA3AF] border-[#E0E0E0]">
@@ -570,35 +574,25 @@ export default function Routines({ magasinNom }: Props) {
             Familles spécifiques à votre magasin. Définissez vos propres fréquences avec votre animateur réseau.
           </p>
         </div>
-
-        {/* Récap annuel */}
         <div className="border-t border-[#E0E0E0] px-4 py-4">
           <p className="text-sm text-[#1A1A1A]">
             Cette année, <strong>{invFait}</strong> inventaires faits sur{' '}
             <strong>{invPreconise}</strong> préconisés{' '}
-            <strong className={
-              invPct >= 80 ? 'text-green-600' :
-              invPct >= 50 ? 'text-orange-600' :
-              'text-red-600'
-            }>({invPct}%)</strong>.
+            <strong className={invPct >= 80 ? 'text-green-600' : invPct >= 50 ? 'text-orange-600' : 'text-red-600'}>
+              ({invPct}%)
+            </strong>.
           </p>
           {invPreconise > 0 && (
             <>
               <div className="mt-2 h-2 bg-[#E0E0E0] rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
-                    invPct >= 80 ? 'bg-green-500' :
-                    invPct >= 50 ? 'bg-orange-400' :
-                    'bg-red-400'
+                    invPct >= 80 ? 'bg-green-500' : invPct >= 50 ? 'bg-orange-400' : 'bg-red-400'
                   }`}
                   style={{ width: `${invPct}%` }}
                 />
               </div>
-              <p className={`text-sm font-semibold mt-2 ${
-                invPct < 50 ? 'text-red-600' :
-                invPct <= 80 ? 'text-orange-600' :
-                'text-green-600'
-              }`}>
+              <p className={`text-sm font-semibold mt-2 ${invPct < 50 ? 'text-red-600' : invPct <= 80 ? 'text-orange-600' : 'text-green-600'}`}>
                 {invPct < 50
                   ? '🚨 Vos inventaires sont en retard. Le pilotage stock devient fragile.'
                   : invPct <= 80
@@ -627,7 +621,10 @@ export default function Routines({ magasinNom }: Props) {
           />
         </div>
         <p className="text-xs text-[#6B7280] mb-2">
-          {metCount}/{ALL_ROUTINES.length} routines accomplies cette semaine ({pct}%)
+          {metCount}/{scoreableRoutines.length} routines accomplies cette semaine ({pct}%)
+          {scoreableRoutines.length < ALL_ROUTINES.length && (
+            <span className="text-[#9CA3AF]"> · les routines mensuelles sans cible définie ne comptent pas dans le score</span>
+          )}
         </p>
         <p className="text-sm font-semibold text-[#1A1A1A]">
           {pct < 40
@@ -644,10 +641,7 @@ export default function Routines({ magasinNom }: Props) {
         <div className="flex items-end gap-1" style={{ height: 80 }}>
           {history.map((h, i) => {
             const isCurrent = h.off === 0;
-            const barH = Math.max(
-              Math.round((h.pct / 100) * 76),
-              isCurrent ? 4 : h.hasData ? 2 : 0
-            );
+            const barH = Math.max(Math.round((h.pct / 100) * 76), isCurrent ? 4 : h.hasData ? 2 : 0);
             return (
               <div
                 key={i}

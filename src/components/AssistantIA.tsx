@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { MagasinData, PAPAction } from '@/types';
 import { getAlerts, getCategoryScores } from '@/lib/kpis';
 import { getJournalContext } from '@/components/JournalAchatVente';
+import { getRoutinesContext } from '@/components/Routines';
 import { getVisionContext } from '@/components/Objectifs';
 import { getBenchmarkContext } from '@/components/BenchmarkFinancier';
 
@@ -166,10 +167,12 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
     setSelectedTemplate(id);
     const base = tpl.build(data, actions);
     const journalCtx    = magasinNom ? getJournalContext(magasinNom) : '';
+    const routinesCtx   = magasinNom ? getRoutinesContext(magasinNom) : '';
     const visionCtx     = magasinNom ? getVisionContext(magasinNom) : '';
     const benchmarkCtx  = magasinNom ? getBenchmarkContext(magasinNom) : '';
     let built = base;
     if (journalCtx)   built += `\n\nDONNÉES JOURNAL ACHAT-VENTE :${journalCtx}`;
+    if (routinesCtx)  built += `\n\nROUTINES HEBDOMADAIRES :${routinesCtx}`;
     if (visionCtx)    built += `\n\nVISION & PLAN D'ACTION :${visionCtx}`;
     if (benchmarkCtx) built += `\n\nBENCHMARK FINANCIER :${benchmarkCtx}`;
     setPrompt(built);
