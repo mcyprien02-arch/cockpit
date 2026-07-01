@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -177,6 +178,61 @@ function emptyCharges(): Record<PosteKey, string> {
   return o as Record<PosteKey, string>;
 }
 
+// ── Import compte de résultat ─────────────────────────────────────────────────
+
+type ImportRow = { lib: string; montant: number; poste: PosteKey | null; ignored: boolean };
+
+function norm2(s: string) { return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+
+function mapComptableToDAF(libelle: string): PosteKey | null {
+  const l = norm2(libelle);
+  if (/loyer|bail|location.*immo|immeuble|local comm/.test(l)) return 'locations_immo';
+  if (/credit.*bail.*vehi|loa.*vehi|location.*vehicule|location.*voiture|location.*camion/.test(l)) return 'locations_mob';
+  if (/logiciel|saas|location.*info|location.*materiel.*info/.test(l)) return 'locations_info';
+  if (/charge.*locative|copropri|assurance.*loyer|taxe.*fonci|charge.*commun/.test(l)) return 'charges_locatives';
+  if (/entretien|reparation|nettoyage|maintenance/.test(l)) return 'entretien';
+  if (/presta|sous.traitance|externalisation|gardiennage/.test(l)) return 'prestations';
+  if (/assurance/.test(l)) return 'assurances';
+  if (/honoraire|expert.*compt|avocat|conseil/.test(l)) return 'honoraires';
+  if (/frais.*acte|notaire|juridique|enregistrement/.test(l)) return 'frais_actes';
+  if (/pub.*nat|redev.*nat|communication.*nat|royalt/.test(l)) return 'pub_nationale';
+  if (/pub.*loc|publicit|marketing|flyer|affiche|google|facebook/.test(l)) return 'pub_locale';
+  if (/transport|livraison|messagerie|courrier|fret|postal/.test(l)) return 'transports';
+  if (/fourniture.*bureau|papeterie|bureautique|petite.*fourni/.test(l)) return 'achats_fournitures';
+  if (/emballage|sac|consommable|produit.*nettoyage/.test(l)) return 'achats_consommables';
+  return null;
+}
+
+function parseMontant(s: string): number | null {
+  const cleaned = s.replace(/\s/g, '').replace(',', '.');
+  const n = parseFloat(cleaned);
+  return isFinite(n) ? Math.abs(n) : null;
+}
+
+function isCALine(lib: string): boolean {
+  const l = norm2(lib);
+  return /chiffre.*affaire|ca\b|vente.*marchandise|produit.*vente/.test(l);
+}
+
+function parseComptableText(text: string): { rows: ImportRow[]; detectedCA: number | null } {
+  const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const rows: ImportRow[] = [];
+  let detectedCA: number | null = null;
+  for (const line of lines) {
+    // Try split on tab, semicolon, or multiple spaces
+    const parts = line.split(/\t|;|  +/);
+    if (parts.length < 2) continue;
+    const lib = parts[0].trim();
+    const last = parts[parts.length - 1].trim();
+    const montant = parseMontant(last);
+    if (!montant || montant <= 0 || !lib) continue;
+    if (isCALine(lib)) { detectedCA = montant; continue; }
+    const poste = mapComptableToDAF(lib);
+    rows.push({ lib, montant, poste, ignored: poste === null });
+  }
+  return { rows, detectedCA };
+}
+
 // ── AI context export ─────────────────────────────────────────────────────────
 
 export function getBenchmarkContext(magasinNom: string): string {
@@ -262,6 +318,16 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
   const [papAdded, setPapAdded]               = useState<Set<PosteKey>>(new Set());
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [mounted, setMounted]                 = useState(false);
+
+  // ── Import compte de résultat state ────────────────────────────────────────
+  const [importOpen, setImportOpen]           = useState(false);
+  const [importMode, setImportMode]           = useState<'file'|'paste'>('paste');
+  const [importText, setImportText]           = useState('');
+  const [importRows, setImportRows]           = useState<ImportRow[]>([]);
+  const [importDetectedCA, setImportDetectedCA] = useState<number | null>(null);
+  const [importStep, setImportStep]           = useState<'idle'|'preview'>('idle');
+  const [importLoading, setImportLoading]     = useState(false);
+  const importFileRef                         = useRef<HTMLInputElement>(null);
 
   // ── Load from localStorage on mount ────────────────────────────────────────
   useEffect(() => {
@@ -415,6 +481,39 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
   }
 
   function resetMoyennes() { setMoyennes(DEFAULT_MOYENNES); }
+
+  async function handleImportFile(file: File | null | undefined) {
+    if (!file) return;
+    setImportLoading(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_csv(ws);
+      parseAndPreview(raw);
+    } catch { /* ignore parse errors */ }
+    finally { setImportLoading(false); }
+  }
+
+  function parseAndPreview(text: string) {
+    const { rows, detectedCA } = parseComptableText(text);
+    setImportRows(rows);
+    setImportDetectedCA(detectedCA);
+    setImportStep('preview');
+  }
+
+  function applyImport() {
+    const newCharges = { ...charges };
+    for (const r of importRows) {
+      if (!r.ignored && r.poste) newCharges[r.poste] = String(Math.round(r.montant));
+    }
+    setCharges(newCharges);
+    if (importDetectedCA && !caHTStr) setCaHTStr(String(Math.round(importDetectedCA)));
+    setImportStep('idle');
+    setImportRows([]);
+    setImportText('');
+    setImportOpen(false);
+  }
 
   function addToPAP(row: DiagRow) {
     if (!onAddAction) return;
@@ -673,6 +772,110 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
             >
               ↩ Réinitialiser aux valeurs DAF par défaut
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* ══ IMPORT compte de résultat ══ */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+        <button className="w-full flex items-center justify-between px-5 py-4 text-left" onClick={() => setImportOpen(v => !v)}>
+          <div>
+            <h3 className="text-sm font-bold text-[#1A1A1A]">📂 Importer mon compte de résultat</h3>
+            <p className="text-xs text-[#6B7280] mt-0.5">Importez votre CR pour alimenter automatiquement les 14 postes de charges DAF.</p>
+          </div>
+          <span className="text-[#6B7280] text-sm ml-4">{importOpen ? '▲' : '▼'}</span>
+        </button>
+        {importOpen && (
+          <div className="px-5 pb-5 space-y-4">
+            {importStep === 'idle' && (
+              <>
+                {/* Mode tabs */}
+                <div className="flex gap-2">
+                  {(['paste','file'] as const).map(m => (
+                    <button key={m} onClick={() => setImportMode(m)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${importMode === m ? 'bg-[#E30613] text-white border-[#E30613]' : 'border-[#E0E0E0] text-[#6B7280] hover:border-[#E30613]'}`}>
+                      {m === 'paste' ? '📋 Coller le texte' : '📁 Importer un fichier'}
+                    </button>
+                  ))}
+                </div>
+
+                {importMode === 'paste' ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-[#6B7280]">Copiez-collez les lignes de votre compte de résultat (format : libellé [tab ou espace] montant). Une ligne = un poste.</p>
+                    <textarea
+                      value={importText}
+                      onChange={e => setImportText(e.target.value)}
+                      placeholder={'Exemple :\nLoyer local commercial\t18000\nAssurances\t2400\nHonoraires expert-comptable\t3200'}
+                      rows={8}
+                      className="w-full text-xs border border-[#E0E0E0] rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-[#E30613] resize-y"
+                    />
+                    <button
+                      disabled={!importText.trim()}
+                      onClick={() => parseAndPreview(importText)}
+                      className="px-4 py-2 bg-[#E30613] disabled:bg-[#F5F5F5] disabled:text-[#9CA3AF] text-white text-sm font-semibold rounded-xl transition-colors"
+                    >Analyser →</button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-[#6B7280]">Fichier .xlsx, .xls ou .csv exporté depuis votre logiciel comptable.</p>
+                    <input ref={importFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => handleImportFile(e.target.files?.[0])} />
+                    <button onClick={() => importFileRef.current?.click()} disabled={importLoading} className="px-4 py-2 border border-[#E30613] text-[#E30613] text-sm font-semibold rounded-xl hover:bg-[#FFF5F5] disabled:opacity-50 transition-colors">
+                      {importLoading ? 'Lecture…' : '📁 Choisir un fichier'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {importStep === 'preview' && (
+              <div className="space-y-3">
+                {importDetectedCA && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-xs text-green-800">
+                    ✅ CA HT détecté automatiquement : <strong>{importDetectedCA.toLocaleString('fr-FR')} €</strong>
+                    {caHTStr ? ' (non appliqué — CA déjà renseigné)' : ' — sera appliqué à la validation'}
+                  </div>
+                )}
+                <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
+                  <table className="text-xs w-full border-collapse">
+                    <thead><tr>
+                      <th className={TH}>Libellé comptable</th>
+                      <th className={THR}>Montant (€)</th>
+                      <th className={TH}>Poste DAF mappé</th>
+                      <th className={TH}>Action</th>
+                    </tr></thead>
+                    <tbody>{importRows.map((r, i) => (
+                      <tr key={i} className={`${i % 2 === 0 ? 'bg-white' : 'bg-[#FAFAFA]'} ${r.ignored ? 'opacity-50' : ''}`}>
+                        <td className={TD}><span className="font-medium">{r.lib}</span></td>
+                        <td className={TDR}>{r.montant.toLocaleString('fr-FR')} €</td>
+                        <td className={TD}>
+                          <select
+                            value={r.poste ?? ''}
+                            onChange={e => setImportRows(prev => prev.map((row, j) => j === i ? { ...row, poste: (e.target.value || null) as PosteKey | null, ignored: !e.target.value } : row))}
+                            className="text-xs border border-[#E0E0E0] rounded px-1 py-0.5 focus:outline-none focus:border-[#E30613] w-full max-w-[220px]"
+                          >
+                            <option value="">— Ignorer —</option>
+                            {POSTES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                          </select>
+                        </td>
+                        <td className={TD}>
+                          <button onClick={() => setImportRows(prev => prev.map((row, j) => j === i ? { ...row, ignored: !row.ignored } : row))} className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${r.ignored ? 'border-green-400 text-green-700 hover:bg-green-50' : 'border-[#9CA3AF] text-[#9CA3AF] hover:text-red-600 hover:border-red-300'}`}>
+                            {r.ignored ? '↩ Inclure' : '✕ Ignorer'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-[#9CA3AF] italic">{importRows.filter(r => !r.ignored && r.poste).length} poste{importRows.filter(r => !r.ignored && r.poste).length > 1 ? 's' : ''} seront transférés sur les {importRows.length} lignes importées.</p>
+                <div className="flex gap-2">
+                  <button onClick={applyImport} className="flex-1 bg-[#E30613] hover:bg-[#B8050F] text-white text-sm font-semibold rounded-xl py-2.5 transition-colors">
+                    ✅ Valider et alimenter le Benchmark
+                  </button>
+                  <button onClick={() => { setImportStep('idle'); setImportRows([]); }} className="px-4 py-2.5 border border-[#E0E0E0] text-[#6B7280] text-sm font-semibold rounded-xl transition-colors">
+                    ← Recommencer
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
