@@ -14,7 +14,6 @@ import Routines from '@/components/Routines';
 import JournalAchatVente from '@/components/JournalAchatVente';
 import BijouterieScreen from '@/components/BijouterieScreen';
 import BenchmarkFinancier from '@/components/BenchmarkFinancier';
-import GrilleAchat from '@/components/GrilleAchat';
 import { detectSpiral } from '@/lib/spiral';
 
 const MAIN_TABS = [
@@ -31,11 +30,7 @@ const MAIN_TABS = [
   { id: 'assistant',   label: '🤖 Assistant IA' },
 ] as const;
 
-const ANNEXE_TABS = [
-  { id: 'grille-achat', label: '📋 Grille Achat' },
-] as const;
-
-type TabId = typeof MAIN_TABS[number]['id'] | typeof ANNEXE_TABS[number]['id'];
+type TabId = typeof MAIN_TABS[number]['id'];
 
 function getMagasinsKey() { return 'ec_magasins'; }
 function getDataKey(nom: string) { return `ec_data_${nom}`; }
@@ -144,20 +139,6 @@ export default function App() {
                 {t.label}
               </button>
             ))}
-            <span className="self-end pb-2.5 px-1.5 text-white/25 text-xs select-none flex-shrink-0">│</span>
-            {ANNEXE_TABS.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`px-3 py-2.5 text-xs whitespace-nowrap border-b-2 flex-shrink-0 transition-colors italic ${
-                  tab === t.id
-                    ? 'text-white/80 border-white/50 font-semibold'
-                    : 'text-white/40 border-transparent hover:text-white/70'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
           </div>
         </div>
       </div>
@@ -181,7 +162,6 @@ export default function App() {
         {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} onNavigateToBijouterie={() => setTab('bijouterie')} />}
         {tab === 'bijouterie'  && <BijouterieScreen  magasinNom={currentNom} onNavigateToJournal={() => setTab('journal')} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'benchmark'   && <BenchmarkFinancier magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
-        {tab === 'grille-achat' && <GrilleAchat       magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'routines'    && <Routines          magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'competences' && <Competences       magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
