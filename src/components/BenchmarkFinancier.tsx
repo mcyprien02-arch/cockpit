@@ -80,45 +80,70 @@ const DEFAULT_MOYENNES: MoyennesReseau = {
   transports:          { centre_ville:0.52, '0_999':0.57, '1000_1199':0.56, '1200_1399':0.37, '1400_1599':0.41, '1600_1999':0.53, '2000_plus':0.55 },
 };
 
-// ── Santé financière globale — 5 indicateurs DAF 2022 ─────────────────────────
+// ── Profils DAF ───────────────────────────────────────────────────────────────
 
-const SANTE_INDICATEURS: SanteIndicateur[] = [
+interface ProfilThresholds {
+  taux_marge_net_vert: number; taux_marge_net_orange: number; taux_marge_net_cible: string;
+  charges_ext_vert: number;    charges_ext_orange: number;    charges_ext_cible: string;
+  masse_sal_vert: number;      masse_sal_orange: number;      masse_sal_cible: string;
+  ebe_vert: number;            ebe_orange: number;            ebe_cible: string;
+  rcai_vert: number;           rcai_orange: number;           rcai_cible: string;
+}
+
+const PROFILS_DAF: Array<{ key: string; label: string; description: string; thresholds: ProfilThresholds }> = [
   {
-    key: 'taux_marge_net',
-    label: 'Taux de marge brute (% CA TTC)',
-    cible: '38–39 %',
-    evaluate(v) { return v >= 38 ? 'vert' : v >= 36 ? 'orange' : 'rouge'; },
-    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF 38-39 %. Marge brute = (CA TTC − coût d'achat marchandises) / CA TTC — avant charges d'exploitation. Pistes : mix rayon, EasyPrice, sourcing, ventes complémentaires, démarque.`; },
-  },
-  {
-    key: 'charges_externes',
-    label: 'Charges externes (loyer inclus) — % du CA HT',
-    cible: '12–13 %',
-    evaluate(v) { return v <= 13 ? 'vert' : v <= 14.9 ? 'orange' : 'rouge'; },
-    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF 12-13 %. Voir la section Détail charges externes ci-dessous pour identifier les postes en écart.`; },
-  },
-  {
-    key: 'masse_salariale',
-    label: 'Masse salariale (rémunération franchisé incluse) — % du CA HT',
-    cible: '≤ 15 %',
-    evaluate(v) { return v <= 15 ? 'vert' : v <= 17 ? 'orange' : 'rouge'; },
-    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ≤15 %. Référence : 1 salarié par tranche de 250 K€ de CA. Voir le module Simulateur équipe pour la modélisation.`; },
-  },
-  {
-    key: 'ebe',
-    label: 'EBE — % du CA HT',
-    cible: '≥ 8 %',
-    evaluate(v) { return v >= 8 ? 'vert' : v >= 5 ? 'orange' : 'rouge'; },
-    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ≥8 %. L'EBE dépend directement du taux de marge brute, des charges externes et de la masse salariale. Identifier le levier prioritaire.`; },
-  },
-  {
-    key: 'rcai',
-    label: 'Résultat courant avant impôts (RCAI) — % du CA HT',
-    cible: '≥ 5 %',
-    evaluate(v) { return v >= 5 ? 'vert' : v >= 3 ? 'orange' : 'rouge'; },
-    papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ≥5 %. Le RCAI intègre charges financières et amortissements. Vérifier l'endettement et le niveau d'amortissement.`; },
+    key: 'standard',
+    label: 'Standard réseau',
+    description: 'Référentiel DAF Easycash 2022 — tous magasins confondus',
+    thresholds: {
+      taux_marge_net_vert: 38, taux_marge_net_orange: 36, taux_marge_net_cible: '38–39 %',
+      charges_ext_vert: 13,    charges_ext_orange: 14.9,  charges_ext_cible: '12–13 %',
+      masse_sal_vert: 15,      masse_sal_orange: 17,       masse_sal_cible: '≤ 15 %',
+      ebe_vert: 8,             ebe_orange: 5,              ebe_cible: '≥ 8 %',
+      rcai_vert: 5,            rcai_orange: 3,             rcai_cible: '≥ 5 %',
+    },
   },
 ];
+
+function buildSanteIndicateurs(t: ProfilThresholds): SanteIndicateur[] {
+  return [
+    {
+      key: 'taux_marge_net',
+      label: 'Taux de marge brute (% CA TTC)',
+      cible: t.taux_marge_net_cible,
+      evaluate(v) { return v >= t.taux_marge_net_vert ? 'vert' : v >= t.taux_marge_net_orange ? 'orange' : 'rouge'; },
+      papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.taux_marge_net_cible}. Marge brute = (CA TTC − coût d'achat marchandises) / CA TTC — avant charges d'exploitation. Pistes : mix rayon, EasyPrice, sourcing, ventes complémentaires, démarque.`; },
+    },
+    {
+      key: 'charges_externes',
+      label: 'Charges externes (loyer inclus) — % du CA HT',
+      cible: t.charges_ext_cible,
+      evaluate(v) { return v <= t.charges_ext_vert ? 'vert' : v <= t.charges_ext_orange ? 'orange' : 'rouge'; },
+      papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.charges_ext_cible}. Voir la section Détail charges externes ci-dessous pour identifier les postes en écart.`; },
+    },
+    {
+      key: 'masse_salariale',
+      label: 'Masse salariale (rémunération franchisé incluse) — % du CA HT',
+      cible: t.masse_sal_cible,
+      evaluate(v) { return v <= t.masse_sal_vert ? 'vert' : v <= t.masse_sal_orange ? 'orange' : 'rouge'; },
+      papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.masse_sal_cible}. Référence : 1 salarié par tranche de 250 K€ de CA. Voir le module Simulateur équipe pour la modélisation.`; },
+    },
+    {
+      key: 'ebe',
+      label: 'EBE — % du CA HT',
+      cible: t.ebe_cible,
+      evaluate(v) { return v >= t.ebe_vert ? 'vert' : v >= t.ebe_orange ? 'orange' : 'rouge'; },
+      papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.ebe_cible}. L'EBE dépend directement du taux de marge brute, des charges externes et de la masse salariale. Identifier le levier prioritaire.`; },
+    },
+    {
+      key: 'rcai',
+      label: 'Résultat courant avant impôts (RCAI) — % du CA HT',
+      cible: t.rcai_cible,
+      evaluate(v) { return v >= t.rcai_vert ? 'vert' : v >= t.rcai_orange ? 'orange' : 'rouge'; },
+      papDesc(v) { return `Ma valeur actuelle : ${v} % vs cible DAF ${t.rcai_cible}. Le RCAI intègre charges financières et amortissements. Vérifier l'endettement et le niveau d'amortissement.`; },
+    },
+  ];
+}
 
 const EMPTY_SANTE: Record<SanteKey, string> = {
   taux_marge_net: '', charges_externes: '', masse_salariale: '', ebe: '', rcai: '',
@@ -243,7 +268,8 @@ export function getBenchmarkContext(magasinNom: string): string {
     const santeRaw = localStorage.getItem(`benchmark_sante_globale_${magasinNom}`);
     if (santeRaw) {
       const sd = JSON.parse(santeRaw) as Record<SanteKey, number>;
-      const filled = SANTE_INDICATEURS.filter(ind => sd[ind.key] != null && sd[ind.key] > 0);
+      const stdIndicateurs = buildSanteIndicateurs(PROFILS_DAF[0].thresholds);
+      const filled = stdIndicateurs.filter(ind => sd[ind.key] != null && sd[ind.key] > 0);
       if (filled.length > 0) {
         let nbVert = 0, nbOrange = 0, nbRouge = 0;
         ctx += '\nSanté financière globale du magasin :';
@@ -308,6 +334,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
   const [showSante, setShowSante]     = useState(true);
   const [santeAdded, setSanteAdded]   = useState<Set<SanteKey>>(new Set());
   const [toastMsg, setToastMsg]       = useState('');
+  const [profilDAFKey, setProfilDAFKey] = useState('standard');
 
   // ── Charges benchmark state
   const [moyennes, setMoyennes]               = useState<MoyennesReseau>(DEFAULT_MOYENNES);
@@ -389,14 +416,17 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
 
   // ── Computed ────────────────────────────────────────────────────────────────
 
+  const profilDAF = PROFILS_DAF.find(p => p.key === profilDAFKey) ?? PROFILS_DAF[0];
+  const santeIndicateurs = useMemo(() => buildSanteIndicateurs(profilDAF.thresholds), [profilDAF]);
+
   const santeStatuses = useMemo((): Partial<Record<SanteKey, SanteStatus>> => {
     const result: Partial<Record<SanteKey, SanteStatus>> = {};
-    SANTE_INDICATEURS.forEach(ind => {
+    santeIndicateurs.forEach(ind => {
       const v = parseFloat(sante[ind.key].replace(',', '.'));
       if (!isNaN(v)) result[ind.key] = ind.evaluate(v);
     });
     return result;
-  }, [sante]);
+  }, [sante, santeIndicateurs]);
 
   const santeSummary = useMemo(() => {
     const statuses = Object.values(santeStatuses);
@@ -668,6 +698,25 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
         {showSante && (
           <div className="px-5 pb-5 space-y-4">
 
+            {/* Profil sélecteur */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-[#6B7280]">Référentiel :</span>
+              {PROFILS_DAF.map(p => (
+                <button
+                  key={p.key}
+                  onClick={() => setProfilDAFKey(p.key)}
+                  className={`text-xs px-3 py-1 rounded-full font-semibold border transition-colors ${
+                    profilDAFKey === p.key
+                      ? 'bg-[#E30613] text-white border-[#E30613]'
+                      : 'bg-white text-[#6B7280] border-[#E0E0E0] hover:border-[#E30613] hover:text-[#E30613]'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+              <span className="text-xs text-[#9CA3AF] italic">{profilDAF.description}</span>
+            </div>
+
             {/* Saisie table */}
             <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
               <table className="text-xs w-full border-collapse">
@@ -681,7 +730,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {SANTE_INDICATEURS.map((ind, i) => {
+                  {santeIndicateurs.map((ind, i) => {
                     const st = santeStatuses[ind.key];
                     const rowBg = st ? santeBg(st) : (i % 2 === 0 ? 'bg-white' : 'bg-[#FAFAFA]');
                     const alreadyAdded = santeAdded.has(ind.key);
@@ -1033,7 +1082,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
           <div>
             <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Mon positionnement vs ma tranche</h3>
             <p className="text-xs text-[#6B7280] mt-0.5">
-              Comparaison automatique avec les moyennes de votre tranche ({trancheLabel})
+              Comparaison automatique avec les moyennes de votre tranche ({trancheLabel}) — référentiel : {profilDAF.label}
             </p>
           </div>
 
