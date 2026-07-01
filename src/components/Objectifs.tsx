@@ -92,8 +92,7 @@ export function getVisionContext(magasinNom: string): string {
           .filter(f => f.famille && f.margeCible > 0)
           .map(f => {
             const avanc = f.margeCible > 0 ? Math.round(f.margeRealisee / f.margeCible * 100) : 0;
-            const t = f.tauxMarge / 100;
-            const sourcingRestant = f.tauxMarge > 0 ? Math.max(0, Math.round(f.margeCible / t - (f.stockInitial ?? 0) - f.margeRealisee / t)) : 0;
+            const sourcingRestant = f.tauxMarge > 0 ? Math.max(0, Math.round((f.margeCible - f.margeRealisee) / (f.tauxMarge / 100))) : 0;
             const sourcingStr = f.margeRealisee >= f.margeCible
               ? ' · sourcing: objectif atteint ✓'
               : sourcingRestant > 0 ? ` · sourcing restant: +${sourcingRestant.toLocaleString('fr-FR')}€` : '';
@@ -105,8 +104,7 @@ export function getVisionContext(magasinNom: string): string {
           const tauxPondere = totalCA > 0 ? Math.round((totalMarge / totalCA) * 1000) / 10 : 0;
           const sourcingRestantTotal = obj.familles.reduce((s, f) => {
             if (f.tauxMarge <= 0) return s;
-            const t = f.tauxMarge / 100;
-            return s + Math.max(0, Math.round(f.margeCible / t - (f.stockInitial ?? 0) - f.margeRealisee / t));
+            return s + Math.max(0, Math.round((f.margeCible - f.margeRealisee) / (f.tauxMarge / 100)));
           }, 0);
           if (tauxPondere > 0) parts.push(`Taux de marge pondéré global : ${tauxPondere}%`);
           if (sourcingRestantTotal > 0) parts.push(`Sourcing restant ce mois : ${sourcingRestantTotal.toLocaleString('fr-FR')} €`);
@@ -261,12 +259,12 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
     return Math.round(f.margeCible / (f.tauxMarge / 100));
   }
 
-  // Sourcing restant = Besoin total − Stock initial − CA équivalent déjà réalisé
-  // Formule : margeCible/tauxMarge − stockInitial − margeRealisee/tauxMarge
+  // Sourcing restant = (Objectif marge − Marge réalisée) ÷ Taux de marge
+  // Stock initial affiché en contexte mais sans effet sur ce calcul
   function sourcingRestant(f: ObjFamille): number {
     if (f.margeCible <= 0 || f.tauxMarge <= 0) return 0;
     const t = f.tauxMarge / 100;
-    return Math.max(0, Math.round(f.margeCible / t - f.stockInitial - f.margeRealisee / t));
+    return Math.max(0, Math.round((f.margeCible - f.margeRealisee) / t));
   }
 
   function avancement(f: ObjFamille): number {
