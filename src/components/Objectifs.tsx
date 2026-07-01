@@ -8,7 +8,6 @@ interface Props { magasinNom: string; }
 // ── Long-term vision ─────────────────────────────────────────────────────────
 
 interface VisionData {
-  vision3ans: string;
   valeur1: string;
   valeur2: string;
   valeur3: string;
@@ -16,7 +15,7 @@ interface VisionData {
   caAnnuelCible: number;
 }
 
-const DEFAULT_VISION: VisionData = { vision3ans: '', valeur1: '', valeur2: '', valeur3: '', capCommercial: '', caAnnuelCible: 0 };
+const DEFAULT_VISION: VisionData = { valeur1: '', valeur2: '', valeur3: '', capCommercial: '', caAnnuelCible: 0 };
 const VISION_KEY = (nom: string) => `vision_longterme_${nom}`;
 
 function loadVision(magasinNom: string): VisionData {
@@ -47,12 +46,18 @@ export function getVisionContext(magasinNom: string): string {
   try {
     const parts: string[] = [];
 
-    // Vision long terme
+    // Objectifs personnels (source unique : Histoire du magasin)
+    const hs = localStorage.getItem(`histoire_${magasinNom}`);
+    if (hs) {
+      const h = JSON.parse(hs) as { objectifsPerso?: string };
+      if (h.objectifsPerso?.trim()) parts.push(`Objectifs personnels du franchisé : ${h.objectifsPerso}`);
+    }
+
+    // Valeurs + cap commercial (depuis Objectifs)
     const vs = localStorage.getItem(VISION_KEY(magasinNom))
             ?? localStorage.getItem(`vision_${magasinNom}`); // fallback old key
     if (vs) {
       const v = JSON.parse(vs) as VisionData;
-      if (v.vision3ans?.trim()) parts.push(`Vision long terme du franchisé : ${v.vision3ans}`);
       const valeurs = [v.valeur1, v.valeur2, v.valeur3].filter(x => x?.trim());
       if (valeurs.length) parts.push(`Valeurs non-négociables : ${valeurs.join(', ')}`);
       if (v.capCommercial?.trim()) parts.push(`Cap commercial annuel : ${v.capCommercial}`);
@@ -318,20 +323,6 @@ export default function Objectifs({ magasinNom }: Props) {
         <div className="border-b border-[#F0F0F0] pb-4">
           <h2 className="text-lg font-bold text-[#1A1A1A]">🌟 Objectifs long terme</h2>
           <p className="text-xs text-[#6B7280] mt-0.5">Mon cap stratégique sur 3 ans — {magasinNom || 'Magasin'}</p>
-        </div>
-
-        {/* Vision 3 ans */}
-        <div>
-          <label className="text-sm font-semibold text-[#1A1A1A] block mb-1.5">
-            🌟 Ma vision pour mon magasin dans 3 ans
-          </label>
-          <textarea
-            value={vision.vision3ans}
-            onChange={e => updateVision('vision3ans', e.target.value)}
-            rows={3}
-            className={tasCls}
-            placeholder="Écrivez votre vision en quelques phrases"
-          />
         </div>
 
         {/* 3 valeurs */}
