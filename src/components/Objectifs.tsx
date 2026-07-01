@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { PAPAction, ActionAxe, StoredStatut } from '@/types';
 
-interface Props { magasinNom: string; }
+interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
 // ── Long-term vision ─────────────────────────────────────────────────────────
 
@@ -165,7 +165,7 @@ function defaultRows(): ObjFamille[] {
   return DEFAULT_FAMILLES.map(f => ({ id: uid(), famille: f.famille, tauxMarge: f.tauxMarge, margeCible: 0, stockInitial: 0, margeRealisee: 0 }));
 }
 
-export default function Objectifs({ magasinNom }: Props) {
+export default function Objectifs({ magasinNom, onAddAction }: Props) {
   const today = new Date();
   const defaultMonth = today.toISOString().slice(0, 7);
 
@@ -227,10 +227,13 @@ export default function Objectifs({ magasinNom }: Props) {
 
   function createPAPAction() {
     if (!papForm.titre.trim()) return;
-    const current = loadPAPActions(magasinNom);
-    const next = [...current, { ...papForm, id: uid() }];
-    savePAPActions(magasinNom, next);
-    setPapActions(next);
+    const newAction = { ...papForm, id: uid() };
+    if (onAddAction) {
+      onAddAction(newAction);
+    } else {
+      savePAPActions(magasinNom, [...loadPAPActions(magasinNom), newAction]);
+    }
+    setPapActions(prev => [...prev, newAction]);
     setShowPAPModal(false);
     setPapForm(EMPTY_PAP_FORM);
   }
@@ -553,12 +556,10 @@ export default function Objectifs({ magasinNom }: Props) {
                         </span>
                       </td>
                       <td className="px-2 py-2 flex items-center gap-1">
-                        {f.margeCible > 0 && avanc < 80 && (
+                        {f.margeCible > 0 && avanc < 80 && onAddAction && (
                           <button onClick={() => {
-                            const current = loadPAPActions(magasinNom);
                             const e = new Date(); e.setDate(e.getDate() + 14);
-                            const action: PAPAction = { id: String(Date.now()), titre: `Objectifs — Booster la famille ${f.famille} (${avanc}% objectif)`, axe: 'Commerce' as ActionAxe, pilote: 'Franchisé', copilote: '', description: `Avancement ${avanc}% sur la cible de marge ${f.margeCible.toLocaleString('fr-FR')}€. Besoin sourcing NET : ${besoin > 0 ? besoin.toLocaleString('fr-FR') + ' €' : 'couvert'}. Accélérer le sourcing et les ventes sur cette famille.`, echeance: e.toISOString().slice(0, 10), priorite: avanc < 50 ? 1 : 2, gain: Math.round(f.margeCible - f.margeRealisee), statut: 'À faire' as StoredStatut };
-                            savePAPActions(magasinNom, [...current, action]);
+                            onAddAction({ id: String(Date.now()), titre: `Objectifs — Booster la famille ${f.famille} (${avanc}% objectif)`, axe: 'Commerce' as ActionAxe, pilote: 'Franchisé', copilote: '', description: `Avancement ${avanc}% sur la cible de marge ${f.margeCible.toLocaleString('fr-FR')}€. Besoin sourcing NET : ${besoin > 0 ? besoin.toLocaleString('fr-FR') + ' €' : 'couvert'}. Accélérer le sourcing et les ventes sur cette famille.`, echeance: e.toISOString().slice(0, 10), priorite: avanc < 50 ? 1 : 2, gain: Math.round(f.margeCible - f.margeRealisee), statut: 'À faire' as StoredStatut });
                           }} className="text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 whitespace-nowrap transition-colors">+ PAP</button>
                         )}
                         <button onClick={() => delFamille(f.id)} className="text-[#9CA3AF] hover:text-red-600 transition-colors">🗑</button>
