@@ -174,6 +174,40 @@ function detectFamilyCode(s: string, warn = false): FamilyCode {
   return 'OTHER';
 }
 
+// ── DEBUG: expected family code from raw Athéna sous-famille text ─────────────
+// Used only by the diagnostic debug panel — DO NOT use in production logic
+function getExpectedFC(rawSF: string): FamilyCode {
+  const r = rawSF.trim().toUpperCase();
+  const u = r.replace(/[\s\-_]/g,'');
+  // Exact codes first
+  const EXACT: Record<string,FamilyCode> = {
+    'TLCE':'TLCE','JCON':'JCON','JCDR':'JCDR','JPOR':'JPOR',
+    'BOR':'BOR','BOPI':'BOPI','BMAR':'BMAR','BMON':'BMON','IPOR':'IPOR','ITAB':'ITAB',
+  };
+  if (EXACT[u]) return EXACT[u];
+  // BOPI FIRST — "Bijou or empierré" contains "or", must precede BOR
+  if (r.includes('EMPIERR')) return 'BOPI';
+  // BOR
+  if (r.includes('BIJOUTERIE OR')||r.includes('BIJOU OR')) return 'BOR';
+  // JPOR BEFORE JCDR/JCON — "Console Portable" must not fall into JCON
+  if ((r.includes('CONSOLE')||r.includes('JEU')||r.includes('JEUX'))&&r.includes('PORTABLE')) return 'JPOR';
+  // JCDR
+  if (r.includes('CD ROM')||r.includes('JEU VIDÉO')||r.includes('JEU VIDEO')||r.includes('JEUX VIDÉO')||r.includes('JEUX VIDEO')) return 'JCDR';
+  // JCON — any "console" text not already handled
+  if (r.includes('CONSOLE')) return 'JCON';
+  // TLCE
+  if (r.includes('CELLULAIRE')||r.startsWith('TÉLÉPHONIE')||r.startsWith('TELEPHONIE')) return 'TLCE';
+  // ITAB
+  if (r.includes('TABLETTE')) return 'ITAB';
+  // IPOR
+  if ((r.includes('INFORMATIQUE')||r.includes('ORDINATEUR'))&&r.includes('PORTABLE')) return 'IPOR';
+  // BMAR
+  if (r.includes('MAROQUINERIE')||r.includes('BIJOUTERIE MARQUE')) return 'BMAR';
+  // BMON
+  if (r.includes('MONTRE')||r.includes('HORLOGERIE')) return 'BMON';
+  return 'OTHER';
+}
+
 // ── platform detection (JCON / JCDR / JPOR) ──────────────────────────────────
 function detectPlatform(libelle: string): string {
   const u = libelle.toUpperCase().replace(/[-_]/g, ' ');
@@ -2199,6 +2233,95 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             <button onClick={()=>{localStorage.removeItem(`journal_analyse_${magasinNom}`);setStored(null);setSelectedFamily('all');}} className="text-[#9CA3AF] hover:text-red-500 transition-colors">🗑 Effacer</button>
           </div>
           <p className="text-xs text-[#9CA3AF] italic">Seuls les modèles avec ≥ 3 ventes sont affichés dans les sections ci-dessous. La fiabilité est indiquée par un badge coloré.</p>
+
+          {/* ── DEBUG DIAGNOSTIC — Détection famille ──────────────────────────── */}
+          {(()=>{
+            const allRows = stored!.rows;
+            const sample = allRows.slice(0,10);
+            let matchCount=0, divergeCount=0;
+            const currentFCMap = new Map<string,number>();
+            const expectedFCMap = new Map<string,number>();
+            for (const row of allRows) {
+              const cur=detectFamilyCode(row.f);
+              const exp=getExpectedFC(row.f);
+              if (cur===exp) matchCount++; else divergeCount++;
+              currentFCMap.set(cur,(currentFCMap.get(cur)??0)+1);
+              expectedFCMap.set(exp,(expectedFCMap.get(exp)??0)+1);
+            }
+            const total=allRows.length;
+            const uniqueSF=[...new Set(allRows.map(r=>r.f))].sort();
+            return (
+              <div className="border-2 border-amber-400 bg-amber-50 rounded-lg px-4 py-3 text-xs font-mono space-y-2">
+                <p className="font-bold text-amber-800 text-sm">🔍 DEBUG — Détection famille (méthode actuelle vs colonne CSV)</p>
+
+                <p className="font-bold text-amber-900">ÉCHANTILLON DES 10 PREMIÈRES LIGNES :</p>
+                <div className="overflow-x-auto">
+                  <table className="text-[10px] border-collapse w-full">
+                    <thead>
+                      <tr className="bg-amber-200">
+                        {['#','Libellé produit','Sous_famille CSV (r.f)','FC détecté (actuel)','FC attendu (CSV correct)','Verdict'].map(h=>(
+                          <th key={h} className="border border-amber-300 px-1 py-0.5 text-left whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sample.map((row,i)=>{
+                        const cur=detectFamilyCode(row.f);
+                        const exp=getExpectedFC(row.f);
+                        const ok=cur===exp;
+                        return (
+                          <tr key={i} className={ok?'bg-white':'bg-red-50'}>
+                            <td className="border border-amber-300 px-1 py-0.5">{i+1}</td>
+                            <td className="border border-amber-300 px-1 py-0.5 max-w-[160px] truncate" title={row.m}>{row.m.slice(0,35)}{row.m.length>35?'…':''}</td>
+                            <td className="border border-amber-300 px-1 py-0.5 font-semibold text-blue-800">{row.f||'(vide)'}</td>
+                            <td className={`border border-amber-300 px-1 py-0.5 font-bold ${ok?'text-green-700':'text-red-700'}`}>{cur}</td>
+                            <td className="border border-amber-300 px-1 py-0.5 font-bold text-blue-700">{exp}</td>
+                            <td className="border border-amber-300 px-1 py-0.5">{ok?'✅':'❌'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="font-bold text-amber-900">STATISTIQUES GLOBALES ({total} lignes) :</p>
+                <p className="pl-2 text-amber-900">Détection actuelle = colonne CSV : <strong className="text-green-700">{matchCount} / {total} ({total>0?Math.round(matchCount/total*100):0}%)</strong></p>
+                <p className="pl-2 text-amber-900">Détection diverge : <strong className={divergeCount>0?'text-red-700':'text-green-700'}>{divergeCount} / {total} ({total>0?Math.round(divergeCount/total*100):0}%)</strong></p>
+                <p className="pl-2 text-amber-900">Familles détectées (méthode actuelle) : {[...currentFCMap.entries()].sort((a,b)=>b[1]-a[1]).map(([fc,n])=>`${fc}:${n}`).join(' | ')}</p>
+                <p className="pl-2 text-amber-900">Familles attendues (colonne CSV) : {[...expectedFCMap.entries()].sort((a,b)=>b[1]-a[1]).map(([fc,n])=>`${fc}:${n}`).join(' | ')}</p>
+
+                <p className="font-bold text-amber-900">VALEURS UNIQUES DE SOUS_FAMILLE CSV dans ce journal :</p>
+                {uniqueSF.map(sf=>{
+                  const cur=detectFamilyCode(sf);
+                  const exp=getExpectedFC(sf);
+                  const ok=cur===exp;
+                  return (
+                    <p key={sf} className={`pl-2 ${ok?'text-amber-900':'text-red-700 font-bold'}`}>
+                      &quot;{sf||'(vide)'}&quot; → actuel=<strong>{cur}</strong> / attendu=<strong>{exp}</strong> {ok?'✅':'❌ DIVERGENCE'}
+                    </p>
+                  );
+                })}
+
+                <p className="font-bold text-amber-900">MAPPING ATTENDU (Sous_famille CSV → FamilyCode) :</p>
+                {[
+                  ["'CD ROM Jeu Vidéo'","JCDR"],["'Console' / 'Console de jeu'","JCON"],
+                  ["'Téléphonie Cellulaire'","TLCE"],["'Tablette'","ITAB"],
+                  ["'Informatique Portable' / 'Ordinateur Portable'","IPOR"],["'Console Portable' / 'Jeu portable'","JPOR"],
+                  ["'Bijouterie or' / 'Bijou or' (sans empierré)","BOR"],["'Bijou or empierré'","BOPI"],
+                  ["'Bijouterie marque' / 'Maroquinerie'","BMAR"],["'Montre' / 'Horlogerie'","BMON"],
+                ].map(([sf,fc])=>(
+                  <p key={fc} className="pl-2 text-amber-900">{sf} → <strong>{fc}</strong></p>
+                ))}
+
+                <p className="font-bold text-amber-900">VERDICT :</p>
+                <p className="pl-2 text-amber-900">{divergeCount>0
+                  ?`❌ ${divergeCount} lignes mal classifiées — correctif sur detectFamilyCode() nécessaire`
+                  :'✅ Méthode actuelle conforme à la colonne CSV pour ce journal'
+                }</p>
+              </div>
+            );
+          })()}
+          {/* ── END DEBUG ──────────────────────────────────────────────────────── */}
 
           {/* Bijouterie module bandeau */}
           {(selectedFamily==='BOR'||selectedFamily==='BOPI')&&onNavigateToBijouterie&&(
