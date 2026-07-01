@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import * as XLSX from 'xlsx';
 import type { PAPAction } from '@/types';
 
-interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; }
+interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; isAuditMode?: boolean; }
 type Periode = 'all' | '3m' | '6m' | '12m';
 type FamilyCode = 'TLCE'|'JCON'|'JCDR'|'JPOR'|'BOR'|'BOPI'|'BMAR'|'BMON'|'IPOR'|'ITAB'|'UNKNOWN';
 
@@ -1564,7 +1564,7 @@ function FamilyBreakdownSection({ rows, canalRows, family, cookson, onCooksonCha
 }
 
 // ── main component ────────────────────────────────────────────────────────────
-export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateToBijouterie }: Props) {
+export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateToBijouterie, isAuditMode }: Props) {
   const [stored,         setStored]         = useState<StoredImport|null>(null);
   const [periode,        setPeriode]        = useState<Periode>('all');
   const [grade,          setGrade]          = useState('all');
@@ -2056,7 +2056,37 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
         </div>
       )}
 
-      <h2 className="text-lg font-bold text-[#1A1A1A]">Journal achat-vente · {magasinNom||'Magasin'}</h2>
+      <h2 className="text-lg font-bold text-[#1A1A1A]">Journal achat-vente · {magasinNom||'Magasin'}
+        {isAuditMode&&<span className="ml-2 text-xs font-bold bg-orange-500 text-white rounded px-2 py-0.5">MODE AUDIT ACTIF</span>}
+      </h2>
+
+      {/* Audit panel */}
+      {isAuditMode&&stored&&(()=>{
+        const total=stored.rows.length;
+        const unknownN=stored.rows.filter(r=>detectFamilyCode(r.f)==='UNKNOWN').length;
+        const pctUnk=total>0?unknownN/total*100:0;
+        const longDv=stored.rows.filter(r=>r.dv!==null&&r.dv>365).length;
+        const pctLong=total>0?longDv/total*100:0;
+        const epFamRows=stored.rows.filter(r=>EP_FAMILIES.includes(detectFamilyCode(r.f)));
+        const noEP=epFamRows.filter(r=>!r.ep||r.ep===0).length;
+        const pctNoEP=epFamRows.length>0?noEP/epFamRows.length*100:0;
+        const alerts=[
+          pctUnk>5&&`⚠️ ${unknownN} lignes (${pctUnk.toFixed(1)}%) avec famille UNKNOWN`,
+          pctLong>1&&`⚠️ ${longDv} lignes (${pctLong.toFixed(1)}%) avec délai > 365j`,
+          pctNoEP>20&&`⚠️ ${noEP}/${epFamRows.length} lignes EP (${pctNoEP.toFixed(0)}%) sans cote EP`,
+        ].filter(Boolean) as string[];
+        return alerts.length?(
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs space-y-1">
+            <p className="font-bold text-red-800">🚨 Vérification automatique — {total.toLocaleString('fr-FR')} lignes</p>
+            {alerts.map((a,i)=><p key={i} className="text-red-700">{a}</p>)}
+          </div>
+        ):(
+          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-xs text-green-800">
+            <strong>🔍 Audit Journal :</strong> ✅ Aucune incohérence sur {total.toLocaleString('fr-FR')} lignes.
+          </div>
+        );
+      })()}
+
       <div className="bg-white border border-[#E0E0E0] rounded-xl px-4 py-3 space-y-1.5">
         <p className="text-sm text-[#6B7280]">Importez votre export Athéna du journal achat-vente (CSV ou Excel) pour identifier les modèles qui tournent vite, qui génèrent de la marge, et les écarts avec la cote réseau.</p>
         <p className="text-xs text-[#9CA3AF] italic">L&apos;outil exclut le grade D, les retours SAV (prix négatifs) et les données incomplètes. Seuls les modèles avec minimum 3 ventes apparaissent dans les tableaux.</p>

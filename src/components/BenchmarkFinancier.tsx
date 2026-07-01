@@ -11,7 +11,6 @@ type PosteKey =
   'locations_info'|'charges_locatives'|'entretien'|'prestations'|
   'assurances'|'honoraires'|'frais_actes'|'pub_nationale'|'pub_locale'|'transports';
 type MoyennesReseau = Record<PosteKey, Record<TrancheKey, number>>;
-type SortKey = 'ecart_euros'|'poste'|'ecart_pct';
 
 type SanteKey = 'taux_marge_net'|'charges_externes'|'masse_salariale'|'ebe'|'rcai';
 type SanteStatus = 'vert'|'orange'|'rouge';
@@ -260,7 +259,6 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
   const [caHTStr, setCaHTStr]                 = useState('');
   const [centreVille, setCentreVille]         = useState(false);
   const [charges, setCharges]                 = useState<Record<PosteKey, string>>(emptyCharges);
-  const [sortBy, setSortBy]                   = useState<SortKey>('ecart_euros');
   const [papAdded, setPapAdded]               = useState<Set<PosteKey>>(new Set());
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [mounted, setMounted]                 = useState(false);
@@ -369,13 +367,7 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
 
   const nbSaisied = useMemo(() => diagnostic.filter(r => r.saisied).length, [diagnostic]);
 
-  const sortedDiag = useMemo(() => {
-    const d = [...diagnostic];
-    if      (sortBy === 'ecart_euros') d.sort((a, b) => b.ecartEuros - a.ecartEuros);
-    else if (sortBy === 'ecart_pct')   d.sort((a, b) => b.ecartPct   - a.ecartPct);
-    else                               d.sort((a, b) => a.label.localeCompare(b.label, 'fr'));
-    return d;
-  }, [diagnostic, sortBy]);
+  const sortedDiag = useMemo(() => [...diagnostic].sort((a, b) => b.ecartEuros - a.ecartEuros), [diagnostic]);
 
   const priorities = useMemo(() =>
     diagnostic.filter(r => r.saisied && r.ecartEuros > 0).sort((a, b) => b.ecartEuros - a.ecartEuros).slice(0, 3),
@@ -443,6 +435,17 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
     };
     onAddAction(action);
     setPapAdded(prev => new Set(prev).add(row.key));
+  }
+
+  function sendToAssistant() {
+    try {
+      const context = {
+        top3: priorities.slice(0, 3).map(r => ({ label: r.label, ecartEuros: Math.round(r.ecartEuros), ecartPct: Math.round(r.ecartPct), status: r.status })),
+        caHT, trancheLabel, potentielTotal: Math.round(potentielTotal), ts: Date.now(),
+      };
+      localStorage.setItem(`benchmark_ai_prompt_${magasinNom}`, JSON.stringify(context));
+      showToast("✅ Contexte transmis à l'Assistant IA — basculez sur l'onglet Assistant");
+    } catch { /* ignore */ }
   }
 
   function clearAll() {
@@ -783,19 +786,32 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
             </div>
           )}
 
-          {/* Sort controls */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[#6B7280]">Trier par :</span>
-            {([['ecart_euros','Écart en €'],['ecart_pct','Écart en %'],['poste','Poste']] as [SortKey, string][]).map(([k, l]) => (
-              <button
-                key={k}
-                onClick={() => setSortBy(k)}
-                className={`text-xs px-3 py-1 rounded-full border transition-colors ${sortBy === k ? 'bg-[#E30613] text-white border-[#E30613]' : 'border-[#E0E0E0] text-[#6B7280] hover:border-[#E30613] hover:text-[#E30613]'}`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
+          {/* Top-3 écarts hero */}
+          {priorities.length > 0 && (
+            <div className="bg-[#FFF5F5] border border-red-200 rounded-xl p-4 space-y-2">
+              <p className="text-sm font-bold text-[#1A1A1A]">💡 Vos {priorities.length} plus grand{priorities.length > 1 ? 's' : ''} écart{priorities.length > 1 ? 's' : ''} vs votre tranche réseau</p>
+              {priorities.map(r => (
+                <div key={r.key} className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-[#374151]">
+                    {statusBadge(r.status)} <span className="font-semibold">{r.label}</span>
+                    <span className="text-[#6B7280]"> : +{fmt(r.ecartEuros)} € vs moyenne</span>
+                  </p>
+                  {onAddAction && (
+                    papAdded.has(r.key) ? (
+                      <span className="text-xs text-green-700 font-semibold bg-green-50 border border-green-200 rounded-full px-3 py-1 whitespace-nowrap">✓ Ajouté</span>
+                    ) : (
+                      <button onClick={() => addToPAP(r)} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
+                    )
+                  )}
+                </div>
+              ))}
+              <div className="pt-2 border-t border-red-200">
+                <button onClick={sendToAssistant} className="text-xs font-semibold text-[#E30613] border border-[#E30613] rounded-lg px-4 py-2 hover:bg-[#FFF5F5] transition-colors">
+                  💬 Discuter de mes charges avec l&apos;Assistant IA
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="overflow-x-auto rounded-xl border border-[#E0E0E0]">
             <table className="text-xs w-full border-collapse">

@@ -55,6 +55,7 @@ export default function App() {
   const [data, setData] = useState<MagasinData>(DEFAULT_DATA);
   const [actions, setActions] = useState<PAPAction[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [isAuditMode, setIsAuditMode] = useState(false);
 
   useEffect(() => {
     const mags = loadMagasins();
@@ -62,6 +63,7 @@ export default function App() {
     const saved = localStorage.getItem('ec_current') ?? (mags[0] ?? '');
     setCurrentNom(saved);
     if (saved) { setData(loadData(saved)); setActions(loadActions(saved)); }
+    try { if (localStorage.getItem('app_audit_mode') === 'true') setIsAuditMode(true); } catch {}
     setMounted(true);
   }, []);
 
@@ -158,8 +160,8 @@ export default function App() {
         {tab === 'dashboard'   && <Dashboard        data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
         {tab === 'objectifs'   && <Objectifs         magasinNom={currentNom} />}
         {tab === 'plan'        && <PlanAction        data={data} actions={actions} onSave={saveActions} />}
-        {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} onNavigateToBijouterie={() => setTab('bijouterie')} />}
-        {tab === 'bijouterie'  && <BijouterieScreen  magasinNom={currentNom} onNavigateToJournal={() => setTab('journal')} />}
+        {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} onNavigateToBijouterie={() => setTab('bijouterie')} isAuditMode={isAuditMode} />}
+        {tab === 'bijouterie'  && <BijouterieScreen  magasinNom={currentNom} onNavigateToJournal={() => setTab('journal')} onAddAction={a => saveActions([...actions, a])} isAuditMode={isAuditMode} />}
         {tab === 'benchmark'   && <BenchmarkFinancier magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'couverture'  && <CouvertureGamme   magasinNom={currentNom} />}
         {tab === 'routines'    && <Routines          magasinNom={currentNom} />}
@@ -167,6 +169,19 @@ export default function App() {
         {tab === 'simulateur'  && <Simulateur        magasinNom={currentNom} isCriticalSpiral={isCritical} />}
         {tab === 'assistant'   && <AssistantIA       data={data} actions={actions} magasinNom={currentNom} />}
       </main>
+
+      {/* Hidden audit mode button */}
+      <button
+        onClick={() => { const v = !isAuditMode; setIsAuditMode(v); try { localStorage.setItem('app_audit_mode', String(v)); } catch {} }}
+        className="fixed bottom-4 right-4 z-50 text-xs text-[#9CA3AF] border border-[#E0E0E0] bg-white rounded-lg px-3 py-1.5 shadow hover:border-[#E30613] transition-colors"
+      >
+        {isAuditMode ? '🔧 Quitter Mode Audit' : '🔧 Mode Audit (admin)'}
+      </button>
+      {isAuditMode && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-orange-500 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow pointer-events-none">
+          MODE AUDIT ACTIF
+        </div>
+      )}
     </div>
   );
 }

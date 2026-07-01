@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { detectTypeBijou, extractPoidsFromLib } from '@/lib/bijouUtils';
+import type { PAPAction } from '@/types';
 
-interface Props { magasinNom: string; onNavigateToJournal?: () => void; }
+interface Props { magasinNom: string; onNavigateToJournal?: () => void; onAddAction?: (action: PAPAction) => void; isAuditMode?: boolean; }
 
 type Periode = 'all'|'3m'|'6m'|'12m';
 type GradeFilter = 'all'|'A'|'B'|'C';
@@ -179,7 +180,7 @@ export function getBijouterieContext(magasinNom: string): string {
   try { const raw=localStorage.getItem(`bij_summary_${magasinNom}`); return raw??''; } catch { return ''; }
 }
 
-export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Props) {
+export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAddAction, isAuditMode }: Props) {
   const [allRows,        setAllRows]        = useState<BijRow[]>([]);
   const [periode,        setPeriode]        = useState<Periode>('all');
   const [grade,          setGrade]          = useState<GradeFilter>('all');
@@ -190,7 +191,20 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
   const [fonteConfig,    setFonteConfig]    = useState<FonteConfig>({useGradeD:true,useKeywords:false,keywords:[]});
   const [fonteConfigOpen,setFonteConfigOpen]= useState(false);
   const [keywordsInput,  setKeywordsInput]  = useState('');
+  const [papAdded,       setPapAdded]       = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function addToPAP(key: string, titre: string, description: string) {
+    if (!onAddAction) return;
+    const today = new Date();
+    const echeance = new Date(today.getFullYear(), today.getMonth() + 3, today.getDate()).toISOString().split('T')[0];
+    const action: PAPAction = {
+      id: String(Date.now()), titre, axe: 'Transverse', pilote: '', copilote: '',
+      description, echeance, priorite: 1, gain: 0, statut: 'À faire',
+    };
+    onAddAction(action);
+    setPapAdded(prev => new Set(prev).add(key));
+  }
 
   useEffect(()=>{
     try {
@@ -503,6 +517,21 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
     };
   },[fonteRows,fonteConfig]);
 
+  const auditAlerts = useMemo(()=>{
+    if (!allRows.length) return [];
+    const total=filteredRows.length;
+    const sansPoidsN=total>0?filteredRows.filter(r=>r.poids===null).length:0;
+    const pctSansPoids=total>0?sansPoidsN/total*100:0;
+    const autreN=filteredRows.filter(r=>r.type==='Autre').length;
+    const pctAutre=total>0?autreN/total*100:0;
+    const fonteNonConfig=!fonteConfig.useGradeD&&fonteConfig.keywords.length===0;
+    return [
+      pctSansPoids>5&&`⚠️ ${sansPoidsN} lignes (${pctSansPoids.toFixed(1)}%) sans poids détecté — vérifier le format "X,XX G" dans les libellés`,
+      pctAutre>10&&`⚠️ ${autreN} lignes (${pctAutre.toFixed(1)}%) classées "Autre" — les types bijoux ne sont pas bien détectés`,
+      fonteNonConfig&&`⚠️ Configuration fonte vide — aucun critère de détection fonte actif`,
+    ].filter(Boolean) as string[];
+  },[allRows,filteredRows,fonteConfig]);
+
   const margePotentielFonte = useMemo(()=>{
     if (!hasCookson||!fonteStats?.paMoyenG||!fonteStats.poidsTotal) return null;
     return Math.round(fonteStats.poidsTotal*(cooksonNum-fonteStats.paMoyenG));
@@ -553,7 +582,9 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h2 className="text-lg font-bold text-[#1A1A1A]">💍 Bijouterie · {magasinNom||'Magasin'}</h2>
+          <h2 className="text-lg font-bold text-[#1A1A1A]">💍 Bijouterie · {magasinNom||'Magasin'}
+            {isAuditMode&&<span className="ml-2 text-xs font-bold bg-orange-500 text-white rounded px-2 py-0.5">MODE AUDIT ACTIF</span>}
+          </h2>
           <p className="text-xs text-[#9CA3AF] mt-0.5">Analyse spécialisée BOR/BOPI — types de bijoux, tranches de poids, prix au gramme, acheteurs</p>
         </div>
         {onNavigateToJournal&&(
@@ -562,6 +593,20 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
           </button>
         )}
       </div>
+
+      {/* Audit panel */}
+      {isAuditMode&&allRows.length>0&&(
+        auditAlerts.length>0?(
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs space-y-1">
+            <p className="font-bold text-red-800">🚨 Vérification automatique — {allRows.length.toLocaleString('fr-FR')} lignes</p>
+            {auditAlerts.map((a,i)=><p key={i} className="text-red-700">{a}</p>)}
+          </div>
+        ):(
+          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-xs text-green-800">
+            <strong>🔍 Audit Bijouterie :</strong> ✅ Aucune incohérence sur {allRows.length.toLocaleString('fr-FR')} lignes.
+          </div>
+        )
+      )}
 
       {/* Drop zone */}
       <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
@@ -1037,13 +1082,17 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
             <h3 className="text-sm font-bold text-[#1A1A1A]">🎯 Recommandations stratégiques</h3>
             <div className="space-y-2">
               {sweetSpotType&&(
-                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3">
                   <p className="text-xs text-green-800">
                     <strong>⭐ Sweet spot identifié :</strong> le type <strong>{sweetSpotType.type}</strong>
                     {sweetSpotPrix&&<> dans la tranche <strong>{sweetSpotPrix.label}</strong></>}
                     {byTranchePoids.filter(t=>t.nbVentes>0).sort((a,b)=>(b.pctVolume??0)-(a.pctVolume??0))[0]&&<> pour la tranche de poids <strong>{byTranchePoids.filter(t=>t.nbVentes>0).sort((a,b)=>(b.pctVolume??0)-(a.pctVolume??0))[0].label}</strong></>}
                     {' '}— taux de marge {sweetSpotType.tauxMarge}%, délai {sweetSpotType.delaiMoyen!=null?`${sweetSpotType.delaiMoyen}j`:'—'}. À prioriser au sourcing comptoir.
                   </p>
+                  {onAddAction&&(papAdded.has('sweetspot')
+                    ?<span className="text-xs text-green-700 font-semibold bg-green-100 border border-green-300 rounded-full px-3 py-1 whitespace-nowrap">✓ Ajouté</span>
+                    :<button onClick={()=>addToPAP('sweetspot',`Prioriser les achats de type ${sweetSpotType.type}`,`Sweet spot identifié : type ${sweetSpotType.type}, taux marge ${sweetSpotType.tauxMarge}%, délai ${sweetSpotType.delaiMoyen??'—'}j. À prioriser au sourcing comptoir.`)} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
+                  )}
                 </div>
               )}
               {(()=>{
@@ -1051,21 +1100,29 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal }: Pr
                 const genereux=g18?.acheteurs.filter(a=>a.tag==='tres_genereux'||a.tag==='genereux')??[];
                 if (!genereux.length) return null;
                 return (
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3">
                     <p className="text-xs text-orange-800">
                       <strong>👥 Acheteurs à briefer en priorité (18k) :</strong>{' '}
                       {genereux.slice(0,3).map(a=>`${a.nom} (${a.prixMoyenG} €/g)`).join(', ')}.{' '}
                       Ces acheteurs paient l&apos;or 18k au-dessus de la médiane magasin — à recadrer sur les objectifs de marge.
                     </p>
+                    {onAddAction&&(papAdded.has('acheteurs18k')
+                      ?<span className="text-xs text-orange-700 font-semibold bg-orange-100 border border-orange-300 rounded-full px-3 py-1 whitespace-nowrap">✓ Ajouté</span>
+                      :<button onClick={()=>addToPAP('acheteurs18k','Briefer les acheteurs sur la marge 18k',`Acheteurs généreux identifiés : ${genereux.slice(0,3).map(a=>a.nom).join(', ')}. Recadrage sur les objectifs de marge 18k (médiane magasin).`)} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
+                    )}
                   </div>
                 );
               })()}
               {fonteStats&&fonteStats.poidsTotal>0&&(
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3">
                   <p className="text-xs text-amber-800">
                     <strong>🔥 Fonte :</strong> {fonteStats.poidsTotal} g à valoriser
                     {margePotentielFonte!=null?<>, marge potentielle <strong>{fmtK(margePotentielFonte)} €</strong> au cours actuel ({cooksonNum} €/g).</>:' — saisissez le cours du jour ci-dessus pour calculer la marge potentielle.'}
                   </p>
+                  {onAddAction&&(papAdded.has('fonte')
+                    ?<span className="text-xs text-amber-700 font-semibold bg-amber-100 border border-amber-300 rounded-full px-3 py-1 whitespace-nowrap">✓ Ajouté</span>
+                    :<button onClick={()=>addToPAP('fonte','Valoriser la fonte — déclencher le passage en fonderie',`${fonteStats.poidsTotal}g à valoriser${margePotentielFonte!=null?`, marge potentielle ${fmtK(margePotentielFonte)}€`:''}.`)} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
+                  )}
                 </div>
               )}
               {!sweetSpotType&&byAcheteurParTitre.every(g=>g.insuffisant)&&!fonteStats&&(

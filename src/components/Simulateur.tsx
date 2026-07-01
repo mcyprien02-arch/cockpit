@@ -20,7 +20,22 @@ interface EquipeStore {
 
 function uid() { return Math.random().toString(36).slice(2); }
 
-const CONTRATS = ['CDI 35H', 'CDI 39H', 'CDD', 'Apprenti', 'Stage'];
+const CONTRAT_DEFS: {key:string;label:string;hSemaine:number;note:string}[] = [
+  {key:'CDI 35h',   label:'CDI 35h',              hSemaine:35, note:''},
+  {key:'CDI 37h',   label:'CDI 37h',              hSemaine:37, note:''},
+  {key:'CDI 39h',   label:'CDI 39h',              hSemaine:39, note:''},
+  {key:'CDI 20h',   label:'CDI 20h (mi-temps)',   hSemaine:20, note:''},
+  {key:'CDI 24h',   label:'CDI 24h',              hSemaine:24, note:''},
+  {key:'Alternant', label:'Alternant / Apprenti', hSemaine:35, note:'Gratification minimum applicable selon convention'},
+  {key:'Stagiaire', label:'Stagiaire',            hSemaine:35, note:'Gratification minimum applicable selon convention'},
+  {key:'CDD',       label:'CDD',                  hSemaine:35, note:''},
+  {key:'Autre',     label:'Autre (saisie libre)', hSemaine:0,  note:''},
+];
+
+function migrateContrat(old: string): string {
+  const MAP: Record<string,string> = {'CDI 35H':'CDI 35h','CDI 39H':'CDI 39h','Apprenti':'Alternant','Stage':'Stagiaire'};
+  return MAP[old] ?? old;
+}
 
 function caColor(v: number) {
   if (v >= 200000 && v <= 300000) return 'text-green-600';
@@ -42,9 +57,9 @@ export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
       const s = typeof window !== 'undefined' ? localStorage.getItem(equipeKey) : null;
       if (s) {
         const p = JSON.parse(s) as unknown;
-        if (Array.isArray(p)) return { rows: p as EquipeRow[], caAnnuel: 0, tauxMarge: 38 };
+        if (Array.isArray(p)) return { rows: (p as EquipeRow[]).map(r => ({ ...r, contrat: migrateContrat(r.contrat) })), caAnnuel: 0, tauxMarge: 38 };
         const parsed = p as EquipeStore;
-        return { ...parsed, tauxMarge: parsed.tauxMarge ?? 38 };
+        return { ...parsed, tauxMarge: parsed.tauxMarge ?? 38, rows: parsed.rows.map(r => ({ ...r, contrat: migrateContrat(r.contrat) })) };
       }
       return { rows: [], caAnnuel: 0, tauxMarge: 38 };
     } catch { return { rows: [], caAnnuel: 0, tauxMarge: 38 }; }
@@ -58,11 +73,21 @@ export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
   }
 
   function addEquipe() {
-    saveEquipeStore({ ...equipeStore, rows: [...equipeStore.rows, { id: uid(), prenom: '', contrat: 'CDI 35H', heures: 151.67, salaireHoraire: 12 }] });
+    const defaultDef = CONTRAT_DEFS[0];
+    const autoH = Math.round(defaultDef.hSemaine * 52 / 12 * 100) / 100;
+    saveEquipeStore({ ...equipeStore, rows: [...equipeStore.rows, { id: uid(), prenom: '', contrat: defaultDef.key, heures: autoH, salaireHoraire: 12 }] });
   }
 
   function updateEquipe(id: string, field: keyof EquipeRow, value: string | number) {
     saveEquipeStore({ ...equipeStore, rows: equipeStore.rows.map(e => e.id === id ? { ...e, [field]: value } : e) });
+  }
+
+  function updateContrat(id: string, key: string) {
+    const def = CONTRAT_DEFS.find(d => d.key === key);
+    const autoH = def && def.hSemaine > 0 ? Math.round(def.hSemaine * 52 / 12 * 100) / 100 : undefined;
+    saveEquipeStore({ ...equipeStore, rows: equipeStore.rows.map(e =>
+      e.id === id ? { ...e, contrat: key, ...(autoH !== undefined ? { heures: autoH } : {}) } : e
+    )});
   }
 
   function delEquipe(id: string) {
@@ -182,7 +207,7 @@ export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
                 <tr className="border-b border-[#E0E0E0] bg-[#F5F5F5] text-[#6B7280]">
                   <th className="text-left px-3 py-2 font-semibold">Prénom</th>
                   <th className="text-left px-3 py-2 font-semibold">Contrat</th>
-                  <th className="text-right px-3 py-2 font-semibold">H/mois</th>
+                  <th className="text-right px-3 py-2 font-semibold">H/mois <span className="font-normal text-[#9CA3AF]">(auto)</span></th>
                   <th className="text-right px-3 py-2 font-semibold">€/h brut</th>
                   <th className="text-right px-3 py-2 font-semibold">Coût annuel</th>
                   <th className="px-2 py-2"></th>
@@ -190,47 +215,61 @@ export default function Simulateur({ magasinNom, isCriticalSpiral }: Props) {
               </thead>
               <tbody className="divide-y divide-[#E0E0E0]">
                 {equipe.map(e => {
+                  const def = CONTRAT_DEFS.find(d => d.key === e.contrat);
+                  const isAutre = e.contrat === 'Autre';
                   const cout = e.heures * e.salaireHoraire * 12 * 1.42;
                   return (
-                    <tr key={e.id}>
-                      <td className="px-3 py-2">
-                        <input
-                          value={e.prenom}
-                          onChange={ev => updateEquipe(e.id, 'prenom', ev.target.value)}
-                          className="bg-transparent text-[#1A1A1A] w-24 border-b border-[#E0E0E0] focus:outline-none focus:border-[#E30613]"
-                          placeholder="Prénom"
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <select
-                          value={e.contrat}
-                          onChange={ev => updateEquipe(e.id, 'contrat', ev.target.value)}
-                          className="bg-white text-[#1A1A1A] text-xs rounded border border-[#E0E0E0] px-1 py-0.5"
-                        >
-                          {CONTRATS.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <input
-                          type="number"
-                          value={e.heures || ''}
-                          onChange={ev => updateEquipe(e.id, 'heures', parseFloat(ev.target.value) || 0)}
-                          className="bg-transparent text-[#1A1A1A] w-16 text-right border-b border-[#E0E0E0] focus:outline-none focus:border-[#E30613]"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <input
-                          type="number"
-                          value={e.salaireHoraire || ''}
-                          onChange={ev => updateEquipe(e.id, 'salaireHoraire', parseFloat(ev.target.value) || 0)}
-                          className="bg-transparent text-[#1A1A1A] w-12 text-right border-b border-[#E0E0E0] focus:outline-none focus:border-[#E30613]"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right text-[#1A1A1A] font-medium">{cout.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</td>
-                      <td className="px-2 py-2">
-                        <button onClick={() => delEquipe(e.id)} className="text-[#6B7280] hover:text-red-600 text-xs">✕</button>
-                      </td>
-                    </tr>
+                    <>
+                      <tr key={e.id}>
+                        <td className="px-3 py-2">
+                          <input
+                            value={e.prenom}
+                            onChange={ev => updateEquipe(e.id, 'prenom', ev.target.value)}
+                            className="bg-transparent text-[#1A1A1A] w-24 border-b border-[#E0E0E0] focus:outline-none focus:border-[#E30613]"
+                            placeholder="Prénom"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={e.contrat}
+                            onChange={ev => updateContrat(e.id, ev.target.value)}
+                            className="bg-white text-[#1A1A1A] text-xs rounded border border-[#E0E0E0] px-1 py-0.5"
+                          >
+                            {CONTRAT_DEFS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {isAutre ? (
+                            <input
+                              type="number"
+                              value={e.heures || ''}
+                              onChange={ev => updateEquipe(e.id, 'heures', parseFloat(ev.target.value) || 0)}
+                              className="bg-transparent text-[#1A1A1A] w-16 text-right border-b border-[#E0E0E0] focus:outline-none focus:border-[#E30613]"
+                              placeholder="h/mois"
+                            />
+                          ) : (
+                            <span className="text-[#1A1A1A] text-xs font-medium">{e.heures.toFixed(2)}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input
+                            type="number"
+                            value={e.salaireHoraire || ''}
+                            onChange={ev => updateEquipe(e.id, 'salaireHoraire', parseFloat(ev.target.value) || 0)}
+                            className="bg-transparent text-[#1A1A1A] w-12 text-right border-b border-[#E0E0E0] focus:outline-none focus:border-[#E30613]"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right text-[#1A1A1A] font-medium">{cout.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</td>
+                        <td className="px-2 py-2">
+                          <button onClick={() => delEquipe(e.id)} className="text-[#6B7280] hover:text-red-600 text-xs">✕</button>
+                        </td>
+                      </tr>
+                      {def?.note && (
+                        <tr key={`${e.id}-note`}>
+                          <td colSpan={6} className="px-3 pb-2 text-[10px] text-amber-600 italic">{def.note}</td>
+                        </tr>
+                      )}
+                    </>
                   );
                 })}
               </tbody>
