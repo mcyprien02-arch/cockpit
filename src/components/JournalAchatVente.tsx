@@ -1890,6 +1890,32 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     return tq>0?Math.round(ms.reduce((s,m)=>s+((m.paMoyen-m.epaMoyen!)/m.epaMoyen!*100)*m.qteVendue,0)/tq*10)/10:null;
   },[stats]);
 
+  // Debug: missing data audit (visible panel — remove once validated)
+  const debugMissingData=useMemo(()=>{
+    if(!stored) return null;
+    const rows=stored.rows;
+    const total=rows.length;
+    const pct=(n:number)=>total>0?Math.round(n/total*100):0;
+    // Raw row level (stored rows, before period filter)
+    const noEPA=rows.filter(r=>!r.epa).length;
+    const noEP=rows.filter(r=>!r.ep).length;
+    const noDV=rows.filter(r=>!r.dv||r.dv<=0).length;
+    const noPAorPV=rows.filter(r=>r.pa<=0||r.pv<=0).length;
+    // Section stats (on current filteredRows / stats)
+    const totalStats=stats.length;
+    const glEPVinc=stats.filter(s=>s.epMoyen!=null&&s.epMoyen>0).length;
+    const glEPAinc=stats.filter(s=>s.epaMoyen!=null&&s.epaMoyen>0).length;
+    const rotExclNoDelay=stats.filter(s=>s.qteVendue>=3&&s.delaiMoyen===null).length;
+    const rotShownNoEP=topRotations.filter(s=>s.epMoyen===null&&s.epaMoyen===null).length;
+    const coeffExcl=stats.filter(s=>s.qteVendue>=3&&(s.delaiMoyen===null||s.delaiMoyen<=0)).length;
+    const flopsExcl=stats.filter(s=>s.qteVendue>=3&&(s.ecartEP===null||s.delaiMoyen===null||s.delaiMoyen<=60)).length;
+    const filtTotal=filteredRows.length;
+    const filtWithDV=filteredRows.filter(r=>r.dv&&r.dv>0).length;
+    const rotWithEPA=topRotations.filter(s=>s.ecartEPA!==null).length;
+    const rotWithEPV=topRotations.filter(s=>s.ecartEP!==null).length;
+    return {total,pct,noEPA,noEP,noDV,noPAorPV,totalStats,glEPVinc,glEPAinc,rotExclNoDelay,rotShownNoEP,coeffExcl,flopsExcl,filtTotal,filtWithDV,rotWithEPA,rotWithEPV,rotTotal:topRotations.length};
+  },[stored,stats,filteredRows,topRotations]);
+
   // ACTION 2: family-aware brand/platform widget data
   const topBrands=useMemo(()=>{
     const brands=new Map<string,number>();
@@ -2369,6 +2395,85 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
               )}
               {debugMatchInfo.length===0&&<p className="text-yellow-700 italic">Aucun modèle dans Top Rotations — importez un journal ou ajustez la période.</p>}
               <p className="text-[10px] text-yellow-600 italic">Cet encart DEBUG sera retiré une fois la détection validée.</p>
+            </div>
+          )}
+
+          {/* 🔍 DEBUG — Traitement données manquantes (temporaire) */}
+          {debugMissingData&&(
+            <div className="border-2 border-dashed border-blue-400 bg-blue-50 rounded-xl p-4 space-y-3 text-xs">
+              <p className="font-bold text-blue-800 text-sm">🔍 DEBUG — Traitement des données manquantes ({debugMissingData.total.toLocaleString('fr-FR')} ventes dans le fichier importé)</p>
+
+              <div className="space-y-1">
+                <p className="font-semibold text-blue-700">Données manquantes au niveau des lignes brutes :</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                  <span>Lignes sans cote EP achat :</span>
+                  <span className="font-semibold">{debugMissingData.noEPA.toLocaleString('fr-FR')} ventes ({debugMissingData.pct(debugMissingData.noEPA)}%) — exclues des calculs EP achat ✅</span>
+                  <span>Lignes sans cote EP vente :</span>
+                  <span className="font-semibold">{debugMissingData.noEP.toLocaleString('fr-FR')} ventes ({debugMissingData.pct(debugMissingData.noEP)}%) — exclues des calculs EP vente ✅</span>
+                  <span>Lignes sans délai de vente :</span>
+                  <span className="font-semibold">{debugMissingData.noDV.toLocaleString('fr-FR')} ventes ({debugMissingData.pct(debugMissingData.noDV)}%) — exclues des calculs délai ✅</span>
+                  <span>Lignes sans PA ou PV valide :</span>
+                  <span className="font-semibold">{debugMissingData.noPAorPV.toLocaleString('fr-FR')} ventes ({debugMissingData.pct(debugMissingData.noPAorPV)}%) — filtrées à l&apos;import ✅</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-semibold text-blue-700">Section Lecture globale (politique vente/achat vs cote EP) :</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                  <span>Modèles inclus dans moyenne EP vente :</span>
+                  <span className="font-semibold">{debugMissingData.glEPVinc} / {debugMissingData.totalStats} modèles (epMoyen &gt; 0 requis)</span>
+                  <span>Modèles inclus dans moyenne EP achat :</span>
+                  <span className="font-semibold">{debugMissingData.glEPAinc} / {debugMissingData.totalStats} modèles (epaMoyen &gt; 0 requis)</span>
+                  <span>Inclus avec valeur 0 (bug potentiel) :</span>
+                  <span className="font-semibold text-green-700">✅ NON — les valeurs 0 sont correctement exclues</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-semibold text-blue-700">Section Top Rotations :</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                  <span>Modèles exclus (délai null) :</span>
+                  <span className="font-semibold">{debugMissingData.rotExclNoDelay} modèles qualifiés (≥3 ventes) sans délai → exclus ✅</span>
+                  <span>Modèles affichés sans aucune cote EP :</span>
+                  <span className="font-semibold">{debugMissingData.rotShownNoEP} / {debugMissingData.rotTotal} — colonnes EP affichées avec «—» ✅</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-semibold text-blue-700">Section Top Coefficient :</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                  <span>Modèles exclus (délai null ou ≤ 0) :</span>
+                  <span className="font-semibold">{debugMissingData.coeffExcl} modèles qualifiés (≥3 ventes) exclus pour éviter division par zéro ✅</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-semibold text-blue-700">Section Flops :</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                  <span>Modèles exclus (pas de cote EP ou délai ≤ 60j) :</span>
+                  <span className="font-semibold">{debugMissingData.flopsExcl} modèles qualifiés (≥3 ventes) exclus ✅</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-semibold text-blue-700">Section Performance par marque/plateforme :</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                  <span>Lignes avec délai renseigné (période filtrée) :</span>
+                  <span className="font-semibold">{debugMissingData.filtWithDV.toLocaleString('fr-FR')} / {debugMissingData.filtTotal.toLocaleString('fr-FR')} — délai moyen calculé uniquement sur ces lignes ✅</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-semibold text-blue-700">Encart reco — écarts PA/PV moyens pondérés (wAvg sur Top Rotations) :</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
+                  <span>Modèles inclus dans wAvg écart PA :</span>
+                  <span className="font-semibold">{debugMissingData.rotWithEPA} / {debugMissingData.rotTotal} (ecartEPA !== null requis) — les «—» ne comptent pas comme 0% ✅</span>
+                  <span>Modèles inclus dans wAvg écart PV :</span>
+                  <span className="font-semibold">{debugMissingData.rotWithEPV} / {debugMissingData.rotTotal} (ecartEP !== null requis) — les «—» ne comptent pas comme 0% ✅</span>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-blue-600 italic">Cet encart DEBUG sera retiré une fois les comportements validés.</p>
             </div>
           )}
 
