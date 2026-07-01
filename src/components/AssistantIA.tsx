@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { MagasinData, PAPAction } from '@/types';
 import { getAlerts, getCategoryScores } from '@/lib/kpis';
 import { getJournalContext } from '@/components/JournalAchatVente';
@@ -168,6 +168,7 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [copied, setCopied] = useState(false);
+  const autoRan = useRef(false);
 
   function selectTemplate(id: string) {
     const tpl = PROMPT_TEMPLATES.find(t => t.id === id);
@@ -190,6 +191,14 @@ export default function AssistantIA({ data, actions, magasinNom }: Props) {
     setPrompt(built);
     setCopied(false);
   }
+
+  useEffect(() => {
+    if (!autoRan.current) {
+      autoRan.current = true;
+      selectTemplate('diagnostic');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function copyAndOpen() {
     try {
