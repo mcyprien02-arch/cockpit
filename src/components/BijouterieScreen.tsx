@@ -9,7 +9,7 @@ interface Props { magasinNom: string; onNavigateToJournal?: () => void; onAddAct
 
 type Periode = 'all'|'3m'|'6m'|'12m';
 type GradeFilter = 'all'|'A'|'B'|'C';
-type BijInnerTab = 'analyse'|'reconnaitre'|'gamme-reseau'|'alertes-stock';
+type BijInnerTab = 'analyse'|'gamme-reseau';
 
 interface FonteConfig {
   useGradeD: boolean;
@@ -80,29 +80,11 @@ const TITRE_GROUPS: {key:string;label:string}[] = [
   {key:'Autres',          label:'🏷️ Autres titres'},
 ];
 
-const CHECKLIST_ITEMS = [
-  {id:'c1',bloc:1,isAlert:false,text:"Poinçon en losange présent (garantie état / importateur)"},
-  {id:'c2',bloc:1,isAlert:false,text:"Poinçon finement frappé, non gravé grossièrement"},
-  {id:'c3',bloc:1,isAlert:false,text:"Emplacement correct selon le type (bague → extérieur, chaîne → anneau fixe opposé fermoir, BO → partie amovible)"},
-  {id:'c4',bloc:1,isAlert:true, text:"Poinçon carré visible (poinçon du plaqué or en France)"},
-  {id:'c5',bloc:1,isAlert:true, text:'Inscriptions LP / PL / GL / G / R / DOUBLE visibles'},
-  {id:'c6',bloc:1,isAlert:true, text:'Inscription "OR", "GOLD" ou "KG" inscrite sur le bijou'},
-  {id:'c7',bloc:2,isAlert:false,text:"Pas d'aimantation (l'or n'est pas magnétique)"},
-  {id:'c8',bloc:2,isAlert:false,text:"Pas d'odeur métallique (odeur = fer, cuivre ou laiton)"},
-  {id:'c9',bloc:2,isAlert:false,text:"Son sourd sur la pierre de touche (l'or est mou)"},
-  {id:'c10',bloc:2,isAlert:false,text:"Couleur laissée sur PDT = couleur du bijou"},
-  {id:'c11',bloc:2,isAlert:true, text:"Métal qui s'écaille / cloques / vert de gris"},
-  {id:'c12',bloc:2,isAlert:true, text:"Bijou gris sans poinçon officiel"},
-] as const;
 
-type ChecklistId = typeof CHECKLIST_ITEMS[number]['id'];
-
-const BENCHMARKS_GAMME: Record<string,{label:string;tranches:{label:string;min:number;max:number;bench:number}[]}> = {
-  BOR:  {label:'💍 BOR — Bijouterie Or',   tranches:[{label:'0 – 100 €',min:0,max:100,bench:48},{label:'100 – 300 €',min:100,max:300,bench:31},{label:'> 300 €',min:300,max:Infinity,bench:21}]},
-  BOPI: {label:'✨ BOPI — Or empierré',    tranches:[{label:'0 – 100 €',min:0,max:100,bench:44},{label:'100 – 300 €',min:100,max:300,bench:36},{label:'> 300 €',min:300,max:Infinity,bench:20}]},
-  BPLA: {label:'🟡 BPLA — Plaqué or',     tranches:[{label:'0 – 10 €',min:0,max:10,bench:33},{label:'10 – 20 €',min:10,max:20,bench:33},{label:'20 – 30 €',min:20,max:30,bench:26},{label:'> 30 €',min:30,max:Infinity,bench:8}]},
-  BARG: {label:'🔘 BARG — Argent',         tranches:[{label:'0 – 10 €',min:0,max:10,bench:38},{label:'10 – 20 €',min:10,max:20,bench:25},{label:'20 – 30 €',min:20,max:30,bench:19},{label:'> 30 €',min:30,max:Infinity,bench:18}]},
-};
+const BENCHMARKS_GAMME: {fc:'BOR'|'BOPI';label:string;tranches:{label:string;min:number;max:number;bench:number}[]}[] = [
+  {fc:'BOR',  label:'💍 BOR — Bijouterie Or',  tranches:[{label:'0 – 100 €',min:0,max:100,bench:48},{label:'100 – 300 €',min:100,max:300,bench:31},{label:'> 300 €',min:300,max:Infinity,bench:21}]},
+  {fc:'BOPI', label:'✨ BOPI — Or empierré',   tranches:[{label:'0 – 100 €',min:0,max:100,bench:44},{label:'100 – 300 €',min:100,max:300,bench:36},{label:'> 300 €',min:300,max:Infinity,bench:20}]},
+];
 
 const BENCH_TYPES: {type:string;bench:number}[] = [
   {type:'Bague',bench:35},
@@ -113,14 +95,6 @@ const BENCH_TYPES: {type:string;bench:number}[] = [
   {type:'Autre',bench:6},
 ];
 
-const STOCK_SEUILS: Record<string,{label:string;mini:number;cible:number;maxi:number}> = {
-  BOR:  {label:'💍 BOR — Or',         mini:10000,cible:15000,maxi:23000},
-  BOPI: {label:'✨ BOPI — Empierré',  mini:5000, cible:7000, maxi:9000},
-  BPLA: {label:'🟡 BPLA — Plaqué',   mini:2000, cible:3000, maxi:4000},
-  BARG: {label:'🔘 BARG — Argent',   mini:2000, cible:3000, maxi:4000},
-  BMON: {label:'⌚ BMON — Montres',  mini:3000, cible:6000, maxi:12000},
-  BMAR: {label:'👜 BMAR — Maroquinerie',mini:3000,cible:5000,maxi:10000},
-};
 
 const TH  = 'px-3 py-2.5 text-left   text-xs font-semibold text-[#6B7280] bg-[#F5F5F5] whitespace-nowrap';
 const THR = 'px-3 py-2.5 text-right  text-xs font-semibold text-[#6B7280] bg-[#F5F5F5] whitespace-nowrap';
@@ -178,19 +152,7 @@ function isBijFamily(sf: string): boolean {
   const n=sf.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   return n.includes('bijouterie or')||n.includes('bijou or')||n.includes('bopi')||n.includes('pierres')||n.includes('plaqu');
 }
-function detectAllBijFamCode(sf: string): string|null {
-  if (!sf) return null;
-  const n=sf.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
-  const up=sf.trim().toUpperCase().replace(/[\s\-_]/g,'');
-  if (['BOR','BOPI','BPLA','BARG','BMON','BMAR'].includes(up)) return up;
-  if (n.includes('empierre')||n.includes('bopi')||n.includes('pierreset')) return 'BOPI';
-  if ((n.includes('bijou')&&n.includes('or'))||n.includes('bijouteri')&&n.includes('or')) return 'BOR';
-  if (n.includes('plaqu')) return 'BPLA';
-  if (n.includes('argent')) return 'BARG';
-  if (n.includes('montre')||n.includes('horlogerie')) return 'BMON';
-  if (n.includes('maroquinerie')) return 'BMAR';
-  return null;
-}
+
 function detectFamCode(sf: string): 'BOR'|'BOPI' {
   const n=sf.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   if (n.includes('empierre')||n.includes('bopi')||n.includes('pierres')||n.includes('plaqu')) return 'BOPI';
@@ -253,12 +215,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
   const [papAdded,       setPapAdded]       = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
   const [bijTab,       setBijTab]       = useState<BijInnerTab>('analyse');
-  const [checklist,    setChecklist]    = useState<Record<ChecklistId,boolean>>({} as Record<ChecklistId,boolean>);
-  const [journalRows,  setJournalRows]  = useState<{f:string;pv:number;ep:number|null;m:string}[]>([]);
-  const stockFileRef = useRef<HTMLInputElement>(null);
-  const [stockRows,    setStockRows]    = useState<{f:string;ep:number|null;pa:number}[]>([]);
-  const [stockLoading, setStockLoading] = useState(false);
-  const [stockError,   setStockError]   = useState<string|null>(null);
 
   function addToPAP(key: string, titre: string, description: string) {
     if (!onAddAction) return;
@@ -284,20 +240,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
     try { if(cookson) localStorage.setItem('cookson_cours_jour',cookson); else localStorage.removeItem('cookson_cours_jour'); } catch {}
   },[cookson]);
 
-  useEffect(()=>{
-    if (!magasinNom) return;
-    try {
-      const s=localStorage.getItem(`journal_analyse_${magasinNom}`);
-      if (s) {
-        const p=JSON.parse(s) as {rows?:{f:string;pv:number;ep?:number|null;m?:string}[]};
-        if (Array.isArray(p.rows)) setJournalRows(p.rows.map(r=>({f:r.f,pv:r.pv,ep:r.ep??null,m:r.m??''})));
-      }
-    } catch {}
-    try {
-      const s=localStorage.getItem(`bij_stock_${magasinNom}`);
-      if (s) setStockRows(JSON.parse(s) as {f:string;ep:number|null;pa:number}[]);
-    } catch {}
-  },[magasinNom]);
 
   const processFile = useCallback(async (file: File)=>{
     setLoading(true); setError(null);
@@ -359,36 +301,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
     setFonteConfigOpen(false);
   }
 
-  const processStockFile = useCallback(async(file: File)=>{
-    setStockLoading(true); setStockError(null);
-    try {
-      const buf=await file.arrayBuffer();
-      const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const raw=XLSX.utils.sheet_to_json(ws,{defval:''}) as Record<string,unknown>[];
-      if (!raw.length) throw new Error('Fichier vide.');
-      const col=mapCols(Object.keys(raw[0]));
-      const result:{f:string;ep:number|null;pa:number}[]=[];
-      for (const row of raw) {
-        if (col.typeTransaction) {
-          const tx=norm(String(row[col.typeTransaction]??''));
-          if (tx.includes('vente')) continue;
-        }
-        const sf=col.famille?String(row[col.famille]??'').trim():'';
-        const fc=detectAllBijFamCode(sf);
-        if (!fc) continue;
-        const ep=col.easypricePrixVente?(parseNum(row[col.easypricePrixVente])||null):null;
-        const pa=col.prixAchat?parseNum(row[col.prixAchat]):0;
-        result.push({f:fc,ep,pa});
-      }
-      if (!result.length) throw new Error('Aucun article bijouterie trouvé. Vérifiez que le fichier contient des lignes achat avec des familles bijouterie.');
-      setStockRows(result);
-      try{localStorage.setItem(`bij_stock_${magasinNom}`,JSON.stringify(result));}catch{}
-    }catch(e){setStockError(e instanceof Error?e.message:'Erreur inattendue.');}
-    finally{setStockLoading(false);}
-  },[magasinNom]);
-
-  const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[allRows,fonteConfig]);
+const fonteRows = useMemo(()=>allRows.filter(r=>isLigneFonte(r,fonteConfig)),[allRows,fonteConfig]);
 
   const filteredRows = useMemo(()=>{
     let r=allRows.filter(row=>!isLigneFonte(row,fonteConfig));
@@ -686,9 +599,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
       <div className="flex border-b border-[#E0E0E0] overflow-x-auto">
         {([
           {id:'analyse',     label:'📊 Analyse'},
-          {id:'reconnaitre', label:"🔍 Reconnaître l'or"},
           {id:'gamme-reseau',label:'📈 Gamme vs réseau'},
-          {id:'alertes-stock',label:'⚠️ Alertes stock'},
         ] as {id:BijInnerTab;label:string}[]).map(t=>(
           <button key={t.id} onClick={()=>setBijTab(t.id)}
             className={`px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors flex-shrink-0 ${
@@ -1228,73 +1139,21 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
 
       </>}
 
-      {bijTab==='reconnaitre'&&(
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-sm font-bold text-[#1A1A1A]">🔍 Reconnaître l&apos;or — Checklist acheteur</h3>
-            <p className="text-xs text-[#9CA3AF] mt-0.5">Cochez les points vérifiés. Les cases ⚠️ cochées déclenchent une alerte.</p>
-          </div>
-          {(()=>{
-            const alertsChecked=CHECKLIST_ITEMS.filter(i=>i.isAlert&&checklist[i.id]).length;
-            if (!Object.keys(checklist).length) return null;
-            const banner=alertsChecked===0
-              ?{bg:'bg-green-50',border:'border-green-200',text:'text-green-800',msg:'✅ Aucun signal d\'alerte détecté'}
-              :alertsChecked===1
-              ?{bg:'bg-orange-50',border:'border-orange-200',text:'text-orange-800',msg:'⚠️ Contrôle renforcé recommandé'}
-              :{bg:'bg-red-50',border:'border-red-200',text:'text-red-800',msg:'🚫 Ne pas acheter sans avis expert'};
-            return (
-              <div className={`${banner.bg} border ${banner.border} rounded-xl px-5 py-3`}>
-                <p className={`text-sm font-bold ${banner.text}`}>{banner.msg}</p>
-                {alertsChecked>0&&<p className={`text-xs ${banner.text} mt-0.5`}>{alertsChecked} signal{alertsChecked>1?'aux':''} d&apos;alerte coché{alertsChecked>1?'s':''}</p>}
-              </div>
-            );
-          })()}
-          <button onClick={()=>setChecklist({}as Record<ChecklistId,boolean>)} className="text-xs text-[#9CA3AF] hover:text-[#E30613] border border-[#E0E0E0] rounded-lg px-3 py-1.5 transition-colors">
-            Réinitialiser
-          </button>
-          {[1,2].map(bloc=>{
-            const items=CHECKLIST_ITEMS.filter(i=>i.bloc===bloc);
-            const blocLabel=bloc===1?'🔎 Bloc 1 — Test visuel / poinçons':'🧪 Bloc 2 — Tests physiques';
-            return (
-              <div key={bloc} className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-3">
-                <h4 className="text-xs font-bold text-[#1A1A1A] uppercase tracking-wider">{blocLabel}</h4>
-                <div className="space-y-2">
-                  {items.map(item=>(
-                    <label key={item.id} className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                      checklist[item.id]
-                        ?item.isAlert?'bg-red-50 border border-red-200':'bg-green-50 border border-green-200'
-                        :'bg-[#FAFAFA] border border-[#F0F0F0] hover:border-[#E0E0E0]'
-                    }`}>
-                      <input type="checkbox" checked={!!checklist[item.id]}
-                        onChange={e=>setChecklist(prev=>({...prev,[item.id]:e.target.checked}))}
-                        className="mt-0.5 rounded flex-shrink-0 accent-[#E30613]" />
-                      <span className={`text-xs ${checklist[item.id]&&item.isAlert?'text-red-800 font-semibold':checklist[item.id]?'text-green-800':'text-[#1A1A1A]'}`}>
-                        {item.isAlert&&<span className="text-orange-500 mr-1">⚠️</span>}
-                        {item.text}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {bijTab==='gamme-reseau'&&(
         <div className="space-y-6">
           <div>
             <h3 className="text-sm font-bold text-[#1A1A1A]">📈 Gamme vs réseau — Benchmarks par famille</h3>
-            <p className="text-xs text-[#9CA3AF] mt-0.5">Répartition réelle (dernier import Journal) comparée aux benchmarks réseau EasyCash. Données basées sur le prix EP.</p>
+            <p className="text-xs text-[#9CA3AF] mt-0.5">Répartition réelle des ventes (données importées dans l&apos;onglet Analyse) comparée aux benchmarks réseau EasyCash. Données basées sur le prix EP.</p>
           </div>
-          {journalRows.length===0&&(
+          {allRows.length===0&&(
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 text-xs text-amber-800">
-              <strong>Aucune donnée Journal disponible.</strong> Importez votre journal Athéna dans l&apos;onglet Journal achat-vente — les données seront automatiquement disponibles ici.
+              <strong>Aucune donnée disponible.</strong> Importez votre export Athéna dans l&apos;onglet Analyse ci-dessus — les données seront automatiquement disponibles ici.
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(BENCHMARKS_GAMME).map(([fc,def])=>{
-              const rows=journalRows.filter(r=>r.f===fc&&r.ep!=null&&(r.ep as number)>0);
+            {BENCHMARKS_GAMME.map(def=>{
+              const rows=allRows.filter(r=>r.famCode===def.fc&&r.ep!=null&&(r.ep as number)>0);
               const total=rows.length;
               const trancheData=def.tranches.map(tr=>{
                 const n=rows.filter(r=>(r.ep as number)>=tr.min&&(r.ep as number)<tr.max).length;
@@ -1304,7 +1163,7 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
                 return {label:tr.label,bench:tr.bench,real,ecart,badge};
               });
               return (
-                <div key={fc} className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-4">
+                <div key={def.fc} className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-[#1A1A1A]">{def.label}</h4>
                     <span className="text-[10px] text-[#9CA3AF]">{total>0?`${total} ventes`:'Aucune donnée'}</span>
@@ -1348,10 +1207,10 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
           </div>
           {/* Product-type axis */}
           {(()=>{
-            const bijRows=journalRows.filter(r=>r.f==='BOR'||r.f==='BOPI');
-            const total=bijRows.length;
+            const typeRows=allRows.filter(r=>r.famCode==='BOR'||r.famCode==='BOPI');
+            const total=typeRows.length;
             const typeData=BENCH_TYPES.map(bt=>{
-              const n=bijRows.filter(r=>detectTypeBijou(r.m)===bt.type).length;
+              const n=typeRows.filter(r=>detectTypeBijou(r.lib)===bt.type).length;
               const real=total>0?Math.round(n/total*100):null;
               const ecart=real!=null?real-bt.bench:null;
               const badge=ecart==null?null:Math.abs(ecart)<=5?'vert':Math.abs(ecart)<=15?'orange':'rouge';
@@ -1404,90 +1263,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
         </div>
       )}
 
-      {bijTab==='alertes-stock'&&(
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-sm font-bold text-[#1A1A1A]">⚠️ Alertes stock — Positionnement vs seuils réseau</h3>
-            <p className="text-xs text-[#9CA3AF] mt-0.5">Stock théorique calculé depuis les lignes achat non vendues de votre journal Athéna, en valeur EP cumulée.</p>
-          </div>
-
-          {/* File upload */}
-          <div>
-            <input ref={stockFileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden"
-              onChange={e=>{const f=e.target.files?.[0];if(f)processStockFile(f);}} />
-            <div
-              onClick={()=>stockFileRef.current?.click()}
-              className="cursor-pointer border-2 border-dashed rounded-xl px-6 py-6 text-center transition-all border-[#E0E0E0] bg-white hover:border-[#E30613] hover:bg-[#FFF5F5]">
-              {stockLoading
-                ?<p className="text-sm text-[#6B7280] animate-pulse">Calcul du stock en cours…</p>
-                :<div className="space-y-1">
-                  <p className="text-sm font-semibold text-[#1A1A1A]">📥 Importer le journal complet (achats + ventes)</p>
-                  <p className="text-xs text-[#9CA3AF]">Seules les lignes achat non vendues seront retenues · .csv · .xlsx · .xls</p>
-                  {stockRows.length>0&&<p className="text-xs text-[#6B7280] mt-1">{stockRows.length} articles en stock chargés</p>}
-                </div>
-              }
-            </div>
-            {stockError&&<p className="text-xs text-red-600 mt-2">{stockError}</p>}
-          </div>
-
-          {/* Gauges */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {Object.entries(STOCK_SEUILS).map(([fc,s])=>{
-              const rows=stockRows.filter(r=>r.f===fc);
-              const value=Math.round(rows.reduce((sum,r)=>sum+(r.ep??r.pa??0),0));
-              const status=stockRows.length===0?'none':value<s.mini?'under':value<=s.maxi?'ok':'over';
-              const gaugeMax=s.maxi*1.3;
-              const pct=(v:number)=>Math.min(Math.round(v/gaugeMax*100),100);
-              const valuePct=pct(value);
-              const miniPct=pct(s.mini);
-              const ciblePct=pct(s.cible);
-              const maxiPct=pct(s.maxi);
-              return (
-                <div key={fc} className="bg-white border border-[#E0E0E0] rounded-xl p-5 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h4 className="text-xs font-bold text-[#1A1A1A]">{s.label}</h4>
-                      <p className="text-[10px] text-[#9CA3AF] mt-0.5">Mini {fmtK(s.mini)} · Cible {fmtK(s.cible)} · Maxi {fmtK(s.maxi)} €</p>
-                    </div>
-                    <span className={`text-[10px] font-bold rounded-full px-2.5 py-1 flex-shrink-0 ${
-                      status==='none'?'bg-[#F5F5F5] text-[#9CA3AF]':
-                      status==='ok'?'bg-green-100 text-green-700':
-                      status==='under'?'bg-orange-100 text-orange-700':
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {status==='none'?'—':status==='ok'?'✅ OK':status==='under'?'⚠️ Sous mini':'🔴 Sur-stocké'}
-                    </span>
-                  </div>
-                  {/* Gauge bar */}
-                  <div className="space-y-2">
-                    <div className="relative h-5 rounded-full overflow-hidden" style={{background:`linear-gradient(to right,#FED7AA ${miniPct}%,#D1FAE5 ${miniPct}%,#D1FAE5 ${maxiPct}%,#FECACA ${maxiPct}%)`}}>
-                      {value>0&&(
-                        <div className="absolute top-0 left-0 h-full rounded-full transition-all duration-500"
-                          style={{width:`${valuePct}%`,backgroundColor:status==='ok'?'#16A34A80':status==='under'?'#EA580C80':'#DC262680'}}/>
-                      )}
-                      {value>0&&(
-                        <div className="absolute top-0 h-full w-0.5 bg-[#1A1A1A]" style={{left:`${valuePct}%`}}/>
-                      )}
-                    </div>
-                    <div className="relative h-4">
-                      <span className="absolute text-[9px] text-orange-600 font-semibold -translate-x-1/2" style={{left:`${miniPct}%`}}>mini</span>
-                      <span className="absolute text-[9px] text-green-700 font-semibold -translate-x-1/2" style={{left:`${ciblePct}%`}}>cible</span>
-                      <span className="absolute text-[9px] text-red-600 font-semibold -translate-x-1/2" style={{left:`${maxiPct}%`}}>maxi</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-[#6B7280]">{rows.length} article{rows.length>1?'s':''}</span>
-                    <span className={`text-sm font-black ${status==='ok'?'text-green-600':status==='under'?'text-orange-600':status==='over'?'text-red-600':'text-[#9CA3AF]'}`}>
-                      {value>0?`${fmtK(value)} €`:'—'}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-[11px] text-[#9CA3AF] italic">Sources : fiche pratique EasyCash bijouterie. Valeur EP cumulée des articles en attente de vente.</p>
-        </div>
-      )}
     </div>
   );
 }
