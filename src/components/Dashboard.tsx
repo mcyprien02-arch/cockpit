@@ -85,11 +85,6 @@ function readRoutinesScore(nom: string): number | null {
 export default function Dashboard({ data, onSave, actions, onNavigate, onAddAction }: Props) {
   const [showModal, setShowModal] = useState(!data.nom);
   const [form, setForm] = useState<MagasinData>({ ...DEFAULT_DATA, ...data });
-  const [vision, setVision] = useState<{ vision3ans: string; valeur1: string; valeur2: string; valeur3: string } | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try { const s = localStorage.getItem(`vision_${data.nom}`); return s ? JSON.parse(s) : null; }
-    catch { return null; }
-  });
   const [histoire, setHistoire] = useState<HistoireStore>(() => {
     if (typeof window === 'undefined') return HISTOIRE_EMPTY;
     try { const s = localStorage.getItem(`histoire_${data.nom}`); return s ? JSON.parse(s) as HistoireStore : HISTOIRE_EMPTY; }
@@ -100,10 +95,6 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
   useEffect(() => { setForm({ ...DEFAULT_DATA, ...data }); }, [data]);
 
   useEffect(() => {
-    try {
-      const v = localStorage.getItem(`vision_${data.nom}`);
-      setVision(v ? JSON.parse(v) : null);
-    } catch { setVision(null); }
     try {
       const h = localStorage.getItem(`histoire_${data.nom}`);
       setHistoire(h ? JSON.parse(h) as HistoireStore : HISTOIRE_EMPTY);
@@ -152,15 +143,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
 
       {data.nom && (
         <button onClick={() => onNavigate('objectifs')} className="w-full bg-white border border-[#E0E0E0] rounded-xl px-4 py-3 text-left hover:bg-[#FAFAFA] transition-colors group">
-          {vision?.vision3ans ? (
-            <>
-              <p className="text-sm text-[#1A1A1A] font-medium truncate">🌟 {vision.vision3ans}</p>
-              {(vision.valeur1 || vision.valeur2 || vision.valeur3) && (
-                <p className="text-xs text-[#6B7280] mt-0.5">💎 {[vision.valeur1, vision.valeur2, vision.valeur3].filter(Boolean).join(' · ')}</p>
-              )}
-            </>
+          {histoire.objectifsPerso?.trim() ? (
+            <p className="text-sm text-[#1A1A1A] font-medium truncate">🎯 {histoire.objectifsPerso}</p>
           ) : (
-            <p className="text-xs text-[#6B7280] italic group-hover:text-[#E30613]">Définissez votre vision pour personnaliser votre outil. →</p>
+            <p className="text-xs text-[#6B7280] italic group-hover:text-[#E30613]">Objectifs personnels non renseignés — cliquez pour définir vos objectifs. →</p>
           )}
         </button>
       )}
