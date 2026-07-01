@@ -17,6 +17,7 @@ interface EquipeStore {
   rows: EquipeRow[];
   caAnnuel: number;
   tauxMarge: number;
+  msSeuilPct: number;
 }
 
 interface RhStore {
@@ -91,12 +92,12 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
       const s = typeof window !== 'undefined' ? localStorage.getItem(equipeKey) : null;
       if (s) {
         const p = JSON.parse(s) as unknown;
-        if (Array.isArray(p)) return { rows: (p as EquipeRow[]).map(r => ({ ...r, contrat: migrateContrat(r.contrat) })), caAnnuel: 0, tauxMarge: 38 };
+        if (Array.isArray(p)) return { rows: (p as EquipeRow[]).map(r => ({ ...r, contrat: migrateContrat(r.contrat) })), caAnnuel: 0, tauxMarge: 38, msSeuilPct: 15 };
         const parsed = p as EquipeStore;
-        return { ...parsed, tauxMarge: parsed.tauxMarge ?? 38, rows: parsed.rows.map(r => ({ ...r, contrat: migrateContrat(r.contrat) })) };
+        return { ...parsed, tauxMarge: parsed.tauxMarge ?? 38, msSeuilPct: parsed.msSeuilPct ?? 15, rows: parsed.rows.map(r => ({ ...r, contrat: migrateContrat(r.contrat) })) };
       }
-      return { rows: [], caAnnuel: 0, tauxMarge: 38 };
-    } catch { return { rows: [], caAnnuel: 0, tauxMarge: 38 }; }
+      return { rows: [], caAnnuel: 0, tauxMarge: 38, msSeuilPct: 15 };
+    } catch { return { rows: [], caAnnuel: 0, tauxMarge: 38, msSeuilPct: 15 }; }
   });
 
   const [rhStore, setRhStore] = useState<RhStore>(() => {
@@ -140,7 +141,7 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
     saveEquipeStore({ ...equipeStore, rows: equipeStore.rows.filter(e => e.id !== id) });
   }
 
-  const { rows: equipe, caAnnuel, tauxMarge } = equipeStore;
+  const { rows: equipe, caAnnuel, tauxMarge, msSeuilPct = 15 } = equipeStore;
   const totalMasseSal = equipe.reduce((s, e) => s + (e.heures * e.salaireHoraire * 12 * 1.42), 0);
   const totalHeures = equipe.reduce((s, e) => s + e.heures, 0);
   const totalEtp = totalHeures / 151.67;
@@ -151,7 +152,7 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
 
   // Référence réseau : 1 ETP / 250k€ CA
   const etpOptimal = caAnnuel > 0 ? Math.round(caAnnuel / 250000) : 0;
-  const msBudgetMax = caAnnuel > 0 ? Math.round(caAnnuel * 0.15) : 0;
+  const msBudgetMax = caAnnuel > 0 ? Math.round(caAnnuel * msSeuilPct / 100) : 0;
   const msEcart = msBudgetMax > 0 ? Math.round(totalMasseSal - msBudgetMax) : 0;
 
   const effectifMoyenDisplay = rhStore.effectifMoyen !== null ? rhStore.effectifMoyen : totalEtp;
@@ -192,11 +193,23 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
         {/* KPIs équipe — row 1 */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3 text-center">
-            <div className={`text-2xl font-black ${masseSalPct <= 15 ? 'text-green-600' : masseSalPct <= 18 ? 'text-orange-500' : 'text-red-600'}`}>
+            <div className={`text-2xl font-black ${masseSalPct <= msSeuilPct ? 'text-green-600' : masseSalPct <= msSeuilPct + 3 ? 'text-orange-500' : 'text-red-600'}`}>
               {caAnnuel > 0 ? `${masseSalPct.toFixed(1)}%` : '—'}
             </div>
             <div className="text-xs text-[#6B7280]">Masse salariale</div>
-            <div className="text-xs text-[#9CA3AF]">cible ≤15% réseau</div>
+            <div className="flex items-center justify-center gap-1 mt-0.5">
+              <span className="text-[10px] text-[#9CA3AF]">seuil</span>
+              <input
+                type="number"
+                min={5}
+                max={40}
+                step={0.5}
+                value={msSeuilPct}
+                onChange={e => saveEquipeStore({ ...equipeStore, msSeuilPct: parseFloat(e.target.value) || 15 })}
+                className="w-10 text-[10px] text-center bg-[#F5F5F5] border border-[#E0E0E0] rounded px-1 py-0.5 focus:outline-none focus:border-[#E30613]"
+              />
+              <span className="text-[10px] text-[#9CA3AF]">%</span>
+            </div>
             {msBudgetMax > 0 && (
               <div className="text-[10px] text-[#9CA3AF] mt-0.5">max {msBudgetMax.toLocaleString('fr-FR')} €</div>
             )}
@@ -212,15 +225,15 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
         </div>
 
         {/* Alert: masse salariale > 15% */}
-        {caAnnuel > 0 && masseSalPct > 15 && onAddAction && (
+        {caAnnuel > 0 && masseSalPct > msSeuilPct && onAddAction && (
           <div className="flex items-center justify-between gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5">
             <p className="text-xs text-orange-700">
-              <strong>⚠ Masse salariale à {masseSalPct.toFixed(1)}%</strong> — cible réseau ≤ 15% du CA
+              <strong>⚠ Masse salariale à {masseSalPct.toFixed(1)}%</strong> — votre seuil cible est ≤ {msSeuilPct}% du CA
               {msEcart > 0 && <span> — surcoût : <strong>{msEcart.toLocaleString('fr-FR')} €</strong> vs budget max</span>}
             </p>
             <button onClick={() => {
               const e = new Date(); e.setDate(e.getDate() + 14);
-              onAddAction({ id: String(Date.now()), titre: `Simulateur — Masse salariale à ${masseSalPct.toFixed(1)}% du CA (cible ≤ 15%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Masse salariale actuelle : ${masseSalPct.toFixed(1)}% du CA (${Math.round(totalMasseSal).toLocaleString('fr-FR')} €). Budget max réseau (15%) : ${msBudgetMax.toLocaleString('fr-FR')} €. Surcoût estimé : ${msEcart.toLocaleString('fr-FR')} €. Analyser les plannings et les contrats pour réduire l'écart.`, echeance: e.toISOString().slice(0, 10), priorite: masseSalPct > 18 ? 1 : 2, gain: msEcart, statut: 'À faire' });
+              onAddAction({ id: String(Date.now()), titre: `Simulateur — Masse salariale à ${masseSalPct.toFixed(1)}% du CA (cible ≤ ${msSeuilPct}%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Masse salariale actuelle : ${masseSalPct.toFixed(1)}% du CA (${Math.round(totalMasseSal).toLocaleString('fr-FR')} €). Budget max (${msSeuilPct}%) : ${msBudgetMax.toLocaleString('fr-FR')} €. Surcoût estimé : ${msEcart.toLocaleString('fr-FR')} €. Analyser les plannings et les contrats pour réduire l'écart.`, echeance: e.toISOString().slice(0, 10), priorite: masseSalPct > msSeuilPct + 3 ? 1 : 2, gain: msEcart, statut: 'À faire' });
             }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap flex-shrink-0 transition-colors">+ PAP</button>
           </div>
         )}

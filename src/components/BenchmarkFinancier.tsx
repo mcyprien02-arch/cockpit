@@ -335,6 +335,9 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
   const [santeAdded, setSanteAdded]   = useState<Set<SanteKey>>(new Set());
   const [toastMsg, setToastMsg]       = useState('');
   const [profilDAFKey, setProfilDAFKey] = useState('standard');
+  const [customCibles, setCustomCibles] = useState<Partial<Record<SanteKey, string>>>({});
+  const [editingCible, setEditingCible] = useState<SanteKey | null>(null);
+  const [editingCibleVal, setEditingCibleVal] = useState('');
 
   // ── Charges benchmark state
   const [moyennes, setMoyennes]               = useState<MoyennesReseau>(DEFAULT_MOYENNES);
@@ -368,6 +371,10 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
         });
         setSante(filled);
       }
+    } catch { /* ignore */ }
+    try {
+      const ccRaw = localStorage.getItem(`benchmark_custom_cibles_${magasinNom}`);
+      if (ccRaw) setCustomCibles(JSON.parse(ccRaw) as Partial<Record<SanteKey, string>>);
     } catch { /* ignore */ }
     try {
       const mRaw = localStorage.getItem('benchmark_moyennes_reseau');
@@ -480,6 +487,22 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
 
   function updateSante(key: SanteKey, val: string) {
     setSante(prev => ({ ...prev, [key]: val }));
+  }
+
+  function saveCustomCible(key: SanteKey, val: string) {
+    const next = { ...customCibles };
+    if (val.trim()) next[key] = val.trim(); else delete next[key];
+    setCustomCibles(next);
+    localStorage.setItem(`benchmark_custom_cibles_${magasinNom}`, JSON.stringify(next));
+    setEditingCible(null);
+    setEditingCibleVal('');
+  }
+
+  function cancelEditCible() { setEditingCible(null); setEditingCibleVal(''); }
+
+  function startEditCible(key: SanteKey) {
+    setEditingCible(key);
+    setEditingCibleVal(customCibles[key] ?? santeIndicateurs.find(i => i.key === key)?.cible ?? '');
   }
 
   function santeAddToPAP(ind: SanteIndicateur) {
@@ -610,8 +633,11 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
     localStorage.removeItem(`benchmark_sante_globale_${magasinNom}`);
     localStorage.removeItem('benchmark_moyennes_reseau');
     localStorage.removeItem(`benchmark_franchise_${magasinNom}`);
+    localStorage.removeItem(`benchmark_custom_cibles_${magasinNom}`);
     setSante({ ...EMPTY_SANTE });
     setSanteAdded(new Set());
+    setCustomCibles({});
+    setEditingCible(null);
     setMoyennes(DEFAULT_MOYENNES);
     setCaHTStr('');
     setCentreVille(false);
@@ -750,7 +776,34 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
                             <span className="text-[#9CA3AF]">%</span>
                           </div>
                         </td>
-                        <td className={TDR + ' font-medium text-[#374151]'}>{ind.cible}</td>
+                        <td className={TDR}>
+                          {editingCible === ind.key ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                type="text"
+                                value={editingCibleVal}
+                                onChange={e => setEditingCibleVal(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') saveCustomCible(ind.key, editingCibleVal); if (e.key === 'Escape') cancelEditCible(); }}
+                                className="w-24 text-xs text-right border border-[#E30613] rounded px-1.5 py-0.5 focus:outline-none"
+                                autoFocus
+                              />
+                              <button onClick={() => saveCustomCible(ind.key, editingCibleVal)} className="text-green-600 text-sm hover:text-green-800">✓</button>
+                              <button onClick={cancelEditCible} className="text-[#9CA3AF] text-sm hover:text-[#6B7280]">✕</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-1.5 group">
+                              <span className="font-medium text-[#374151]">{customCibles[ind.key] ?? ind.cible}</span>
+                              {customCibles[ind.key] && (
+                                <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 shrink-0">Perso</span>
+                              )}
+                              <button
+                                onClick={() => startEditCible(ind.key)}
+                                className="text-[#9CA3AF] hover:text-[#E30613] opacity-0 group-hover:opacity-100 transition-opacity text-xs shrink-0"
+                                title="Personnaliser cette cible"
+                              >✏</button>
+                            </div>
+                          )}
+                        </td>
                         <td className={TDR}>
                           {st ? (
                             <span className="text-base">{santeEmoji(st)}</span>

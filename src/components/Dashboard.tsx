@@ -19,9 +19,10 @@ interface HistoireStore {
   specificites: string;
   defis: string;
   objectifsPerso: string;
+  visionLongTerme: string;
   descriptionLibre: string;
 }
-const HISTOIRE_EMPTY: HistoireStore = { typePdV: '', anneeOuverture: '', effectif: '', specificites: '', defis: '', objectifsPerso: '', descriptionLibre: '' };
+const HISTOIRE_EMPTY: HistoireStore = { typePdV: '', anneeOuverture: '', effectif: '', specificites: '', defis: '', objectifsPerso: '', visionLongTerme: '', descriptionLibre: '' };
 
 interface SimuSummary { ca: number; etp: number; msPct: number; masseSal: number; turnover: number | null }
 
@@ -37,6 +38,7 @@ export function getHistoireContext(nom: string): string {
       h.specificites && `Spécificités locales: ${h.specificites}`,
       h.defis && `Défis actuels: ${h.defis}`,
       h.objectifsPerso && `Objectifs personnels: ${h.objectifsPerso}`,
+      h.visionLongTerme && `Vision long terme : ${h.visionLongTerme}`,
       h.descriptionLibre && `Description libre: ${h.descriptionLibre}`,
     ].filter(Boolean);
     return parts.length ? parts.join(' | ') : '';
@@ -231,6 +233,16 @@ export default function Dashboard({ data, onSave, actions, onNavigate, onAddActi
                   value={histoire.defis}
                   onChange={e => saveHistoire({ ...histoire, defis: e.target.value })}
                   placeholder="ex: Stock âgé élevé sur téléphones, turnover équipe important…"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-[#6B7280] block mb-1">🌟 Vision long terme (3 ans)</label>
+                <textarea
+                  className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613] resize-none"
+                  rows={3}
+                  value={histoire.visionLongTerme}
+                  onChange={e => saveHistoire({ ...histoire, visionLongTerme: e.target.value })}
+                  placeholder="Ex : Valeurs non-négociables, cap commercial, ambitions à 3 ans — atteindre 2M€ CA, ratio MS &lt; 14%..."
                 />
               </div>
               <div>
