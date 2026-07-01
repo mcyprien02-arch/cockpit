@@ -58,7 +58,7 @@ const ALIASES: Record<string, string[]> = {
   prixAchat:          ['achatprix','prixachat','prixdachat'],
   prixVente:          ['venteprixvendu','prixvente','prixvendu'],
   easypricePrixVente: ['easypriceprixventegradeb','easypriceprixvente','coteep'],
-  collaborateur:      ['collaborateur','acheteur','utilisateur'],
+  collaborateur:      ['collaborateur','acheteur','utilisateur','clientacheteurnom','clientnom'],
   delaiVente:         ['ventedelai','delaivente','delaidevente'],
   dateVente:          ['ventedate','datevente'],
 };
@@ -150,8 +150,9 @@ function median(arr: number[]): number|null {
 function isLigneFonte(row: BijRow, config: FonteConfig): boolean {
   if (config.useGradeD && row.g==='D') return true;
   if (config.useKeywords && config.keywords.length>0) {
-    const u=row.lib.toUpperCase();
-    if (config.keywords.some(k=>u.includes(k))) return true;
+    const uLib = row.lib.toUpperCase().trim();
+    const uAch = row.acheteur.toUpperCase().trim();
+    if (config.keywords.some(k => uLib.includes(k) || uAch.includes(k))) return true;
   }
   return false;
 }
@@ -412,16 +413,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
       };
     });
   },[filteredRows]);
-
-  const sweetSpotPrix = useMemo(()=>byTranchePrix.filter(t=>t.nbVentes>0).reduce<typeof byTranchePrix[0]|null>((best,t)=>{
-    if (!best) return t;
-    return t.tauxMarge>best.tauxMarge||(t.tauxMarge===best.tauxMarge&&(t.delaiMoyen??999)<(best.delaiMoyen??999))?t:best;
-  },null),[byTranchePrix]);
-
-  const alertePrix = useMemo(()=>byTranchePrix.filter(t=>t.nbVentes>0&&t.delaiMoyen!=null).reduce<typeof byTranchePrix[0]|null>((worst,t)=>{
-    if (!worst) return t;
-    return (t.delaiMoyen??0)>(worst.delaiMoyen??0)?t:worst;
-  },null),[byTranchePrix]);
 
   const rowsForPoids = useMemo(()=>filteredRows.filter(r=>r.type!=='Fonte/Or brut'&&r.poids!=null),[filteredRows]);
   const byTranchePoids = useMemo(()=>{
@@ -840,15 +831,9 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
                   <th className={THR}>Délai moyen (j)</th><th className={THR}>Marge unit. moy. (€)</th>
                 </tr></thead>
                 <tbody>{byTranchePrix.map((t,i)=>{
-                  const isSS=sweetSpotPrix?.label===t.label;
-                  const isAlert=alertePrix?.label===t.label&&t.label!==sweetSpotPrix?.label;
                   return (
-                    <tr key={i} className={isSS?'bg-green-50':isAlert?'bg-orange-50':i%2===0?'bg-white':'bg-[#FAFAFA]'}>
-                      <td className={TD}>
-                        <span className="font-medium">{t.label}</span>
-                        {isSS&&<span className="ml-1.5 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">⭐ Sweet spot</span>}
-                        {isAlert&&<span className="ml-1.5 text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-medium">⚠️ Surveiller</span>}
-                      </td>
+                    <tr key={i} className={i%2===0?'bg-white':'bg-[#FAFAFA]'}>
+                      <td className={TD}><span className="font-medium">{t.label}</span></td>
                       <td className={TDR}>{t.nbVentes>0?t.nbVentes:'—'}</td>
                       <td className={TDR}>{t.nbVentes>0?`${t.pctCA}%`:'—'}</td>
                       <td className={TDR}>{t.nbVentes>0?<span className={t.margeTotal<0?'text-red-600 font-semibold':''}>{fmtK(t.margeTotal)} €</span>:'—'}</td>
@@ -1060,7 +1045,6 @@ export default function BijouterieScreen({ magasinNom, onNavigateToJournal, onAd
                 <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3">
                   <p className="text-xs text-green-800">
                     <strong>⭐ Sweet spot identifié :</strong> le type <strong>{sweetSpotType.type}</strong>
-                    {sweetSpotPrix&&<> dans la tranche <strong>{sweetSpotPrix.label}</strong></>}
                     {byTranchePoids.filter(t=>t.nbVentes>0).sort((a,b)=>(b.pctVolume??0)-(a.pctVolume??0))[0]&&<> pour la tranche de poids <strong>{byTranchePoids.filter(t=>t.nbVentes>0).sort((a,b)=>(b.pctVolume??0)-(a.pctVolume??0))[0].label}</strong></>}
                     {' '}— taux de marge {sweetSpotType.tauxMarge}%, délai {sweetSpotType.delaiMoyen!=null?`${sweetSpotType.delaiMoyen}j`:'—'}. À prioriser au sourcing comptoir.
                   </p>
