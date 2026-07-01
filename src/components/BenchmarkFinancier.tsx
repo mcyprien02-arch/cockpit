@@ -536,15 +536,44 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
     setPapAdded(prev => new Set(prev).add(row.key));
   }
 
-  function sendToAssistant() {
-    try {
-      const context = {
-        top3: priorities.slice(0, 3).map(r => ({ label: r.label, ecartEuros: Math.round(r.ecartEuros), ecartPct: Math.round(r.ecartPct), status: r.status })),
-        caHT, trancheLabel, potentielTotal: Math.round(potentielTotal), ts: Date.now(),
-      };
-      localStorage.setItem(`benchmark_ai_prompt_${magasinNom}`, JSON.stringify(context));
-      showToast("✅ Contexte transmis à l'Assistant IA — basculez sur l'onglet Assistant");
-    } catch { /* ignore */ }
+  const [showAnonModal, setShowAnonModal] = useState(false);
+  const [anonPrompt, setAnonPrompt] = useState('');
+
+  function anonymizeBenchmarkForIA() {
+    const lines: string[] = [];
+    lines.push(`Contexte : le magasin | Tranche CA : ${trancheLabel} | CA HT annuel : ${caHT.toLocaleString('fr-FR')} € | Zone : la zone de chalandise | Centre-ville : ${centreVille ? 'oui' : 'non'}`);
+    lines.push('');
+    lines.push('CHARGES vs MOYENNES RÉSEAU (% du CA HT) :');
+    for (const r of sortedDiag) {
+      if (!r.saisied) continue;
+      const statut = r.status === 'rouge' ? '🔴' : r.status === 'orange' ? '🟠' : r.status === 'vert' ? '🟢' : '⚪';
+      lines.push(`${statut} ${r.label} : ${r.myPct.toFixed(1)}% (moy. ${r.moyennePct.toFixed(1)}%, écart ${r.ecartPct >= 0 ? '+' : ''}${r.ecartPct.toFixed(0)}%, soit ${r.ecartEuros >= 0 ? '+' : ''}${Math.round(r.ecartEuros).toLocaleString('fr-FR')} €)`);
+    }
+    if (priorities.length > 0) {
+      lines.push('');
+      lines.push('PRIORITÉS (postes au-dessus de la moyenne) :');
+      priorities.forEach((r, i) => {
+        lines.push(`${i + 1}. ${r.label} : potentiel d'économie ${Math.round(r.ecartEuros).toLocaleString('fr-FR')} € (${Math.round(r.ecartPct)} pts au-dessus de la moyenne)`);
+      });
+    }
+    lines.push('');
+    lines.push('DEMANDE : Analysez ces indicateurs de charges vs les moyennes de mon réseau. Pour chaque poste en rouge ou orange, proposez 2 à 3 actions concrètes et réalistes pour réduire l\'écart. Restez factuel et opérationnel.');
+    const prompt = lines.join('\n');
+    setAnonPrompt(prompt);
+    setShowAnonModal(true);
+  }
+
+  function copyAnonPrompt() {
+    navigator.clipboard.writeText(anonPrompt).then(() => {
+      try {
+        const hash = btoa(anonPrompt.slice(0, 64)).slice(0, 16);
+        const log = JSON.parse(localStorage.getItem('benchmark_ia_log') || '[]') as unknown[];
+        log.push({ hash, ts: Date.now() });
+        localStorage.setItem('benchmark_ia_log', JSON.stringify(log.slice(-20)));
+      } catch { /* ignore */ }
+      showToast("✅ Prompt copié — collez-le dans votre IA préférée");
+      setShowAnonModal(false);
+    });
   }
 
   function clearAll() {
@@ -574,6 +603,29 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
       {toastMsg && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1A1A1A] text-white text-sm font-medium px-5 py-3 rounded-xl shadow-lg pointer-events-none">
           {toastMsg}
+        </div>
+      )}
+
+      {/* Anonymization modal */}
+      {showAnonModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowAnonModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-[#E0E0E0]">
+              <h3 className="text-base font-bold text-[#1A1A1A]">💬 Prompt IA anonymisé — aperçu avant envoi</h3>
+              <p className="text-xs text-green-700 font-semibold mt-1">✅ Aucune donnée nominative ne sera transmise — le nom du franchisé et du magasin ont été retirés</p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <pre className="text-xs text-[#374151] whitespace-pre-wrap font-mono bg-[#F9FAFB] border border-[#E0E0E0] rounded-xl p-4 leading-relaxed">{anonPrompt}</pre>
+            </div>
+            <div className="px-6 py-4 border-t border-[#E0E0E0] flex gap-3">
+              <button onClick={copyAnonPrompt} className="flex-1 bg-[#E30613] hover:bg-[#B8050F] text-white text-sm font-semibold rounded-xl py-2.5 transition-colors">
+                📋 Copier et fermer
+              </button>
+              <button onClick={() => setShowAnonModal(false)} className="px-5 py-2.5 border border-[#E0E0E0] text-[#6B7280] text-sm font-semibold rounded-xl transition-colors">
+                Annuler
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1009,8 +1061,8 @@ export default function BenchmarkFinancier({ magasinNom, onAddAction }: Props) {
                 </div>
               ))}
               <div className="pt-2 border-t border-red-200">
-                <button onClick={sendToAssistant} className="text-xs font-semibold text-[#E30613] border border-[#E30613] rounded-lg px-4 py-2 hover:bg-[#FFF5F5] transition-colors">
-                  💬 Discuter de mes charges avec l&apos;Assistant IA
+                <button onClick={anonymizeBenchmarkForIA} className="text-xs font-semibold text-[#E30613] border border-[#E30613] rounded-lg px-4 py-2 hover:bg-[#FFF5F5] transition-colors">
+                  💬 Analyser avec une IA (prompt anonymisé)
                 </button>
               </div>
             </div>
