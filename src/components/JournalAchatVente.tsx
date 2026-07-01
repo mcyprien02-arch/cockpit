@@ -7,12 +7,12 @@ import type { PAPAction } from '@/types';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; onNavigateToBijouterie?: () => void; }
 type Periode = 'all' | '3m' | '6m' | '12m';
-type FamilyCode = 'TLCE'|'JCON'|'JCDR'|'JPOR'|'BOR'|'BOPI'|'BMAR'|'BMON'|'IPOR'|'ITAB'|'OTHER';
+type FamilyCode = 'TLCE'|'JCON'|'JCDR'|'JPOR'|'BOR'|'BOPI'|'BMAR'|'BMON'|'IPOR'|'ITAB'|'UNKNOWN';
 
 const FAMILY_LABELS: Record<FamilyCode, string> = {
   TLCE:'📱 Téléphonie', JCON:'🎮 Consoles', JCDR:'🎮 Jeux vidéo', JPOR:'🎮 Jeux portables',
-  BOR:'💍 Or', BOPI:'✨ Plaqué', BMAR:'👜 Maroquinerie', BMON:'⌚ Montres',
-  IPOR:'💻 Informatique', ITAB:'📱 Tablettes', OTHER:'Autre',
+  BOR:'💍 Or', BOPI:'✨ Or empierré', BMAR:'👜 Maroquinerie', BMON:'⌚ Montres',
+  IPOR:'💻 Informatique', ITAB:'📱 Tablettes', UNKNOWN:'❓ Non reconnue',
 };
 const FAMILY_SECTION_TITLE: Record<FamilyCode, string> = {
   TLCE:'🏷️ Répartition par marque (TLCE)',
@@ -25,7 +25,7 @@ const FAMILY_SECTION_TITLE: Record<FamilyCode, string> = {
   BMON:'🏷️ Répartition par marque (BMON)',
   IPOR:'🏷️ Répartition par marque (IPOR)',
   ITAB:'🏷️ Répartition par marque (ITAB)',
-  OTHER:'📊 Répartition',
+  UNKNOWN:'📊 Répartition',
 };
 const EP_FAMILIES: FamilyCode[] = ['TLCE','JCON','JCDR','JPOR','IPOR','ITAB'];
 
@@ -138,74 +138,56 @@ function supplierName(fn: string, fp: string): string {
   return `${n} ${p}`;
 }
 
-// ── family detection ──────────────────────────────────────────────────────────
-function detectFamilyCode(s: string, warn = false): FamilyCode {
-  const raw = s.trim().toUpperCase();
-  const u = raw.replace(/[\s\-_]/g,'');
-  const EXACT: Record<string,FamilyCode> = {
-    'TLCE':'TLCE','JCON':'JCON','JCDR':'JCDR','JPOR':'JPOR',
-    'BOR':'BOR','BOPI':'BOPI','BMAR':'BMAR','BMON':'BMON','IPOR':'IPOR','ITAB':'ITAB',
-  };
-  if (EXACT[u]) return EXACT[u];
-  // TLCE
-  if (raw.includes('CELLULAIRE')||raw.startsWith('TÉLÉPHONIE')||raw.startsWith('TELEPHONIE')) return 'TLCE';
-  // JPOR (before JCDR to avoid "jeux portables" matching JCDR)
-  if (raw.includes('JEU PORTABLE')||raw.includes('JEUX PORTABLES')) return 'JPOR';
-  // JCDR — "CD ROM Jeu Vidéo" or plain "Jeu Vidéo"
-  if (raw.includes('JEU VIDÉO')||raw.includes('JEU VIDEO')||raw.includes('JEUX VIDÉO')||raw.includes('JEUX VIDEO')||raw.includes('CD ROM')) return 'JCDR';
-  // JCON — "Console" but NOT portable, NOT CD ROM
-  if (raw.includes('CONSOLE')&&!raw.includes('PORTABLE')&&!raw.includes('CD ROM')) return 'JCON';
-  // BOR
-  if (raw.includes('BIJOUTERIE OR')) return 'BOR';
-  // BOPI
-  if (raw.includes('PLAQUÉ')||raw.includes('PLAQUE')||raw.includes('BOPI')||raw.includes('PIERRES')) return 'BOPI';
-  // BMAR
-  if (raw.includes('MAROQUINERIE')) return 'BMAR';
-  // BMON
-  if (raw.includes('MONTRE')) return 'BMON';
-  // IPOR — laptop/portable computer
-  if ((raw.includes('INFORMATIQUE')||raw.includes('ORDINATEUR'))&&raw.includes('PORTABLE')) return 'IPOR';
-  // ITAB
-  if (raw.includes('TABLETTE')) return 'ITAB';
-  // Unrecognised
-  if (warn && raw.length >= 5) {
-    console.warn(`[JournalAchatVente] Sous-famille non reconnue → OTHER : "${s}"`);
-  }
-  return 'OTHER';
+// ── sous-famille normalization (keeps spaces, strips accents) ────────────────
+function normSF(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 }
 
-// ── DEBUG: expected family code from raw Athéna sous-famille text ─────────────
-// Used only by the diagnostic debug panel — DO NOT use in production logic
-function getExpectedFC(rawSF: string): FamilyCode {
-  const r = rawSF.trim().toUpperCase();
-  const u = r.replace(/[\s\-_]/g,'');
-  // Exact codes first
-  const EXACT: Record<string,FamilyCode> = {
+// ── family detection — SOURCE OF TRUTH: colonne Sous_famille CSV ─────────────
+// Central mapping: exact Athéna CSV values (normalized) → FamilyCode
+// Order in inclusion fallback is critical (BOPI before BOR, JPOR before JCDR/JCON)
+function detectFamilyCode(s: string): FamilyCode {
+  if (!s || !s.trim()) return 'UNKNOWN';
+
+  // Pass-through: r.f already contains a FamilyCode short code
+  const upper = s.trim().toUpperCase().replace(/[\s\-_]/g,'');
+  const FC_PASSTHROUGH: Record<string,FamilyCode> = {
     'TLCE':'TLCE','JCON':'JCON','JCDR':'JCDR','JPOR':'JPOR',
-    'BOR':'BOR','BOPI':'BOPI','BMAR':'BMAR','BMON':'BMON','IPOR':'IPOR','ITAB':'ITAB',
+    'BOR':'BOR','BOPI':'BOPI','BMAR':'BMAR','BMON':'BMON','IPOR':'IPOR','ITAB':'ITAB','UNKNOWN':'UNKNOWN',
   };
-  if (EXACT[u]) return EXACT[u];
-  // BOPI FIRST — "Bijou or empierré" contains "or", must precede BOR
-  if (r.includes('EMPIERR')) return 'BOPI';
-  // BOR
-  if (r.includes('BIJOUTERIE OR')||r.includes('BIJOU OR')) return 'BOR';
-  // JPOR BEFORE JCDR/JCON — "Console Portable" must not fall into JCON
-  if ((r.includes('CONSOLE')||r.includes('JEU')||r.includes('JEUX'))&&r.includes('PORTABLE')) return 'JPOR';
-  // JCDR
-  if (r.includes('CD ROM')||r.includes('JEU VIDÉO')||r.includes('JEU VIDEO')||r.includes('JEUX VIDÉO')||r.includes('JEUX VIDEO')) return 'JCDR';
-  // JCON — any "console" text not already handled
-  if (r.includes('CONSOLE')) return 'JCON';
-  // TLCE
-  if (r.includes('CELLULAIRE')||r.startsWith('TÉLÉPHONIE')||r.startsWith('TELEPHONIE')) return 'TLCE';
-  // ITAB
-  if (r.includes('TABLETTE')) return 'ITAB';
-  // IPOR
-  if ((r.includes('INFORMATIQUE')||r.includes('ORDINATEUR'))&&r.includes('PORTABLE')) return 'IPOR';
-  // BMAR
-  if (r.includes('MAROQUINERIE')||r.includes('BIJOUTERIE MARQUE')) return 'BMAR';
-  // BMON
-  if (r.includes('MONTRE')||r.includes('HORLOGERIE')) return 'BMON';
-  return 'OTHER';
+  if (FC_PASSTHROUGH[upper]) return FC_PASSTHROUGH[upper];
+
+  const n = normSF(s);
+
+  // 1. Exact match against known Athéna Sous_famille values
+  switch(n) {
+    case 'cd rom jeu video':      return 'JCDR';
+    case 'console jeu video':     return 'JCON';
+    case 'consoles portables':    return 'JPOR';
+    case 'telephonie cellulaire': return 'TLCE';
+    case 'pc portables':          return 'IPOR';
+    case 'tablettes pc, liseuse': return 'ITAB';
+    case 'bijouterie or':         return 'BOR';
+    case 'bijou or empierre':     return 'BOPI';
+    case 'montre':                return 'BMON';
+    case 'maroquinerie':          return 'BMAR';
+  }
+
+  // 2. Inclusion fallback — order matters
+  if (n.includes('empierre'))                                                       return 'BOPI';
+  if ((n.includes('bijou')||n.includes('bijouterie')) && n.includes(' or'))         return 'BOR';
+  // JPOR before JCDR/JCON: "consoles portables" contains "console"
+  if (n.includes('portables') && (n.includes('console')||n.includes('jeu')||n.includes('jeux'))) return 'JPOR';
+  // JCON before JCDR: "Console Jeu Vidéo" contains "console"
+  if (n.includes('console'))                                                         return 'JCON';
+  if (n.includes('cd rom')||n.includes('jeu video')||n.includes('jeux video'))      return 'JCDR';
+  if (n.includes('cellulaire')||n.startsWith('telephonie'))                         return 'TLCE';
+  if (n.includes('tablette'))                                                        return 'ITAB';
+  if (n.includes('portable')&&(n.includes('pc')||n.includes('ordinateur')||n.includes('informatique'))) return 'IPOR';
+  if (n.includes('maroquinerie'))                                                    return 'BMAR';
+  if (n.includes('montre')||n.includes('horlogerie'))                               return 'BMON';
+
+  return 'UNKNOWN';
 }
 
 // ── platform detection (JCON / JCDR / JPOR) ──────────────────────────────────
@@ -385,8 +367,9 @@ function getSeuilRotationRapide(familyCode: string): number {
     case 'BMAR': return 60;
     case 'BMON': return 60;
     case 'BOR':  return 60;
-    case 'BOPI': return 60;
-    default:     return 30;
+    case 'BOPI':    return 60;
+    case 'UNKNOWN': return 30;
+    default:        return 30;
   }
 }
 
@@ -544,10 +527,10 @@ function detectBORType(libelle: string): string {
 function getTranchesPrix(famille: FamilyCode): TrancheDef[] {
   switch(famille){
     case 'JCDR': return [{label:'< 10 €',min:0,max:10},{label:'10-20 €',min:10,max:20},{label:'20-40 €',min:20,max:40},{label:'> 40 €',min:40,max:Infinity}];
+    case 'JPOR': return [{label:'< 50 €',min:0,max:50},{label:'50-100 €',min:50,max:100},{label:'100-200 €',min:100,max:200},{label:'> 200 €',min:200,max:Infinity}];
     case 'JCON': case 'TLCE': case 'ITAB': return [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}];
     case 'IPOR': return [{label:'< 200 €',min:0,max:200},{label:'200-500 €',min:200,max:500},{label:'500-800 €',min:500,max:800},{label:'> 800 €',min:800,max:Infinity}];
-    case 'JPOR': return [{label:'< 50 €',min:0,max:50},{label:'50-100 €',min:50,max:100},{label:'100-200 €',min:100,max:200},{label:'> 200 €',min:200,max:Infinity}];
-    case 'BMAR': return [{label:'< 50 €',min:0,max:50},{label:'50-150 €',min:50,max:150},{label:'150-300 €',min:150,max:300},{label:'> 300 €',min:300,max:Infinity}];
+    case 'BMAR': case 'BOR': case 'BOPI': return [{label:'< 50 €',min:0,max:50},{label:'50-150 €',min:50,max:150},{label:'150-300 €',min:150,max:300},{label:'> 300 €',min:300,max:Infinity}];
     case 'BMON': return [{label:'< 100 €',min:0,max:100},{label:'100-300 €',min:100,max:300},{label:'300-600 €',min:300,max:600},{label:'> 600 €',min:600,max:Infinity}];
     default: return [{label:'< 50 €',min:0,max:50},{label:'50-150 €',min:50,max:150},{label:'150-300 €',min:150,max:300},{label:'> 300 €',min:300,max:Infinity}];
   }
@@ -981,8 +964,8 @@ export function getJournalContext(magasinNom: string): string {
 
     // Performance par tranche de prix
     const famCounts=new Map<FamilyCode,number>();
-    for(const r of stored.rows){const fc=detectFamilyCode(r.f);if(fc!=='OTHER')famCounts.set(fc,(famCounts.get(fc)??0)+1);}
-    const domFamTr=Array.from(famCounts.entries()).sort((a,b)=>b[1]-a[1]).map(([fc])=>fc).find(fc=>fc!=='BOR'&&fc!=='BOPI'&&fc!=='OTHER');
+    for(const r of stored.rows){const fc=detectFamilyCode(r.f);if(fc!=='UNKNOWN')famCounts.set(fc,(famCounts.get(fc)??0)+1);}
+    const domFamTr=Array.from(famCounts.entries()).sort((a,b)=>b[1]-a[1]).map(([fc])=>fc).find(fc=>fc!=='BOR'&&fc!=='BOPI'&&fc!=='UNKNOWN');
     let trancheLine='';
     if(domFamTr){
       const tDefs=getTranchesPrix(domFamTr);
@@ -1636,10 +1619,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     const familyCounts=new Map<string,number>();
     const unknownFamilies=new Set<string>();
     for (const r of stored.rows) {
-      const fc=detectFamilyCode(r.f, false);
-      const label=fc==='OTHER'?`OTHER (${r.f||'(vide)'})`:`${fc}`;
+      const fc=detectFamilyCode(r.f);
+      const label=fc==='UNKNOWN'?`UNKNOWN (${r.f||'(vide)'})`:`${fc}`;
       familyCounts.set(fc,(familyCounts.get(fc)??0)+1);
-      if (fc==='OTHER'&&r.f.trim().length>=5) unknownFamilies.add(r.f.trim());
+      if (fc==='UNKNOWN'&&r.f.trim().length>=5) unknownFamilies.add(r.f.trim());
     }
     const rows=stored.rows;
     const statsAll=computeStats(rows);
@@ -1802,7 +1785,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     const counts=new Map<FamilyCode,number>();
     for (const r of stored.rows) {
       const fc=detectFamilyCode(r.f);
-      if (fc!=='OTHER') counts.set(fc,(counts.get(fc)??0)+1);
+      if (fc!=='UNKNOWN') counts.set(fc,(counts.get(fc)??0)+1);
     }
     return Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).map(([fc])=>fc);
   },[stored]);
@@ -1833,7 +1816,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
 
   // Dominant family → rotation seuil: selectedFamily if set, else most-represented detected family
   const seuilRotationRapide=useMemo(()=>{
-    const fc=selectedFamily!=='all'?selectedFamily:(detectedFamilies[0]??'OTHER');
+    const fc=selectedFamily!=='all'?selectedFamily:(detectedFamilies[0]??'UNKNOWN');
     return {seuil:getSeuilRotationRapide(fc),fc};
   },[selectedFamily,detectedFamilies]);
 
@@ -1946,10 +1929,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
   const trancheFamily=useMemo(():FamilyCode|null=>{
     if(selectedFamily!=='all'){
       const fc=selectedFamily as FamilyCode;
-      if(fc==='BOR'||fc==='BOPI'||fc==='OTHER') return null;
+      if(fc==='BOR'||fc==='BOPI'||fc==='UNKNOWN') return null;
       return fc;
     }
-    return detectedFamilies.find(fc=>fc!=='BOR'&&fc!=='BOPI'&&fc!=='OTHER')||null;
+    return detectedFamilies.find(fc=>fc!=='BOR'&&fc!=='BOPI'&&fc!=='UNKNOWN')||null;
   },[selectedFamily,detectedFamilies]);
 
   const trancheRows=useMemo(()=>{
@@ -2234,90 +2217,63 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
           </div>
           <p className="text-xs text-[#9CA3AF] italic">Seuls les modèles avec ≥ 3 ventes sont affichés dans les sections ci-dessous. La fiabilité est indiquée par un badge coloré.</p>
 
-          {/* ── DEBUG DIAGNOSTIC — Détection famille ──────────────────────────── */}
+          {/* ── DEBUG — Détection famille ─────────────────────────────────────── */}
           {(()=>{
             const allRows = stored!.rows;
-            const sample = allRows.slice(0,10);
-            let matchCount=0, divergeCount=0;
-            const currentFCMap = new Map<string,number>();
-            const expectedFCMap = new Map<string,number>();
+            const sfCounts = new Map<string,number>();
+            const sfToFC = new Map<string,FamilyCode>();
             for (const row of allRows) {
-              const cur=detectFamilyCode(row.f);
-              const exp=getExpectedFC(row.f);
-              if (cur===exp) matchCount++; else divergeCount++;
-              currentFCMap.set(cur,(currentFCMap.get(cur)??0)+1);
-              expectedFCMap.set(exp,(expectedFCMap.get(exp)??0)+1);
+              const sf = row.f;
+              sfCounts.set(sf,(sfCounts.get(sf)??0)+1);
+              if (!sfToFC.has(sf)) sfToFC.set(sf,detectFamilyCode(sf));
             }
-            const total=allRows.length;
-            const uniqueSF=[...new Set(allRows.map(r=>r.f))].sort();
+            const total = allRows.length;
+            const recognized = [...sfCounts.entries()].filter(([sf])=>sfToFC.get(sf)!=='UNKNOWN');
+            const unrecognized = [...sfCounts.entries()].filter(([sf])=>sfToFC.get(sf)==='UNKNOWN');
+            const recognizedCount = recognized.reduce((s,[,n])=>s+n,0);
+            const unrecognizedCount = unrecognized.reduce((s,[,n])=>s+n,0);
+            // Dominant family (most rows, excluding BOR/BOPI/UNKNOWN)
+            const fcCounts = new Map<FamilyCode,number>();
+            for (const row of allRows) { const fc=detectFamilyCode(row.f); fcCounts.set(fc,(fcCounts.get(fc)??0)+1); }
+            const domFamily = [...fcCounts.entries()].sort((a,b)=>b[1]-a[1]).map(([fc])=>fc).find(fc=>fc!=='BOR'&&fc!=='BOPI'&&fc!=='UNKNOWN') ?? null;
+            const domPct = domFamily&&total>0?Math.round((fcCounts.get(domFamily)??0)/total*100):0;
+            const appliedTranches = domFamily?getTranchesPrix(domFamily):[];
+            const appliedSeuil = getSeuilRotationRapide(domFamily??'UNKNOWN');
             return (
-              <div className="border-2 border-amber-400 bg-amber-50 rounded-lg px-4 py-3 text-xs font-mono space-y-2">
-                <p className="font-bold text-amber-800 text-sm">🔍 DEBUG — Détection famille (méthode actuelle vs colonne CSV)</p>
+              <div className="border-2 border-amber-400 bg-amber-50 rounded-lg px-4 py-3 text-xs font-mono space-y-1.5">
+                <p className="font-bold text-amber-800 text-sm">🔍 DEBUG — Détection famille (source : colonne Sous_famille CSV)</p>
 
-                <p className="font-bold text-amber-900">ÉCHANTILLON DES 10 PREMIÈRES LIGNES :</p>
-                <div className="overflow-x-auto">
-                  <table className="text-[10px] border-collapse w-full">
-                    <thead>
-                      <tr className="bg-amber-200">
-                        {['#','Libellé produit','Sous_famille CSV (r.f)','FC détecté (actuel)','FC attendu (CSV correct)','Verdict'].map(h=>(
-                          <th key={h} className="border border-amber-300 px-1 py-0.5 text-left whitespace-nowrap">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sample.map((row,i)=>{
-                        const cur=detectFamilyCode(row.f);
-                        const exp=getExpectedFC(row.f);
-                        const ok=cur===exp;
-                        return (
-                          <tr key={i} className={ok?'bg-white':'bg-red-50'}>
-                            <td className="border border-amber-300 px-1 py-0.5">{i+1}</td>
-                            <td className="border border-amber-300 px-1 py-0.5 max-w-[160px] truncate" title={row.m}>{row.m.slice(0,35)}{row.m.length>35?'…':''}</td>
-                            <td className="border border-amber-300 px-1 py-0.5 font-semibold text-blue-800">{row.f||'(vide)'}</td>
-                            <td className={`border border-amber-300 px-1 py-0.5 font-bold ${ok?'text-green-700':'text-red-700'}`}>{cur}</td>
-                            <td className="border border-amber-300 px-1 py-0.5 font-bold text-blue-700">{exp}</td>
-                            <td className="border border-amber-300 px-1 py-0.5">{ok?'✅':'❌'}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <p className="font-bold text-amber-900">STATISTIQUES GLOBALES ({total} lignes) :</p>
-                <p className="pl-2 text-amber-900">Détection actuelle = colonne CSV : <strong className="text-green-700">{matchCount} / {total} ({total>0?Math.round(matchCount/total*100):0}%)</strong></p>
-                <p className="pl-2 text-amber-900">Détection diverge : <strong className={divergeCount>0?'text-red-700':'text-green-700'}>{divergeCount} / {total} ({total>0?Math.round(divergeCount/total*100):0}%)</strong></p>
-                <p className="pl-2 text-amber-900">Familles détectées (méthode actuelle) : {[...currentFCMap.entries()].sort((a,b)=>b[1]-a[1]).map(([fc,n])=>`${fc}:${n}`).join(' | ')}</p>
-                <p className="pl-2 text-amber-900">Familles attendues (colonne CSV) : {[...expectedFCMap.entries()].sort((a,b)=>b[1]-a[1]).map(([fc,n])=>`${fc}:${n}`).join(' | ')}</p>
-
-                <p className="font-bold text-amber-900">VALEURS UNIQUES DE SOUS_FAMILLE CSV dans ce journal :</p>
-                {uniqueSF.map(sf=>{
-                  const cur=detectFamilyCode(sf);
-                  const exp=getExpectedFC(sf);
-                  const ok=cur===exp;
+                <p className="font-bold text-amber-900">VALEURS UNIQUES DE SOUS_FAMILLE RENCONTRÉES :</p>
+                {[...sfCounts.entries()].sort((a,b)=>b[1]-a[1]).map(([sf,cnt])=>{
+                  const fc=sfToFC.get(sf)??'UNKNOWN';
+                  const ok=fc!=='UNKNOWN';
                   return (
                     <p key={sf} className={`pl-2 ${ok?'text-amber-900':'text-red-700 font-bold'}`}>
-                      &quot;{sf||'(vide)'}&quot; → actuel=<strong>{cur}</strong> / attendu=<strong>{exp}</strong> {ok?'✅':'❌ DIVERGENCE'}
+                      &quot;{sf||'(vide)'}&quot; : <strong>{cnt}</strong> lignes → <strong>{fc}</strong> {ok?'✅':'❌'}
                     </p>
                   );
                 })}
 
-                <p className="font-bold text-amber-900">MAPPING ATTENDU (Sous_famille CSV → FamilyCode) :</p>
-                {[
-                  ["'CD ROM Jeu Vidéo'","JCDR"],["'Console' / 'Console de jeu'","JCON"],
-                  ["'Téléphonie Cellulaire'","TLCE"],["'Tablette'","ITAB"],
-                  ["'Informatique Portable' / 'Ordinateur Portable'","IPOR"],["'Console Portable' / 'Jeu portable'","JPOR"],
-                  ["'Bijouterie or' / 'Bijou or' (sans empierré)","BOR"],["'Bijou or empierré'","BOPI"],
-                  ["'Bijouterie marque' / 'Maroquinerie'","BMAR"],["'Montre' / 'Horlogerie'","BMON"],
-                ].map(([sf,fc])=>(
-                  <p key={fc} className="pl-2 text-amber-900">{sf} → <strong>{fc}</strong></p>
-                ))}
+                {unrecognized.length>0&&(
+                  <>
+                    <p className="font-bold text-red-700">NON RECONNUES ({unrecognizedCount} lignes) :</p>
+                    {unrecognized.map(([sf,cnt])=>(
+                      <p key={sf} className="pl-2 text-red-700">&quot;{sf||'(vide)'}&quot; : {cnt} lignes → UNKNOWN ❌ (à ajouter au mapping)</p>
+                    ))}
+                  </>
+                )}
 
-                <p className="font-bold text-amber-900">VERDICT :</p>
-                <p className="pl-2 text-amber-900">{divergeCount>0
-                  ?`❌ ${divergeCount} lignes mal classifiées — correctif sur detectFamilyCode() nécessaire`
-                  :'✅ Méthode actuelle conforme à la colonne CSV pour ce journal'
-                }</p>
+                <p className="font-bold text-amber-900">FAMILLE DOMINANTE : <strong className="text-amber-800">{domFamily??'(aucune)'}</strong>{domFamily?` (${domPct}% des lignes)`:''}</p>
+                <p className="pl-2 text-amber-900">Tranches appliquées : {appliedTranches.length>0?appliedTranches.map(t=>t.label).join(' | '):'(aucune — famille BOR/BOPI/UNKNOWN)'}</p>
+                <p className="pl-2 text-amber-900">Seuil rotation rapide : <strong>{appliedSeuil}j</strong></p>
+
+                <p className="font-bold text-amber-900">STATUT GLOBAL :</p>
+                <p className="pl-2 text-amber-900">
+                  {unrecognizedCount===0
+                    ?<strong className="text-green-700">✅ Toutes les sous-familles reconnues ({recognizedCount}/{total})</strong>
+                    :<strong className="text-red-700">⚠️ {unrecognizedCount} ligne{unrecognizedCount>1?'s':''} non reconnue{unrecognizedCount>1?'s':''} ({Math.round(unrecognizedCount/total*100)}%) — mapper les valeurs ci-dessus dans detectFamilyCode()</strong>
+                  }
+                </p>
               </div>
             );
           })()}
