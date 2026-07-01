@@ -759,14 +759,17 @@ function detectFamilleGamme(rows: Record<string,unknown>[]): FamilyCode|null {
   return null;
 }
 function isInGamme(modele: string, gamme: GammeReseau): boolean {
-  const n=normGamme(modele);
-  for (const gm of gamme.modeles) {
-    if (!gm.inTop20) continue;
-    const key=gm.key_normalisee;
-    if (n===key) return true;
-    const words=key.split(' ').filter(Boolean);
-    if (!words.length) continue;
-    if (words.filter(w=>n.includes(w)).length/words.length>=0.8) return true;
+  const n = normGamme(modele);
+  const top20count = gamme.modeles.filter(m => m.inTop20).length;
+  const candidates = top20count >= 20 ? gamme.modeles.filter(m => m.inTop20) : gamme.modeles;
+  for (const gm of candidates) {
+    const key = gm.key_normalisee;
+    if (!key) continue;
+    if (n === key) return true;
+    if (n.includes(key) || key.includes(n)) return true;
+    const mots = key.split(' ').filter(m => m.length > 2);
+    if (!mots.length) continue;
+    if (mots.filter(m => n.includes(m)).length / mots.length >= 0.8) return true;
   }
   return false;
 }
@@ -953,8 +956,7 @@ function Badge({ qty }: { qty: number }) {
 }
 function EcartCell({v}:{v:number|null}){
   if(v===null) return <span className="text-[#D1D5DB]">—</span>;
-  const cls=v<-5?'bg-green-100 text-green-700':v>5?'bg-red-100 text-red-700':'bg-gray-50 text-gray-500';
-  return <span className={`${cls} font-semibold px-1.5 py-0.5 rounded`}>{v>0?'+':''}{v.toFixed(1)}%</span>;
+  return <span className="font-semibold text-[#374151]">{v>0?'+':''}{v.toFixed(1)}%</span>;
 }
 
 const TH  = 'px-3 py-2.5 text-left  text-xs font-semibold text-[#6B7280] bg-[#F5F5F5] whitespace-nowrap';
@@ -1719,12 +1721,21 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     return null;
   },[selectedFamily,detectedFamilies]);
   const currentGamme=useMemo(()=>pepiteLocaleFamily?gammes[pepiteLocaleFamily]||null:null,[pepiteLocaleFamily,gammes]);
+  const hasAnyGamme=useMemo(()=>detectedFamilies.some(f=>!!gammes[f]),[detectedFamilies,gammes]);
   const pepiteLocaleSet=useMemo(():Set<string>=>{
-    if(!currentGamme) return new Set();
     const result=new Set<string>();
-    for(const s of stats){if(MIN3(s)&&!isInGamme(s.modele,currentGamme)) result.add(s.modele.toLowerCase());}
+    for(const s of stats){
+      if(!MIN3(s)) continue;
+      const famGamme=gammes[s.famille as FamilyCode]||null;
+      if(!famGamme) continue;
+      if(!isInGamme(s.modele,famGamme)){
+        console.log('[pépite] absent gamme:',s.modele,'famille:',s.famille,'nb_modeles:',famGamme.modeles.length,'top20:',famGamme.nb_top20);
+        result.add(s.modele.toLowerCase());
+      }
+    }
+    console.log('[pépite] set size:',result.size,'sur',stats.filter(MIN3).length,'modèles qualifiés');
     return result;
-  },[stats,currentGamme]);
+  },[stats,gammes]);
 
   // Weighted avg EP gaps per table
   const rotEcartPA =useMemo(()=>wAvg(topRotations,s=>s.ecartEPA),[topRotations]);
@@ -2206,14 +2217,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             const rotPepCnt=topRotations.filter(s=>pepiteLocaleSet.has(s.modele.toLowerCase())).length;
             const hasRotEP=topRotations.some(s=>s.epMoyen!==null||s.epaMoyen!==null);
             const fmtEc=(v:number|null)=>v!==null?`${v>0?'+':''}${v.toFixed(1)}%`:'N/A';
-            const recoAchat=(v:number|null,ctx:string)=>v===null?null:v<-5
-              ?`💡 Reco achat — Sur ces ${ctx}, votre prix d'achat moyen est à ${fmtEc(v)} vs la cote EP achat. Vous avez de la marge pour oser racheter plus cher au comptoir et en sourcer davantage.`
-              :v>5?`💡 Reco achat — Sur ces ${ctx}, votre prix d'achat moyen est à ${fmtEc(v)} vs la cote EP achat. Attention, vous payez ces produits au-dessus de la cote — à surveiller.`
-              :`💡 Reco achat — Sur ces ${ctx}, votre prix d'achat moyen est à ${fmtEc(v)} vs la cote EP achat. Votre rachat est aligné cote, la marge d'oser est limitée.`;
-            const recoVente=(v:number|null,ctx:string)=>v===null?null:v<-5
-              ?`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(v)} vs la cote EP vente. Sur ces ${ctx} qui partent vite, vous pouvez monter le PV jusqu'à la cote sans perdre la rotation.`
-              :v>5?`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(v)} vs la cote EP vente. Vous vendez déjà au-dessus de la cote, profitez-en tant que la rotation tient.`
-              :`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(v)} vs la cote EP vente. Votre prix est aligné cote, la marge supplémentaire est limitée.`;
+            const recoAchat=(v:number|null,ctx:string)=>v===null?null:
+              `💡 Écart PA vs cote EP achat — Sur ces ${ctx}, votre prix d'achat moyen est à ${fmtEc(v)} vs la cote réseau. Acceptable si votre marché local le justifie, à surveiller selon vos objectifs de marge.`;
+            const recoVente=(v:number|null,ctx:string)=>v===null?null:
+              `💡 Écart PV vs cote EP vente — Sur ces ${ctx}, votre prix de vente moyen est à ${fmtEc(v)} vs la cote réseau. À vous de juger si cet écart traduit un positionnement local volontaire ou s'il mérite un ajustement.`;
             const ra=recoAchat(rotEcartPA,'rotations rapides');
             const rv=recoVente(rotEcartPV,'rotations rapides');
             return (
@@ -2247,13 +2254,13 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                         {rv&&<p>{rv}</p>}
                       </div>
                     )}
-                    {currentGamme&&rotPepCnt>0&&(
+                    {rotPepCnt>0&&(
                       <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-xs text-green-800">
-                        🌍 <strong>{rotPepCnt} modèle{rotPepCnt>1?'s':''} absent{rotPepCnt>1?'s':''} de la gamme réseau {pepiteLocaleFamily}</strong>. À intégrer en sourcing prioritaire au comptoir et à proposer en remontée d&apos;information à votre animateur réseau.
+                        🌍 <strong>{rotPepCnt} modèle{rotPepCnt>1?'s':''} absent{rotPepCnt>1?'s':''} de la gamme réseau {pepiteLocaleFamily||'nationale'}</strong>. À intégrer en sourcing prioritaire au comptoir et à proposer en remontée d&apos;information à votre animateur réseau.
                       </div>
                     )}
-                    {!currentGamme&&pepiteLocaleFamily&&(['JCDR','JCON','TLCE','JPOR'] as string[]).includes(pepiteLocaleFamily)&&(
-                      <p className="text-xs text-[#9CA3AF] italic px-1">💡 Importez la gamme réseau {pepiteLocaleFamily} pour identifier les pépites locales absentes de la référence nationale.</p>
+                    {!hasAnyGamme&&detectedFamilies.some(f=>(['JCDR','JCON','TLCE','JPOR'] as string[]).includes(f))&&(
+                      <p className="text-xs text-[#9CA3AF] italic px-1">💡 Importez la gamme réseau pour identifier les pépites locales absentes de la référence nationale.</p>
                     )}
                   </div>
                 }
@@ -2266,14 +2273,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             const volPepCnt=topVolume.filter(s=>pepiteLocaleSet.has(s.modele.toLowerCase())).length;
             const hasVolEP=topVolume.some(s=>s.epMoyen!==null||s.epaMoyen!==null);
             const fmtEc=(v:number|null)=>v!==null?`${v>0?'+':''}${v.toFixed(1)}%`:'N/A';
-            const ra=volEcartPA===null?null:volEcartPA<-5
-              ?`💡 Reco achat — Sur ces modèles à fort volume, votre prix d'achat moyen est à ${fmtEc(volEcartPA)} vs la cote EP achat. Vous avez de la marge pour oser racheter plus cher au comptoir.`
-              :volEcartPA>5?`💡 Reco achat — Sur ces modèles à fort volume, votre prix d'achat moyen est à ${fmtEc(volEcartPA)} vs la cote EP achat. Attention, vous payez ces produits au-dessus de la cote — à surveiller.`
-              :`💡 Reco achat — Sur ces modèles à fort volume, votre prix d'achat moyen est à ${fmtEc(volEcartPA)} vs la cote EP achat. Votre rachat est aligné cote, la marge d'oser est limitée.`;
-            const rv=volEcartPV===null?null:volEcartPV<-5
-              ?`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(volEcartPV)} vs la cote EP vente. Sur ces modèles à fort volume, vous pouvez monter le PV jusqu'à la cote.`
-              :volEcartPV>5?`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(volEcartPV)} vs la cote EP vente. Vous vendez déjà au-dessus de la cote, profitez-en.`
-              :`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(volEcartPV)} vs la cote EP vente. Votre prix est aligné cote, la marge supplémentaire est limitée.`;
+            const ra=volEcartPA===null?null:
+              `💡 Écart PA vs cote EP achat — Sur ces modèles à fort volume, votre prix d'achat moyen est à ${fmtEc(volEcartPA)} vs la cote réseau. Acceptable si votre marché local le justifie, à surveiller selon vos objectifs de marge.`;
+            const rv=volEcartPV===null?null:
+              `💡 Écart PV vs cote EP vente — Sur ces modèles à fort volume, votre prix de vente moyen est à ${fmtEc(volEcartPV)} vs la cote réseau. À vous de juger si cet écart traduit un positionnement local volontaire ou s'il mérite un ajustement.`;
             return (
               <SectionTable title="📦 TOP VENTES EN VOLUME" cnt={`Top ${topVolume.length} · min 3 ventes`}
                 rows={topVolume}
@@ -2295,13 +2298,13 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                         {rv&&<p>{rv}</p>}
                       </div>
                     )}
-                    {currentGamme&&volPepCnt>0&&(
+                    {volPepCnt>0&&(
                       <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-xs text-green-800">
-                        🌍 <strong>{volPepCnt} modèle{volPepCnt>1?'s':''} absent{volPepCnt>1?'s':''} de la gamme réseau {pepiteLocaleFamily}</strong>. À intégrer en sourcing prioritaire au comptoir et à proposer en remontée à votre animateur réseau.
+                        🌍 <strong>{volPepCnt} modèle{volPepCnt>1?'s':''} absent{volPepCnt>1?'s':''} de la gamme réseau {pepiteLocaleFamily||'nationale'}</strong>. À intégrer en sourcing prioritaire au comptoir et à proposer en remontée à votre animateur réseau.
                       </div>
                     )}
-                    {!currentGamme&&pepiteLocaleFamily&&(['JCDR','JCON','TLCE','JPOR'] as string[]).includes(pepiteLocaleFamily)&&(
-                      <p className="text-xs text-[#9CA3AF] italic px-1">💡 Importez la gamme réseau {pepiteLocaleFamily} pour identifier les pépites locales absentes de la référence nationale.</p>
+                    {!hasAnyGamme&&detectedFamilies.some(f=>(['JCDR','JCON','TLCE','JPOR'] as string[]).includes(f))&&(
+                      <p className="text-xs text-[#9CA3AF] italic px-1">💡 Importez la gamme réseau pour identifier les pépites locales absentes de la référence nationale.</p>
                     )}
                   </div>
                 }
@@ -2314,14 +2317,10 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
             const coeffPepCnt=topCoeff.filter(s=>pepiteLocaleSet.has(s.modele.toLowerCase())).length;
             const hasCoeffEP=topCoeff.some(s=>s.epMoyen!==null||s.epaMoyen!==null);
             const fmtEc=(v:number|null)=>v!==null?`${v>0?'+':''}${v.toFixed(1)}%`:'N/A';
-            const ra=coeffEcartPA===null?null:coeffEcartPA<-5
-              ?`💡 Reco achat — Sur ces modèles à fort coefficient, votre prix d'achat moyen est à ${fmtEc(coeffEcartPA)} vs la cote EP achat. Vous avez de la marge pour oser racheter plus cher et en sourcer davantage.`
-              :coeffEcartPA>5?`💡 Reco achat — Sur ces modèles à fort coefficient, votre prix d'achat moyen est à ${fmtEc(coeffEcartPA)} vs la cote EP achat. Attention, vous payez ces produits au-dessus de la cote — à surveiller.`
-              :`💡 Reco achat — Sur ces modèles à fort coefficient, votre prix d'achat moyen est à ${fmtEc(coeffEcartPA)} vs la cote EP achat. Votre rachat est aligné cote, la marge d'oser est limitée.`;
-            const rv=coeffEcartPV===null?null:coeffEcartPV<-5
-              ?`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(coeffEcartPV)} vs la cote EP vente. Sur ces modèles à fort coefficient, vous pouvez monter le PV jusqu'à la cote.`
-              :coeffEcartPV>5?`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(coeffEcartPV)} vs la cote EP vente. Vous vendez déjà au-dessus de la cote, profitez-en tant que la rotation tient.`
-              :`💡 Reco vente — Votre prix de vente moyen est à ${fmtEc(coeffEcartPV)} vs la cote EP vente. Votre prix est aligné cote, la marge supplémentaire est limitée.`;
+            const ra=coeffEcartPA===null?null:
+              `💡 Écart PA vs cote EP achat — Sur ces modèles à fort coefficient, votre prix d'achat moyen est à ${fmtEc(coeffEcartPA)} vs la cote réseau. Acceptable si votre marché local le justifie, à surveiller selon vos objectifs de marge.`;
+            const rv=coeffEcartPV===null?null:
+              `💡 Écart PV vs cote EP vente — Sur ces modèles à fort coefficient, votre prix de vente moyen est à ${fmtEc(coeffEcartPV)} vs la cote réseau. À vous de juger si cet écart traduit un positionnement local volontaire ou s'il mérite un ajustement.`;
             return (
               <div className="space-y-2.5">
                 <div>
@@ -2354,13 +2353,13 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                     {rv&&<p>{rv}</p>}
                   </div>
                 )}
-                {currentGamme&&coeffPepCnt>0&&(
+                {coeffPepCnt>0&&(
                   <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-xs text-green-800">
-                    🌍 <strong>{coeffPepCnt} modèle{coeffPepCnt>1?'s':''} absent{coeffPepCnt>1?'s':''} de la gamme réseau {pepiteLocaleFamily}</strong>. À intégrer en sourcing prioritaire au comptoir.
+                    🌍 <strong>{coeffPepCnt} modèle{coeffPepCnt>1?'s':''} absent{coeffPepCnt>1?'s':''} de la gamme réseau {pepiteLocaleFamily||'nationale'}</strong>. À intégrer en sourcing prioritaire au comptoir.
                   </div>
                 )}
-                {!currentGamme&&pepiteLocaleFamily&&(['JCDR','JCON','TLCE','JPOR'] as string[]).includes(pepiteLocaleFamily)&&(
-                  <p className="text-xs text-[#9CA3AF] italic px-1">💡 Importez la gamme réseau {pepiteLocaleFamily} pour identifier les pépites locales absentes de la référence nationale.</p>
+                {!hasAnyGamme&&detectedFamilies.some(f=>(['JCDR','JCON','TLCE','JPOR'] as string[]).includes(f))&&(
+                  <p className="text-xs text-[#9CA3AF] italic px-1">💡 Importez la gamme réseau pour identifier les pépites locales absentes de la référence nationale.</p>
                 )}
               </div>
             );
