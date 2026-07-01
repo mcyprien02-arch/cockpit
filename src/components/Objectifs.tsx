@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { PAPAction, ActionAxe, StoredStatut } from '@/types';
+import { getDelaiMoyenParFamille, detectFamilyCode } from './JournalAchatVente';
 
 interface Props { magasinNom: string; onAddAction?: (action: PAPAction) => void; }
 
@@ -88,24 +89,35 @@ export function getVisionContext(magasinNom: string): string {
     if (os) {
       const obj = JSON.parse(os) as ObjData;
       if (obj.familles?.length) {
+        const delais = getDelaiMoyenParFamille(magasinNom);
+        const calcSourcing = (f: ObjFamille): number => {
+          if (f.tauxMarge <= 0) return 0;
+          const t = f.tauxMarge / 100;
+          const base = Math.round((f.margeCible - f.margeRealisee) / t);
+          if (f.stockInitial > 0) {
+            const fc = detectFamilyCode(f.famille);
+            const delai = fc !== 'UNKNOWN' ? (delais[fc] ?? null) : null;
+            if (delai !== null && delai > 0) {
+              return Math.max(0, Math.round(base - f.stockInitial * Math.min(1, 30 / delai)));
+            }
+          }
+          return Math.max(0, base);
+        };
         const lines = obj.familles
           .filter(f => f.famille && f.margeCible > 0)
           .map(f => {
             const avanc = f.margeCible > 0 ? Math.round(f.margeRealisee / f.margeCible * 100) : 0;
-            const sourcingRestant = f.tauxMarge > 0 ? Math.max(0, Math.round((f.margeCible - f.margeRealisee) / (f.tauxMarge / 100))) : 0;
+            const src = calcSourcing(f);
             const sourcingStr = f.margeRealisee >= f.margeCible
               ? ' · sourcing: objectif atteint ✓'
-              : sourcingRestant > 0 ? ` · sourcing restant: +${sourcingRestant.toLocaleString('fr-FR')}€` : '';
+              : src > 0 ? ` · sourcing restant: +${src.toLocaleString('fr-FR')}€` : '';
             return `  - ${f.famille} : cible ${f.margeCible.toLocaleString('fr-FR')}€ · réalisé ${f.margeRealisee.toLocaleString('fr-FR')}€ (${avanc}%)${sourcingStr}`;
           });
         if (lines.length) {
           const totalMarge = obj.familles.reduce((s, f) => s + (f.margeCible || 0), 0);
           const totalCA = obj.familles.reduce((s, f) => f.tauxMarge > 0 ? s + f.margeCible / (f.tauxMarge / 100) : s, 0);
           const tauxPondere = totalCA > 0 ? Math.round((totalMarge / totalCA) * 1000) / 10 : 0;
-          const sourcingRestantTotal = obj.familles.reduce((s, f) => {
-            if (f.tauxMarge <= 0) return s;
-            return s + Math.max(0, Math.round((f.margeCible - f.margeRealisee) / (f.tauxMarge / 100)));
-          }, 0);
+          const sourcingRestantTotal = obj.familles.reduce((s, f) => s + calcSourcing(f), 0);
           if (tauxPondere > 0) parts.push(`Taux de marge pondéré global : ${tauxPondere}%`);
           if (sourcingRestantTotal > 0) parts.push(`Sourcing restant ce mois : ${sourcingRestantTotal.toLocaleString('fr-FR')} €`);
           parts.push(`Objectifs mensuels (${currentMonth}) :\n${lines.join('\n')}`);
@@ -154,6 +166,12 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
   const [showHistorique, setShowHistorique] = useState(false);
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
   const [confirmCloture, setConfirmCloture] = useState(false);
+
+  // Délais moyens par famille issus du Journal achat-vente (FamilyCode → jours | null)
+  const [delaisParFamille, setDelaisParFamille] = useState<Record<string, number | null>>({});
+  useEffect(() => {
+    if (magasinNom) setDelaisParFamille(getDelaiMoyenParFamille(magasinNom));
+  }, [magasinNom]);
 
   // Reload CA cible when magasin changes
   useEffect(() => {
@@ -259,12 +277,31 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
     return Math.round(f.margeCible / (f.tauxMarge / 100));
   }
 
-  // Sourcing restant = (Objectif marge − Marge réalisée) ÷ Taux de marge
-  // Stock initial affiché en contexte mais sans effet sur ce calcul
+  // Délai moyen de rotation (jours) pour la famille de f, ou null si non disponible
+  function getDelaiInfo(f: ObjFamille): { delai: number | null; partPct: number | null } {
+    if (f.stockInitial <= 0 || !f.famille) return { delai: null, partPct: null };
+    const fc = detectFamilyCode(f.famille);
+    if (fc === 'UNKNOWN') return { delai: null, partPct: null };
+    const delai = delaisParFamille[fc] ?? null;
+    if (delai === null || delai <= 0) return { delai: null, partPct: null };
+    return { delai, partPct: Math.min(100, Math.round((30 / delai) * 100)) };
+  }
+
+  // Sourcing restant = (margeCible − margeRealisee) / tauxMarge
+  // Si stock initial > 0 et délai Journal disponible : pondéré par Part = min(1, 30/délai)
+  // Le franchisé voit clairement la part utilisée dans l'interface
   function sourcingRestant(f: ObjFamille): number {
     if (f.margeCible <= 0 || f.tauxMarge <= 0) return 0;
     const t = f.tauxMarge / 100;
-    return Math.max(0, Math.round((f.margeCible - f.margeRealisee) / t));
+    const base = Math.round((f.margeCible - f.margeRealisee) / t);
+    if (f.stockInitial > 0) {
+      const { delai } = getDelaiInfo(f);
+      if (delai !== null && delai > 0) {
+        const part = Math.min(1, 30 / delai);
+        return Math.max(0, Math.round(base - f.stockInitial * part));
+      }
+    }
+    return Math.max(0, base);
   }
 
   function avancement(f: ObjFamille): number {
@@ -410,6 +447,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                 {familles.map(f => {
                   const stockCible = stockNecessaire(f);
                   const sourcing = sourcingRestant(f);
+                  const delaiInfo = getDelaiInfo(f);
                   const avanc = avancement(f);
                   const promo = budgetPromo(f);
                   const atteint = f.margeCible > 0 && f.margeRealisee >= f.margeCible;
@@ -473,16 +511,25 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-right bg-orange-50/40">
-                        <span className={`font-semibold ${
-                          atteint ? 'text-green-600'
-                          : sourcing > 0 ? 'text-orange-600'
-                          : 'text-[#9CA3AF]'
-                        }`}>
-                          {f.margeCible <= 0 ? '—'
-                            : atteint ? '✓ Atteint'
-                            : sourcing > 0 ? `+${sourcing.toLocaleString('fr-FR')} €`
-                            : '—'}
-                        </span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className={`font-semibold ${
+                            atteint ? 'text-green-600'
+                            : sourcing > 0 ? 'text-orange-600'
+                            : 'text-[#9CA3AF]'
+                          }`}>
+                            {f.margeCible <= 0 ? '—'
+                              : atteint ? '✓ Atteint'
+                              : sourcing > 0 ? `+${sourcing.toLocaleString('fr-FR')} €`
+                              : '—'}
+                          </span>
+                          {f.stockInitial > 0 && !atteint && f.margeCible > 0 && (
+                            <span className="text-[10px] text-[#9CA3AF] leading-tight text-right">
+                              {delaiInfo.delai !== null
+                                ? `Délai ${delaiInfo.delai}j → ${delaiInfo.partPct}% stock`
+                                : 'Délai non disponible'}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <span className={`font-semibold ${promo > 0 ? 'text-green-600' : 'text-[#9CA3AF]'}`}>

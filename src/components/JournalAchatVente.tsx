@@ -146,7 +146,7 @@ function normSF(s: string): string {
 // ── family detection — SOURCE OF TRUTH: colonne Sous_famille CSV ─────────────
 // Central mapping: exact Athéna CSV values (normalized) → FamilyCode
 // Order in inclusion fallback is critical (BOPI before BOR, JPOR before JCDR/JCON)
-function detectFamilyCode(s: string): FamilyCode {
+export function detectFamilyCode(s: string): FamilyCode {
   if (!s || !s.trim()) return 'UNKNOWN';
 
   // Pass-through: r.f already contains a FamilyCode short code
@@ -833,6 +833,30 @@ function wAvg(rows: ModelStats[], getV: (s: ModelStats)=>number|null): number|nu
 }
 
 // ── exported helper for AssistantIA ──────────────────────────────────────────
+// Retourne le délai moyen de rotation (en jours) par FamilyCode,
+// calculé sur toutes les ventes du journal importé dans localStorage.
+// Retourne null pour une famille sans données de délai renseignées.
+export function getDelaiMoyenParFamille(magasinNom: string): Record<string, number | null> {
+  try {
+    const s = localStorage.getItem(`journal_analyse_${magasinNom}`);
+    if (!s) return {};
+    const stored = JSON.parse(s) as StoredImport;
+    if (!Array.isArray(stored.rows)) return {};
+    const groups = new Map<string, number[]>();
+    for (const r of stored.rows) {
+      if (r.dv !== null && r.dv > 0) {
+        if (!groups.has(r.f)) groups.set(r.f, []);
+        groups.get(r.f)!.push(r.dv);
+      }
+    }
+    const result: Record<string, number | null> = {};
+    for (const [fc, dvs] of groups.entries()) {
+      result[fc] = dvs.length > 0 ? Math.round(dvs.reduce((a, v) => a + v, 0) / dvs.length) : null;
+    }
+    return result;
+  } catch { return {}; }
+}
+
 export function getJournalContext(magasinNom: string): string {
   try {
     const s=localStorage.getItem(`journal_analyse_${magasinNom}`);
