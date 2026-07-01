@@ -13,9 +13,10 @@ interface VisionData {
   valeur2: string;
   valeur3: string;
   capCommercial: string;
+  caAnnuelCible: number;
 }
 
-const DEFAULT_VISION: VisionData = { vision3ans: '', valeur1: '', valeur2: '', valeur3: '', capCommercial: '' };
+const DEFAULT_VISION: VisionData = { vision3ans: '', valeur1: '', valeur2: '', valeur3: '', capCommercial: '', caAnnuelCible: 0 };
 const VISION_KEY = (nom: string) => `vision_longterme_${nom}`;
 
 function loadVision(magasinNom: string): VisionData {
@@ -55,6 +56,7 @@ export function getVisionContext(magasinNom: string): string {
       const valeurs = [v.valeur1, v.valeur2, v.valeur3].filter(x => x?.trim());
       if (valeurs.length) parts.push(`Valeurs non-négociables : ${valeurs.join(', ')}`);
       if (v.capCommercial?.trim()) parts.push(`Cap commercial annuel : ${v.capCommercial}`);
+      if (v.caAnnuelCible > 0) parts.push(`CA annuel cible : ${v.caAnnuelCible.toLocaleString('fr-FR')} €`);
     }
 
     // Objectifs mensuels (mois courant)
@@ -72,7 +74,19 @@ export function getVisionContext(magasinNom: string): string {
             const besoinStr = stockCible > 0 ? ` · besoin sourcing: ${besoin > 0 ? '+' + besoin.toLocaleString('fr-FR') + '€' : 'couvert'}` : '';
             return `  - ${f.famille} : cible ${f.margeCible.toLocaleString('fr-FR')}€ · réalisé ${f.margeRealisee.toLocaleString('fr-FR')}€ (${avanc}%)${besoinStr}`;
           });
-        if (lines.length) parts.push(`Objectifs mensuels (${currentMonth}) :\n${lines.join('\n')}`);
+        if (lines.length) {
+          const totalMarge = obj.familles.reduce((s, f) => s + (f.margeCible || 0), 0);
+          const totalCA = obj.familles.reduce((s, f) => f.tauxMarge > 0 ? s + f.margeCible / (f.tauxMarge / 100) : s, 0);
+          const tauxPondere = totalCA > 0 ? Math.round((totalMarge / totalCA) * 1000) / 10 : 0;
+          const besoinMensuel = obj.familles.reduce((s, f) => {
+            const ca = f.tauxMarge > 0 ? f.margeCible / (f.tauxMarge / 100) : 0;
+            return s + Math.max(0, ca - (f.stockInitial ?? 0));
+          }, 0);
+          const sourcing12 = Math.round(besoinMensuel * 12);
+          if (tauxPondere > 0) parts.push(`Taux de marge pondéré global (mix familles) : ${tauxPondere}%`);
+          if (sourcing12 > 0) parts.push(`Besoin sourcing annualisé (×12 mois) : ${sourcing12.toLocaleString('fr-FR')} €`);
+          parts.push(`Objectifs mensuels (${currentMonth}) :\n${lines.join('\n')}`);
+        }
       }
     }
 
@@ -194,7 +208,7 @@ export default function Objectifs({ magasinNom }: Props) {
   }, [month, magasinNom]);
 
   // Vision handlers
-  function updateVision(field: keyof VisionData, value: string) {
+  function updateVision(field: keyof VisionData, value: string | number) {
     const next = { ...vision, [field]: value };
     setVision(next);
     persistVision(magasinNom, next);
@@ -269,6 +283,20 @@ export default function Objectifs({ magasinNom }: Props) {
   const totalAvancement = totalCible > 0 ? Math.round((totalRealisee / totalCible) * 100) : 0;
   const totalBudgetPromo = familles.reduce((s, f) => s + budgetPromo(f), 0);
 
+  // Taux de marge pondéré = Σmarge / ΣCA_cible (pondéré par volume CA)
+  const totalCAcible = familles.reduce((s, f) => s + stockNecessaire(f), 0);
+  const tauxMargePondere = totalCAcible > 0 ? Math.round((totalCible / totalCAcible) * 1000) / 10 : 0;
+
+  // Besoin sourcing mensuel global
+  const besoinSourcingMensuel = familles.reduce((s, f) => s + besoinSourcing(f), 0);
+
+  // Synthèse annuelle (si CA annuel cible renseigné)
+  const caAnnuel = vision.caAnnuelCible || 0;
+  const margeAnnuelleProjetee = caAnnuel > 0 && tauxMargePondere > 0
+    ? Math.round(caAnnuel * tauxMargePondere / 100)
+    : 0;
+  const besoinSourcingAnnuel = Math.round(besoinSourcingMensuel * 12);
+
   const statusMsg = totalCible === 0 ? null
     : totalAvancement >= 90
       ? { msg: 'Objectif quasiment atteint — budget promo disponible !', cls: 'bg-green-50 border-green-300 text-green-700', icon: '🟢' }
@@ -321,6 +349,25 @@ export default function Objectifs({ magasinNom }: Props) {
                 placeholder={`Valeur ${i + 1}`}
               />
             ))}
+          </div>
+        </div>
+
+        {/* CA annuel cible */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+          <div>
+            <label className="text-sm font-semibold text-[#1A1A1A] block mb-1.5">
+              💰 CA annuel cible (€)
+            </label>
+            <input
+              type="number"
+              value={vision.caAnnuelCible || ''}
+              onChange={e => updateVision('caAnnuelCible', parseFloat(e.target.value) || 0)}
+              className="w-full bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
+              placeholder="Ex : 1 200 000"
+            />
+          </div>
+          <div className="text-xs text-[#6B7280] leading-relaxed pb-2">
+            Utilisé pour calibrer la marge annuelle projetée et le besoin sourcing global.
           </div>
         </div>
 
@@ -574,6 +621,43 @@ export default function Objectifs({ magasinNom }: Props) {
             </p>
           )}
         </div>
+
+        {/* Annual synthesis */}
+        {(tauxMargePondere > 0 || besoinSourcingAnnuel > 0 || caAnnuel > 0) && (
+          <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4">
+            <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-4">Synthèse annuelle</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className={`text-xl font-black ${tauxMargePondere > 0 ? 'text-[#1A1A1A]' : 'text-[#9CA3AF]'}`}>
+                  {tauxMargePondere > 0 ? `${tauxMargePondere}%` : '—'}
+                </div>
+                <div className="text-xs text-[#6B7280] mt-0.5">Taux marge pondéré</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-xl font-black ${caAnnuel > 0 ? 'text-[#1A1A1A]' : 'text-[#9CA3AF]'}`}>
+                  {caAnnuel > 0 ? `${caAnnuel.toLocaleString('fr-FR')} €` : '—'}
+                </div>
+                <div className="text-xs text-[#6B7280] mt-0.5">CA annuel cible</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-xl font-black ${margeAnnuelleProjetee > 0 ? 'text-green-600' : 'text-[#9CA3AF]'}`}>
+                  {margeAnnuelleProjetee > 0 ? `${margeAnnuelleProjetee.toLocaleString('fr-FR')} €` : '—'}
+                </div>
+                <div className="text-xs text-[#6B7280] mt-0.5">Marge annuelle projetée</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-xl font-black ${besoinSourcingAnnuel > 0 ? 'text-orange-600' : 'text-[#9CA3AF]'}`}>
+                  {besoinSourcingAnnuel > 0 ? `+${besoinSourcingAnnuel.toLocaleString('fr-FR')} €` : '—'}
+                </div>
+                <div className="text-xs text-[#6B7280] mt-0.5">Sourcing NET annualisé</div>
+              </div>
+            </div>
+            <p className="text-[10px] text-[#9CA3AF] italic mt-3 border-t border-[#E0E0E0] pt-3">
+              Taux marge pondéré = marge cible totale / CA cible total (mix familles du mois). Sourcing NET annualisé = besoin mensuel × 12.
+              {margeAnnuelleProjetee > 0 && ` Marge annuelle = CA annuel cible × taux pondéré (${tauxMargePondere}%).`}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── PAP CREATION MODAL ─────────────────────────────────────────────── */}
