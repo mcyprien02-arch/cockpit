@@ -338,6 +338,23 @@ function getSeuilDelaiPepite(sousfamille: string): number {
   return 30;
 }
 
+// ── rotation rapide threshold per FamilyCode ─────────────────────────────────
+function getSeuilRotationRapide(familyCode: string): number {
+  switch(familyCode) {
+    case 'JCDR': return 15;
+    case 'JPOR': return 15;
+    case 'TLCE': return 20;
+    case 'ITAB': return 30;
+    case 'JCON': return 30;
+    case 'IPOR': return 45;
+    case 'BMAR': return 60;
+    case 'BMON': return 60;
+    case 'BOR':  return 60;
+    case 'BOPI': return 60;
+    default:     return 30;
+  }
+}
+
 function detectIPORUsage(libelle: string): string {
   const u = libelle.toUpperCase();
   const keys = ['GTX','RTX','RYZEN 7','RYZEN 9',' I7 ',' I9 ','16 GO','32 GO','GAMING','ROG','PREDATOR','OMEN','TUF'];
@@ -1736,14 +1753,15 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
   const stats=useMemo(()=>computeStats(filteredRows),[filteredRows]);
   const MIN3=(s: ModelStats)=>s.qteVendue>=3;
 
-  // Per-model pépite threshold: 90j for jewelry/maro/watches, 30j for tech
-  const topRotations=useMemo(()=>{
-    if (stats.length>0) {
-      const sample=stats[0];
-      console.log('[DEBUG pépites]',{famille:sample.famille,seuil_applique:getSeuilDelaiPepite(sample.famille)});
-    }
-    return stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<getSeuilDelaiPepite(s.famille)).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999));
-  },[stats]);
+  // Dominant family → rotation seuil: selectedFamily if set, else most-represented detected family
+  const seuilRotationRapide=useMemo(()=>{
+    const fc=selectedFamily!=='all'?selectedFamily:(detectedFamilies[0]??'OTHER');
+    return {seuil:getSeuilRotationRapide(fc),fc};
+  },[selectedFamily,detectedFamilies]);
+
+  const topRotations=useMemo(()=>
+    stats.filter(s=>MIN3(s)&&s.delaiMoyen!==null&&s.delaiMoyen<seuilRotationRapide.seuil).sort((a,b)=>(a.delaiMoyen??999)-(b.delaiMoyen??999))
+  ,[stats,seuilRotationRapide]);
   const topVolume=useMemo(()=>[...stats].filter(MIN3).sort((a,b)=>b.qteVendue-a.qteVendue).slice(0,15),[stats]);
   const pepites=useMemo(()=>{
     const rotSet=new Set(topRotations.filter(r=>r.qteVendue>=5).map(r=>r.modele.toLowerCase()));
@@ -1969,22 +1987,16 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
     const sample=topRotations.slice(0,5);
     const rows=sample.map(s=>{
       const raw=s.famille||'';
-      const applied=getSeuilDelaiPepite(raw);
       const fc=detectFamilyCode(raw);
-      const expected=(['BOR','BOPI','BMAR','BMON'] as string[]).includes(fc)?90:30;
-      return {modele:s.modele,raw,applied,fc,expected,coherent:applied===expected};
+      const expected=getSeuilRotationRapide(fc);
+      return {modele:s.modele,raw,fc,applied:seuilRotationRapide.seuil,expected,coherent:seuilRotationRapide.seuil===expected};
     });
-    const titleSeuil=selectedFamily!=='all'&&(['BOR','BOPI','BMAR','BMON'] as string[]).includes(selectedFamily)?90:30;
     const mismatchCount=topRotations.filter(s=>{
-      const raw=s.famille||'';
-      const applied=getSeuilDelaiPepite(raw);
-      const fc=detectFamilyCode(raw);
-      const expected=(['BOR','BOPI','BMAR','BMON'] as string[]).includes(fc)?90:30;
-      return applied!==expected;
+      const fc=detectFamilyCode(s.famille||'');
+      return seuilRotationRapide.seuil!==getSeuilRotationRapide(fc);
     }).length;
-    const titleFilterMismatch=rows.some(r=>r.applied!==titleSeuil);
-    return {rows,titleSeuil,mismatchCount,titleFilterMismatch,total:topRotations.length};
-  },[topRotations,selectedFamily]);
+    return {rows,dominantFc:seuilRotationRapide.fc,seuil:seuilRotationRapide.seuil,mismatchCount,total:topRotations.length};
+  },[topRotations,seuilRotationRapide]);
 
   // ACTION 2: family-aware brand/platform widget data
   const topBrands=useMemo(()=>{
@@ -2695,28 +2707,38 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                 <p className="font-bold text-rose-800 text-sm">🔍 DEBUG — Seuil « rotation rapide » : cohérence famille / seuil appliqué / titre</p>
 
                 <div className="space-y-1">
-                  <p className="font-semibold text-rose-700">1 — DÉTECTION FAMILLE (source : colonne sous-famille CSV) :</p>
+                  <p className="font-semibold text-rose-700">1 — DÉTECTION FAMILLE :</p>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
                     <span>Filtre actif (selectedFamily) :</span>
                     <span className="font-semibold">{selectedFamily}</span>
-                    <span>Familles détectées :</span>
+                    <span>Familles détectées (ordre décroissant) :</span>
                     <span className="font-semibold">[{detectedFamilies.join(', ')||'aucune'}]</span>
-                    <span>Type de valeur passée au filtre :</span>
-                    <span className="font-semibold">s.famille = texte brut CSV — <strong>pas</strong> le FamilyCode</span>
+                    <span>Famille dominante utilisée :</span>
+                    <span className="font-semibold font-mono">{debugSeuilRotation.dominantFc}</span>
+                    <span>Seuil résultant :</span>
+                    <span className="font-semibold">{debugSeuilRotation.seuil}j — via getSeuilRotationRapide({debugSeuilRotation.dominantFc})</span>
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <p className="font-semibold text-rose-700">2 — MAPPING DÉFINI (getSeuilDelaiPepite) :</p>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
-                    <span>Méthode :</span>
-                    <span className="font-semibold">Analyse textuelle (includes) sur texte brut CSV</span>
-                    <span>→ 90j si contient :</span>
-                    <span className="font-mono text-[10px] font-semibold">&apos;bijouterie or&apos; | &apos;plaqu&apos; | &apos;pierres&apos; | &apos;bopi&apos; | &apos;maroquinerie&apos; | &apos;montre&apos;</span>
-                    <span>→ 30j sinon :</span>
-                    <span className="font-semibold">toutes autres familles (défaut)</span>
-                    <span className="text-orange-700 font-semibold">⚠️ Risque :</span>
-                    <span className="font-semibold text-orange-700">Si Athena exporte le CODE court (BOR / BOPI) au lieu du libellé → seuil 30j au lieu de 90j</span>
+                  <p className="font-semibold text-rose-700">2 — MAPPING DÉFINI (getSeuilRotationRapide) :</p>
+                  <div className="overflow-x-auto rounded-lg border border-rose-200">
+                    <table className="text-[10px] w-full border-collapse min-w-[320px]">
+                      <thead><tr className="bg-rose-100">
+                        {['FamilyCode','Seuil (j)','Famille'].map(h=>(
+                          <th key={h} className="px-2 py-1 text-left font-semibold text-rose-800">{h}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {[['JCDR','15','Jeux CDR'],['JPOR','15','Jeux portable'],['TLCE','20','Téléphonie'],['ITAB','30','Informatique / Tablettes'],['JCON','30','Console de jeux'],['IPOR','45','Info portable'],['BMAR','60','Maroquinerie'],['BMON','60','Montres'],['BOR','60','Bijouterie or'],['BOPI','60','Bijouterie fantaisie'],['OTHER','30','Défaut']].map(([fc,s,lib],i)=>(
+                          <tr key={fc} className={`${i%2===0?'bg-white':'bg-rose-50'} ${fc===debugSeuilRotation.dominantFc?'ring-1 ring-rose-400 bg-rose-100':''}`}>
+                            <td className="px-2 py-1 font-mono font-semibold">{fc}{fc===debugSeuilRotation.dominantFc?' ◀':''}</td>
+                            <td className="px-2 py-1 font-semibold text-center">{s}j</td>
+                            <td className="px-2 py-1 text-[#6B7280]">{lib}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 
@@ -2726,7 +2748,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                     <div className="overflow-x-auto rounded-lg border border-rose-200">
                       <table className="text-[10px] w-full border-collapse min-w-[580px]">
                         <thead><tr className="bg-rose-100">
-                          {['Modèle','Famille brute CSV','FamilyCode détecté','Seuil appliqué','Seuil attendu','Verdict'].map(h=>(
+                          {['Modèle','Famille brute CSV','FamilyCode détecté','Seuil appliqué (dominant)','Seuil attendu (propre FC)','Verdict'].map(h=>(
                             <th key={h} className="px-2 py-1 text-left font-semibold text-rose-800">{h}</th>
                           ))}
                         </tr></thead>
@@ -2737,40 +2759,43 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                             <td className="px-2 py-1.5 font-semibold">{d.fc}</td>
                             <td className="px-2 py-1.5 font-semibold text-center">{d.applied}j</td>
                             <td className="px-2 py-1.5 font-semibold text-center">{d.expected}j</td>
-                            <td className={`px-2 py-1.5 font-semibold ${d.coherent?'text-green-700':'text-red-600'}`}>{d.coherent?'✅ COHÉRENT':'❌ INCOHÉRENT'}</td>
+                            <td className={`px-2 py-1.5 font-semibold ${d.coherent?'text-green-700':'text-orange-600'}`}>{d.coherent?'✅ COHÉRENT':'⚠️ FC différent'}</td>
                           </tr>
                         ))}</tbody>
                       </table>
                     </div>
                   ):<p className="text-rose-700 italic pl-2">Aucun modèle dans Top Rotations — importez un journal ou ajustez la période.</p>}
+                  {debugSeuilRotation.mismatchCount>0&&(
+                    <p className="text-orange-700 pl-2 font-semibold">⚠️ {debugSeuilRotation.mismatchCount} modèle(s) ont un FamilyCode propre avec un seuil différent de la famille dominante — normal si journal multi-familles.</p>
+                  )}
                 </div>
 
                 <div className="space-y-1">
                   <p className="font-semibold text-rose-700">4 — TRAÇABILITÉ :</p>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
-                    <span>Famille transmise en paramètre :</span>
-                    <span className="font-semibold">✅ OUI — s.famille (texte brut) passé directement à getSeuilDelaiPepite(s.famille)</span>
-                    <span>Fallback si famille vide :</span>
-                    <span className="font-semibold">✅ OUI — retourne 30j si !sousfamille</span>
-                    <span>Seuil titre (FamilyCode hard-codé) :</span>
-                    <span className="font-semibold">{debugSeuilRotation.titleSeuil}j — liste [&apos;BOR&apos;,&apos;BOPI&apos;,&apos;BMAR&apos;,&apos;BMON&apos;] appliquée sur selectedFamily</span>
-                    <span>Seuil filtre effectif :</span>
-                    <span className="font-semibold">Variable par modèle — getSeuilDelaiPepite(s.famille) sur texte brut</span>
+                    <span>Méthode de détection famille :</span>
+                    <span className="font-semibold">selectedFamily si défini, sinon detectedFamilies[0] (famille dominante)</span>
+                    <span>Conversion FamilyCode → seuil :</span>
+                    <span className="font-semibold">✅ getSeuilRotationRapide(fc) — switch/case, basé sur FamilyCode, pas sur texte brut</span>
+                    <span>Fallback famille inconnue :</span>
+                    <span className="font-semibold">✅ 30j si FamilyCode inconnu (case default)</span>
+                    <span>Seuil appliqué uniformément :</span>
+                    <span className="font-semibold">✅ Un seul seuil par journal ({debugSeuilRotation.seuil}j) — cohérent avec le titre affiché</span>
                   </div>
                 </div>
 
-                <div className={`rounded-lg px-4 py-2.5 space-y-1 ${debugSeuilRotation.mismatchCount>0||debugSeuilRotation.titleFilterMismatch?'bg-red-100 border border-red-300':'bg-green-100 border border-green-300'}`}>
-                  <p className={`font-bold ${debugSeuilRotation.mismatchCount>0||debugSeuilRotation.titleFilterMismatch?'text-red-700':'text-green-700'}`}>5 — VERDICT :</p>
+                <div className={`rounded-lg px-4 py-2.5 space-y-1 ${debugSeuilRotation.mismatchCount>0?'bg-amber-50 border border-amber-300':'bg-green-100 border border-green-300'}`}>
+                  <p className={`font-bold ${debugSeuilRotation.mismatchCount>0?'text-amber-700':'text-green-700'}`}>5 — VERDICT :</p>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[#374151] pl-2">
-                    <span>Incohérences seuil appliqué vs attendu :</span>
-                    <span className={`font-semibold ${debugSeuilRotation.mismatchCount>0?'text-red-600':'text-green-700'}`}>{debugSeuilRotation.mismatchCount} / {debugSeuilRotation.total} modèles</span>
-                    <span>Titre ≠ filtre effectif :</span>
-                    <span className={`font-semibold ${debugSeuilRotation.titleFilterMismatch?'text-orange-600':'text-green-700'}`}>{debugSeuilRotation.titleFilterMismatch?`⚠️ OUI — titre affiche ${debugSeuilRotation.titleSeuil}j mais certains modèles filtrés sur base différente`:'✅ NON — cohérent'}</span>
-                    <span>Conclusion :</span>
-                    <span className={`font-semibold ${debugSeuilRotation.mismatchCount>0?'text-red-600':'text-green-700'}`}>
+                    <span>Famille dominante :</span>
+                    <span className="font-semibold font-mono">{debugSeuilRotation.dominantFc} → {debugSeuilRotation.seuil}j</span>
+                    <span>Titre = filtre :</span>
+                    <span className="font-semibold text-green-700">✅ OUI — titre et filtre utilisent tous les deux {debugSeuilRotation.seuil}j</span>
+                    <span>Modèles FC différent :</span>
+                    <span className={`font-semibold ${debugSeuilRotation.mismatchCount>0?'text-amber-600':'text-green-700'}`}>
                       {debugSeuilRotation.mismatchCount>0
-                        ?`❌ getSeuilDelaiPepite() analyse le texte brut — si Athena exporte les codes courts (BOR/BOPI...) le seuil sera 30j au lieu de 90j`
-                        :'✅ Les seuils sont cohérents pour les données importées'}
+                        ?`⚠️ ${debugSeuilRotation.mismatchCount}/${debugSeuilRotation.total} modèles ont un FC propre avec seuil différent — journal multi-familles, à valider métier`
+                        :`✅ 0/${debugSeuilRotation.total} — tous les modèles ont le même FC que la famille dominante`}
                     </span>
                   </div>
                 </div>
@@ -2778,7 +2803,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
               </div>
 
               <SectionTable
-                title={`⚡ TOP ROTATIONS (délai moyen < ${selectedFamily!=='all'&&['BOR','BOPI','BMAR','BMON'].includes(selectedFamily)?'90':'30'} jours)`}
+                title={`⚡ TOP ROTATIONS (délai < ${seuilRotationRapide.seuil}j) — Famille ${seuilRotationRapide.fc}`}
                 cnt={`${topRotations.length} modèle${topRotations.length!==1?'s':''} · min 3 ventes`}
                 rows={topRotations}
                 cols={[
@@ -2792,7 +2817,7 @@ export default function JournalAchatVente({ magasinNom, onAddAction, onNavigateT
                   {label:'PA vs EP achat',right:true,render:s=><EcartCell v={s.ecartEPA??null}/>},
                   {label:'PV vs EP vente',right:true,render:s=><EcartCell v={s.ecartEP??null}/>},
                 ]}
-                emptyMsg={`Aucun modèle (≥ 3 ventes) avec délai moyen < ${selectedFamily!=='all'&&['BOR','BOPI','BMAR','BMON'].includes(selectedFamily)?'90':'30'} jours sur cette période.`}
+                emptyMsg={`Aucun modèle (≥ 3 ventes) avec délai moyen < ${seuilRotationRapide.seuil}j sur cette période.`}
                 extra={
                   <div className="space-y-2">
                     {topRotations.length>0&&investTotal>0&&(
