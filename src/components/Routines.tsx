@@ -16,55 +16,93 @@ const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep
 
 const BLOCS: BlocDef[] = [
   {
-    icon: '🛒', title: 'Commerce & Sourcing',
-    subtitle: 'Les fondamentaux qui font tourner le magasin',
+    icon: '💰', title: 'Vente',
+    subtitle: 'Transformer les flux et encaisser la valeur chaque jour',
+    headerBg: 'bg-green-50',
+    routines: [
+      { id: 'v1', label: 'Brief vente matin (objectifs + priorités du jour)', freq: 'quotidien',
+        detail: "Chaque matin, 5 min debout avec l'équipe : CA de la veille, objectif du jour, 1 point technique (Estaly, argumentation, accessoires). Sans brief, la journée s'organise par défaut." },
+      { id: 'v2', label: 'Estaly / extension garantie proposé à chaque vente', freq: 'quotidien',
+        detail: 'Objectif : 100% des ventes éligibles avec proposition Estaly. Script : "Je vous propose aussi l\'extension garantie à 3 ou 5 ans..." Levier direct sur marge nette.' },
+      { id: 'v3', label: 'Demande d\'avis Google en caisse', freq: 'quotidien',
+        detail: "Script à l'encaissement : \"Avez-vous 30 secondes pour nous laisser un avis Google ? Ça nous aide vraiment.\". Objectif : 10 nouveaux avis/mois minimum." },
+      { id: 'v4', label: 'Animation vitrine / mise en avant bonnes affaires', freq: '1x',
+        detail: 'Chaque semaine : 3 produits en vedette avec prix barré visible, étiquettes de réassurance, tournez les têtes de gondole. Ce que l\'œil voit, la main prend.' },
+    ],
+  },
+  {
+    icon: '🛒', title: 'Achat',
+    subtitle: 'Alimenter le stock en continu et optimiser le sourcing',
     headerBg: 'bg-[#FFF5F5]',
     routines: [
-      { id: 'cs1', label: 'Check gamme', freq: '1x',
-        detail: 'Identifier les produits manquants, éditer les appels de stock, vérifier les prix de reprise sur EasyPrice. (Intranet → Gestion magasin → Gamme référence/modèle)' },
-      { id: 'cs2', label: 'Mise à jour des prix', freq: '1x',
-        detail: 'Récupérer la cote EasyPrice par famille et ajuster le vieux stock par paliers. (Athéna → Stock → Mise à jour des prix)' },
-      { id: 'cs3', label: 'Animation vitrine', freq: '1x',
-        detail: 'Appliquer les 3 leviers en vitrine : prix barré visible, nouveautés en tête de gondole, arguments de réassurance affichés.' },
-      { id: 'cs4', label: 'Sourcing externe', freq: '2x',
-        detail: 'Aller checker les produits manquants en gamme sur les plateformes alternatives. Compléter le sourcing comptoir. (Leboncoin, Vinted, Vinted Pro)' },
-      { id: 'cs5', label: 'Visite concurrence', freq: 'mensuel', monthly: true,
-        detail: 'Veille tarifaire + détection des opportunités de gamme. Aller voir 1 à 2 concurrents par mois. (Cash Express, Easy Cash voisin, indépendants locaux)' },
+      { id: 'a1', label: 'Sourcing comptoir actif (rachat proactif)', freq: 'quotidien',
+        detail: "Posture proactive : proposer l'achat au client qui entre. Former l'équipe à déclencher la discussion rachat systématiquement. L'offre d'achat ne se génère pas d'elle-même." },
+      { id: 'a2', label: 'Édition appel de stock / gamme manquante', freq: '1x',
+        detail: 'Intranet → Gestion magasin → Gamme référence. Identifier les trous dans la gamme et éditer les appels de stock. 1 référence manquante = CA perdu.' },
+      { id: 'a3', label: 'Sourcing externe (Leboncoin, Vinted, Vinted Pro)', freq: '2x',
+        detail: 'Chercher les produits manquants en gamme sur les plateformes. Négocier en dessous de la côte EasyPrice pour préserver la marge. 2× par semaine minimum.' },
+      { id: 'a4', label: 'Visite concurrence (veille tarifs + gamme)', freq: 'mensuel', monthly: true,
+        detail: 'Aller voir 1 à 2 concurrents par mois. Capter leurs prix, leur gamme, leurs arguments. Adapters votre positionnement. (Cash Express, indépendants locaux)' },
     ],
   },
   {
-    icon: '🌐', title: 'Web & Visibilité',
-    subtitle: 'Alimenter le canal digital et soigner la réputation en ligne',
+    icon: '📦', title: 'Stock',
+    subtitle: 'Piloter la rotation et éliminer le vieux stock',
+    headerBg: 'bg-orange-50',
+    routines: [
+      { id: 's1', label: 'Lecture chiffres Athéna (CA / marge / stock âgé)', freq: '1x',
+        detail: 'Chaque semaine : CA réalisé vs objectif, taux de marge, % stock âgé. Ces 3 chiffres vous disent tout. Préparez le brief en y allant.' },
+      { id: 's2', label: 'TOP 20 vieux stock — 1 action minimum', freq: '1x',
+        detail: 'Athéna → Stock → Ventilation par ancienneté. Prendre le TOP 20 valeur et faire 1 action : démarque, placement vitrine, contact revendeur. 1 action/semaine = 50 mouvements/an.' },
+      { id: 's3', label: 'Mise à jour prix EasyPrice (côtes réseau)', freq: '3x',
+        detail: 'Récupérer les nouvelles côtes EasyPrice 3× par semaine et mettre à jour les prix en magasin. Ne jamais laisser un écart de plus de 72h entre la côte et votre étiquette.' },
+      { id: 's4', label: 'Traitement SAV / retours (bac à vider)', freq: '1x',
+        detail: "Vider le bac retours chaque semaine. Aucun produit en attente > 15 jours. L'immobilisation SAV est de la trésorerie morte. Process : tester → diagnostiquer → décider (revendre / retour réseau / démarque)." },
+    ],
+  },
+  {
+    icon: '🌐', title: 'Web',
+    subtitle: 'Alimenter le catalogue digital et la réputation en ligne',
     headerBg: 'bg-blue-50',
     routines: [
-      { id: 'wv1', label: 'Mise en ligne produits (EasyBiz)', freq: 'quotidien',
-        detail: 'Photographier et mettre en ligne les produits rachetés au comptoir. Alimentation continue du catalogue web.' },
-      { id: 'wv2', label: 'Publication réseaux sociaux', freq: '2x',
-        detail: 'Publier les nouveautés, les bonnes affaires du moment, les coulisses du magasin. Construire la communauté locale. (Instagram, TikTok, Facebook)' },
-      { id: 'wv3', label: "Demande d'avis Google après vente", freq: '1x',
-        detail: "Demander un avis Google à chaque client satisfait. Cible mensuelle : 10 nouveaux avis. Levier majeur de référencement local." },
-    ],
-  },
-  {
-    icon: '📊', title: 'Pilotage',
-    subtitle: 'Le réflexe chiffres et la rigueur opérationnelle',
-    headerBg: 'bg-purple-50',
-    routines: [
-      { id: 'pl1', label: 'Lecture des chiffres Athéna', freq: '1x',
-        detail: 'Consulter les chiffres clés de la semaine écoulée pour préparer le brief du lundi et identifier les sujets prioritaires.' },
-      { id: 'pl2', label: 'Traitement du bac SAV / Retours', freq: '1x',
-        detail: "Vider le bac de retours et SAV chaque semaine. Cible : aucun produit en attente depuis plus de 15 jours. Évite l'immobilisation de trésorerie et la frustration client." },
+      { id: 'w1', label: 'Mise en ligne produits EasyBiz (photos + description)', freq: 'quotidien',
+        detail: "Chaque jour : mettre en ligne les produits rachetés la veille. 1 jour de délai = 1 jour sans visibilité web. Photo soignée + description précise = moins d'annulations." },
+      { id: 'w2', label: 'Réponse aux avis Google', freq: 'quotidien',
+        detail: "Répondre à TOUS les avis Google sous 24h : remerciement aux positifs, résolution aux négatifs. Les réponses soignées aux avis négatifs convertissent mieux que les notes parfaites." },
+      { id: 'w3', label: 'Suivi annulations commandes web', freq: '1x',
+        detail: "Analyser les annulations de la semaine : cause (rupture, délai, prix), action corrective. Taux cible : ≤ 5%. Au-delà, chaque annulation dégrade votre note Marketplace." },
+      { id: 'w4', label: 'Publications réseaux sociaux (Instagram, TikTok, FB)', freq: '2x',
+        detail: "Publier 2× par semaine minimum : bonnes affaires du moment, coulisses du magasin, témoignages clients. Construire une communauté locale de racheteurs et d'acheteurs." },
     ],
   },
   {
     icon: '👥', title: 'Management',
-    subtitle: "Les rituels qui structurent l'équipe et font monter chacun en autonomie",
+    subtitle: "Ritualiser l'équipe et développer les compétences",
     headerBg: 'bg-amber-50',
     routines: [
-      { id: 'mg1', label: 'Brief de semaine sur objectifs hebdomadaires', freq: '1x',
-        detail: "Présenter à l'équipe les objectifs de la semaine, les priorités, les chiffres de la semaine passée. 15 à 20 minutes en début de semaine pour aligner tout le monde." },
-      { id: 'mg2', label: 'Tour de table responsables de rayon (GPA + sujet libre)', freq: '1x',
-        detail: "Chaque responsable prend 5 min pour faire le point sur sa GPA (gamme, prix, animation) et partager un sujet libre (idée, alerte, projet, retour client). Cadre court et structuré qui responsabilise chaque pilier et fait remonter les signaux faibles. Sans cadre, le tour de table dérive en discussion informelle." },
+      { id: 'mg1', label: 'Brief hebdomadaire équipe (objectifs + chiffres)', freq: '1x',
+        detail: "Lundi matin, 15 min max : CA semaine passée, objectif semaine, 1 action prioritaire par personne. Debout autour du comptoir. L'équipe qui sait où elle va performait 30% mieux." },
+      { id: 'mg2', label: 'Tour de table responsables (GPA + sujet libre)', freq: '1x',
+        detail: "Chaque responsable de rayon : 5 min sur sa GPA (gamme, prix, animation) + 1 sujet libre. Format structuré qui responsabilise et fait remonter les signaux faibles." },
+      { id: 'mg3', label: 'Coaching individuel vente (observation + feedback)', freq: 'mensuel', monthly: true,
+        detail: "1 fois par mois par personne : observer une vente, donner un feedback positif + 1 point d'amélioration. Méthode sandwich : positif → amélioration → encouragement." },
+      { id: 'mg4', label: 'Entretien individuel mensuel (projet + motivation)', freq: 'mensuel', monthly: true,
+        detail: "15 à 30 min en tête-à-tête : résultats du mois, satisfaction au poste, projets, besoins de formation. L'entretien qui n'a pas lieu laisse les signaux faibles s'amplifier." },
+    ],
+  },
+  {
+    icon: '🎯', title: 'GPA — Gamme · Prix · Animation',
+    subtitle: 'Piloter les 3 leviers structurels de la performance',
+    headerBg: 'bg-purple-50',
+    routines: [
+      { id: 'g1', label: 'Check gamme référence Athéna (taux de couverture)', freq: '1x',
+        detail: 'Athéna → Gestion magasin → Gamme référence/modèle. Taux de couverture par famille. TLCE : 100% couverture = 60% du volume. JCON : 100% = 70% marge. Planifier les achats manquants.' },
+      { id: 'g2', label: 'Mise à jour prix familles clés (côtes réseau)', freq: '3x',
+        detail: "Mettre à jour les prix des 5 familles clés 3× par semaine. En dessous : vous perdez de la marge. Au-dessus : vous perdez des ventes. La côte réseau est votre benchmark." },
+      { id: 'g3', label: 'Animation — 3 produits mis en valeur (vitrine + PLV)', freq: '1x',
+        detail: "Chaque semaine : 3 produits en animation dans la vitrine avec prix barré + argument chiffré (\"économisez 40% vs neuf\"). Rotation hebdomadaire = nouveauté perçue = retour des clients." },
+      { id: 'g4', label: 'Suivi inventaire tournant (planification + réalisation)', freq: '1x',
+        detail: "Vérifier le planning des inventaires tournants de la semaine. Réaliser les familles prévues. TLCE : 2×/mois. BOR/JCON/IPOR : 1×/mois. Voir section Inventaires ci-dessous." },
     ],
   },
 ];
@@ -211,6 +249,7 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
   const [offset, setOffset] = useState(0);
   const [weekData, setWeekData] = useState<WeekData>(() => loadWeek(magasinNom, 0));
   const [tooltipId, setTooltipId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'semaine' | 'mois' | 'trimestre'>('semaine');
 
   const [cibles, setCibles] = useState<Record<string, number>>(() => {
     if (typeof window === 'undefined') return {};
@@ -328,17 +367,47 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
       : 'Votre rythme se maintient.';
   }
 
+  // 4-week average for +PAP check
+  const last4Scores = history.slice(-4).map(h => h.pct);
+  const avg4 = Math.round(last4Scores.reduce((a, b) => a + b, 0) / last4Scores.length);
+
+  // Monthly/quarterly aggregated view data
+  const aggData = useMemo(() => {
+    const weeks = viewMode === 'mois' ? 4 : 13;
+    const allWeeks = Array.from({ length: weeks }, (_, i) => loadWeek(magasinNom, i - (weeks - 1)));
+    return ALL_ROUTINES.map(r => {
+      const target = getTarget(r);
+      if (target === 0) return { r, done: 0, expected: 0, pct: 0 };
+      const done = allWeeks.reduce((s, w) => s + (w[r.id] ?? []).filter(Boolean).length, 0);
+      const expected = target * weeks;
+      return { r, done, expected, pct: Math.round(done / expected * 100) };
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [magasinNom, viewMode, weekData, cibles]);
+
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-bold text-[#1A1A1A]">
-          🔁 Routines hebdomadaires{magasinNom ? ` — ${magasinNom}` : ''}
-        </h2>
-        <p className="text-sm text-[#6B7280] mt-0.5">4 blocs métier · 13 routines · Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
-      </div>
-
-      <div className="bg-[#FFF5F5] border border-[#E30613]/20 rounded-xl px-4 py-3 text-sm text-[#1A1A1A] leading-relaxed">
-        Les outils ne suffisent pas. La performance vient de la régularité du suivi. Cochez chaque jour les routines accomplies et ajustez la cible hebdomadaire selon votre magasin.
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-[#1A1A1A]">
+            🔁 Routines{magasinNom ? ` — ${magasinNom}` : ''}
+          </h2>
+          <p className="text-sm text-[#6B7280] mt-0.5">6 domaines · 24 routines · Cochez chaque jour les actions accomplies pour ancrer vos automatismes.</p>
+        </div>
+        {/* View selector */}
+        <div className="flex rounded-xl border border-[#E0E0E0] overflow-hidden bg-white shadow-sm flex-shrink-0">
+          {(['semaine', 'mois', 'trimestre'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setViewMode(v)}
+              className={`px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                viewMode === v ? 'bg-[#E30613] text-white' : 'text-[#6B7280] hover:text-[#1A1A1A]'
+              }`}
+            >
+              {v === 'semaine' ? 'Semaine' : v === 'mois' ? 'Mois' : 'Trimestre'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Navigation semaine */}
@@ -368,8 +437,42 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
         </button>
       </div>
 
-      {/* 4 blocs routines */}
-      {BLOCS.map(bloc => (
+      {/* Monthly / quarterly aggregated view */}
+      {viewMode !== 'semaine' && (
+        <div className="space-y-4">
+          <p className="text-xs text-[#6B7280]">
+            {viewMode === 'mois' ? 'Synthèse des 4 dernières semaines' : 'Synthèse des 13 dernières semaines'} — lecture seule.
+          </p>
+          {BLOCS.map(bloc => {
+            const blocAgg = aggData.filter(a => bloc.routines.some(r => r.id === a.r.id));
+            const blocPct = blocAgg.length ? Math.round(blocAgg.reduce((s, a) => s + a.pct, 0) / blocAgg.length) : 0;
+            return (
+              <div key={bloc.title} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+                <div className={`px-4 py-2.5 ${bloc.headerBg} border-b border-[#E0E0E0] flex items-center justify-between`}>
+                  <div>
+                    <span className="font-bold text-sm text-[#1A1A1A]">{bloc.icon} {bloc.title}</span>
+                  </div>
+                  <span className={`text-sm font-black ${blocPct >= 80 ? 'text-green-600' : blocPct >= 50 ? 'text-orange-500' : 'text-red-600'}`}>{blocPct}%</span>
+                </div>
+                <div className="divide-y divide-[#F0F0F0]">
+                  {blocAgg.map(({ r, done, expected, pct: rPct }) => (
+                    <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="flex-1 text-xs text-[#1A1A1A]">{r.label}</span>
+                      <span className="text-xs text-[#6B7280]">{done}/{expected}</span>
+                      <span className={`text-xs font-bold w-10 text-right ${rPct >= 80 ? 'text-green-600' : rPct >= 50 ? 'text-orange-500' : expected > 0 ? 'text-red-600' : 'text-[#9CA3AF]'}`}>
+                        {expected > 0 ? `${rPct}%` : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Weekly view — 6 blocs routines */}
+      {viewMode === 'semaine' && BLOCS.map(bloc => (
         <div key={bloc.title} className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-visible">
           <div className={`px-4 py-3 ${bloc.headerBg} border-b border-[#E0E0E0] rounded-t-xl`}>
             <h3 className="font-bold text-sm text-[#1A1A1A]">{bloc.icon} {bloc.title}</h3>
@@ -606,39 +709,36 @@ export default function Routines({ magasinNom, onAddAction }: Props) {
       </div>
 
       {/* Score de la semaine */}
-      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5">
-        <div className="flex items-center justify-between mb-3">
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-5 space-y-3">
+        <div className="flex items-center justify-between">
           <h3 className="font-bold text-sm text-[#1A1A1A]">Score de la semaine</h3>
-          <span className={`text-2xl font-black ${pct >= 70 ? 'text-green-600' : pct >= 40 ? 'text-orange-500' : 'text-[#9CA3AF]'}`}>
+          <span className={`text-2xl font-black ${pct >= 80 ? 'text-green-600' : pct >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
             {pct}%
           </span>
         </div>
-        <div className="h-2.5 bg-[#E0E0E0] rounded-full overflow-hidden mb-3">
+        <div className="h-2.5 bg-[#E0E0E0] rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-300 ${
-              pct >= 70 ? 'bg-green-500' : pct >= 40 ? 'bg-orange-400' : 'bg-[#D1D5DB]'
+              pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-orange-400' : 'bg-red-400'
             }`}
             style={{ width: `${pct}%` }}
           />
         </div>
-        <p className="text-xs text-[#6B7280] mb-2">
-          {metCount}/{scoreableRoutines.length} routines accomplies cette semaine ({pct}%)
-          {scoreableRoutines.length < ALL_ROUTINES.length && (
-            <span className="text-[#9CA3AF]"> · les routines mensuelles sans cible définie ne comptent pas dans le score</span>
-          )}
+        <p className="text-xs text-[#6B7280]">
+          {metCount}/{scoreableRoutines.length} routines accomplies · Moy. 4 sem : <strong className={avg4 >= 80 ? 'text-green-600' : avg4 >= 50 ? 'text-orange-500' : 'text-red-600'}>{avg4}%</strong>
         </p>
         <p className="text-sm font-semibold text-[#1A1A1A]">
-          {pct < 40
-            ? '💪 Lancez-vous. Une routine régulière sur 3 mois change tout.'
-            : pct <= 70
-              ? '📈 Bon rythme. Continuez à consolider vos automatismes.'
-              : "🏆 Routines installées. C'est le secret des magasins performants."}
+          {pct < 50
+            ? '🔴 Score insuffisant — ancrez au moins 3 routines critiques dès cette semaine.'
+            : pct < 80
+              ? '🟠 Bon rythme — consolidez les automatismes pour dépasser 80%.'
+              : '🟢 Routines installées — c\'est ce qui sépare les top magasins.'}
         </p>
-        {pct < 50 && onAddAction && (
+        {onAddAction && avg4 < 50 && withData.length >= 2 && (
           <button onClick={() => {
             const e = new Date(); e.setDate(e.getDate() + 14);
-            onAddAction({ id: String(Date.now()), titre: `Routines — Mettre en place les routines hebdomadaires (score ${pct}%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Score routines semaine en cours : ${pct}% (${metCount}/${scoreableRoutines.length}). Planifier une revue hebdomadaire pour ancrer les bons réflexes.`, echeance: e.toISOString().slice(0, 10), priorite: 2, gain: 0, statut: 'À faire' });
-          }} className="mt-2 text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
+            onAddAction({ id: String(Date.now()), titre: `Routines — Score moyen < 50% sur 4 semaines (${avg4}%)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Score moyen des routines sur les 4 dernières semaines : ${avg4}%. Identifier les 3 routines prioritaires à ancrer en priorité (Brief, Chiffres Athéna, Mise en ligne EasyBiz).`, echeance: e.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
+          }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
         )}
       </div>
 
