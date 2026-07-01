@@ -11,6 +11,57 @@ interface Props {
   onSave: (d: MagasinData) => void;
   actions: PAPAction[];
   onNavigate: (tab: string) => void;
+  onAddAction?: (action: PAPAction) => void;
+}
+
+interface HistoireStore {
+  typePdV: string;
+  anneeOuverture: string;
+  effectif: string;
+  specificites: string;
+  defis: string;
+  objectifsPerso: string;
+}
+const HISTOIRE_EMPTY: HistoireStore = { typePdV: '', anneeOuverture: '', effectif: '', specificites: '', defis: '', objectifsPerso: '' };
+
+interface SimuSummary { ca: number; etp: number; msPct: number; masseSal: number; turnover: number | null }
+
+function readSimuSummary(nom: string): SimuSummary | null {
+  try {
+    const s = localStorage.getItem(`equipe_${nom}`);
+    if (!s) return null;
+    const p = JSON.parse(s) as unknown;
+    const rows = Array.isArray(p) ? p as {heures:number;salaireHoraire:number}[] : ((p as {rows:typeof p[]}).rows ?? []) as {heures:number;salaireHoraire:number}[];
+    if (!rows.length) return null;
+    const ca: number = Array.isArray(p) ? 0 : ((p as {caAnnuel:number}).caAnnuel ?? 0);
+    const totalH = rows.reduce((a, r) => a + r.heures, 0);
+    const etp = totalH / 151.67;
+    const masseSal = rows.reduce((a, r) => a + r.heures * r.salaireHoraire * 12 * 1.42, 0);
+    const msPct = ca > 0 ? (masseSal / ca) * 100 : 0;
+    let turnover: number | null = null;
+    const rh = localStorage.getItem(`rh_${nom}`);
+    if (rh) {
+      const rhD = JSON.parse(rh) as { departs: number; effectifMoyen: number | null };
+      const eff = rhD.effectifMoyen ?? etp;
+      if (rhD.departs > 0 && eff > 0) turnover = (rhD.departs / eff) * 100;
+    }
+    return { ca, etp, msPct, masseSal, turnover };
+  } catch { return null; }
+}
+
+function readRoutinesScore(nom: string): number | null {
+  try {
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    const weekKey = monday.toISOString().slice(0, 10);
+    const s = localStorage.getItem(`routines_${nom}_${weekKey}`);
+    if (!s) return null;
+    const weekData = JSON.parse(s) as Record<string, boolean[]>;
+    const all = Object.values(weekData).flat();
+    if (!all.length) return null;
+    return Math.round(all.filter(Boolean).length / all.length * 100);
+  } catch { return null; }
 }
 
 // ── Cercle du Cash SVG ─────────────────────────────────────────────────────
@@ -137,7 +188,7 @@ function ToggleRow({ label, value, onChange, hint }: {
   );
 }
 
-export default function Dashboard({ data, onSave, actions, onNavigate }: Props) {
+export default function Dashboard({ data, onSave, actions, onNavigate, onAddAction }: Props) {
   const [showModal, setShowModal] = useState(!data.nom);
   const [form, setForm] = useState<MagasinData>({ ...DEFAULT_DATA, ...data });
   const [pasteMode, setPasteMode] = useState(false);
@@ -160,6 +211,12 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     try { const s = localStorage.getItem(`vision_${data.nom}`); return s ? JSON.parse(s) : null; }
     catch { return null; }
   });
+  const [histoire, setHistoire] = useState<HistoireStore>(() => {
+    if (typeof window === 'undefined') return HISTOIRE_EMPTY;
+    try { const s = localStorage.getItem(`histoire_${data.nom}`); return s ? JSON.parse(s) as HistoireStore : HISTOIRE_EMPTY; }
+    catch { return HISTOIRE_EMPTY; }
+  });
+  const [showHistoire, setShowHistoire] = useState(false);
 
   useEffect(() => { setForm({ ...DEFAULT_DATA, ...data }); }, [data]);
 
@@ -174,6 +231,10 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
       const v = localStorage.getItem(`vision_${data.nom}`);
       setVision(v ? JSON.parse(v) : null);
     } catch { setVision(null); }
+    try {
+      const h = localStorage.getItem(`histoire_${data.nom}`);
+      setHistoire(h ? JSON.parse(h) as HistoireStore : HISTOIRE_EMPTY);
+    } catch { setHistoire(HISTOIRE_EMPTY); }
   }, [data.nom]);
 
   function setF(k: keyof MagasinData, v: number) { setForm(f => ({ ...f, [k]: v })); }
@@ -325,6 +386,19 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
     }
   });
 
+  function saveHistoire(h: HistoireStore) {
+    setHistoire(h);
+    if (data.nom) localStorage.setItem(`histoire_${data.nom}`, JSON.stringify(h));
+  }
+
+  const simuSummary = data.nom ? readSimuSummary(data.nom) : null;
+  const routinesScore = data.nom ? readRoutinesScore(data.nom) : null;
+  const hasBenchmark = data.nom ? !!localStorage.getItem(`benchmark_franchise_${data.nom}`) : false;
+  const hasObjectifs = data.nom ? !!localStorage.getItem(`objectifs_${data.nom}_${new Date().toISOString().slice(0, 7)}`) : false;
+  const hasCompetences = data.nom ? !!localStorage.getItem(`competences_${data.nom}`) : false;
+  const hasCouverture = data.nom ? !!localStorage.getItem(`couverture_${data.nom}`) : false;
+  const hasJournal = data.nom ? !!localStorage.getItem(`journal_achats_${data.nom}`) : false;
+
   const hl = (k: string) => highlightedFields.has(k) ? 'ring-2 ring-[#E30613] rounded-lg' : '';
 
   return (
@@ -356,6 +430,88 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
             <p className="text-xs text-[#6B7280] italic group-hover:text-[#E30613]">Définissez votre vision pour personnaliser votre outil. →</p>
           )}
         </button>
+      )}
+
+      {/* Histoire du magasin */}
+      {data.nom && (
+        <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm overflow-hidden">
+          <button
+            onClick={() => setShowHistoire(!showHistoire)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F5F5F5] transition-colors"
+          >
+            <span className="text-sm font-semibold text-[#1A1A1A]">
+              📖 Histoire du magasin
+              {(histoire.typePdV || histoire.anneeOuverture) && (
+                <span className="ml-2 text-xs font-normal text-[#6B7280]">
+                  {[histoire.typePdV, histoire.anneeOuverture && `depuis ${histoire.anneeOuverture}`, histoire.effectif && `${histoire.effectif} pers.`].filter(Boolean).join(' · ')}
+                </span>
+              )}
+            </span>
+            <span className="text-xs text-[#6B7280]">{showHistoire ? '▲' : '▼'}</span>
+          </button>
+          {showHistoire && (
+            <div className="border-t border-[#E0E0E0] px-4 py-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-[#6B7280] block mb-1">Type de point de vente</label>
+                  <input
+                    className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
+                    value={histoire.typePdV}
+                    onChange={e => saveHistoire({ ...histoire, typePdV: e.target.value })}
+                    placeholder="ex: Centre-ville, Zone commerciale…"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[#6B7280] block mb-1">Année d&apos;ouverture</label>
+                  <input
+                    className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
+                    value={histoire.anneeOuverture}
+                    onChange={e => saveHistoire({ ...histoire, anneeOuverture: e.target.value })}
+                    placeholder="ex: 2018"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[#6B7280] block mb-1">Effectif</label>
+                  <input
+                    className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
+                    value={histoire.effectif}
+                    onChange={e => saveHistoire({ ...histoire, effectif: e.target.value })}
+                    placeholder="ex: 4 CDI + 1 alternant"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[#6B7280] block mb-1">Objectifs personnels</label>
+                  <input
+                    className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]"
+                    value={histoire.objectifsPerso}
+                    onChange={e => saveHistoire({ ...histoire, objectifsPerso: e.target.value })}
+                    placeholder="ex: Atteindre 2M€ en 2026"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-[#6B7280] block mb-1">Spécificités locales</label>
+                <textarea
+                  className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613] resize-none"
+                  rows={2}
+                  value={histoire.specificites}
+                  onChange={e => saveHistoire({ ...histoire, specificites: e.target.value })}
+                  placeholder="ex: Fort flux touristique en été, concurrence discount à 500m…"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-[#6B7280] block mb-1">Défis actuels</label>
+                <textarea
+                  className="w-full bg-[#F5F5F5] border border-[#E0E0E0] rounded-lg px-2 py-1.5 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613] resize-none"
+                  rows={2}
+                  value={histoire.defis}
+                  onChange={e => saveHistoire({ ...histoire, defis: e.target.value })}
+                  placeholder="ex: Stock âgé élevé sur téléphones, turnover équipe important…"
+                />
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {!data.nom && !showModal && (
@@ -391,15 +547,16 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
           {/* 3 KPI cards */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { key: 'stockAge',      label: 'Stock âgé',   unit: '%',  dir: 'lower'  as const, defaultSeuil: 30 },
-              { key: 'tauxMargeNette', label: 'Marge nette', unit: '%',  dir: 'higher' as const, defaultSeuil: 38 },
-              { key: 'noteGoogle',    label: 'Note Google',  unit: '/5', dir: 'higher' as const, defaultSeuil: 4.4 },
+              { key: 'stockAge',      label: 'Stock âgé',   unit: '%',  dir: 'lower'  as const, defaultSeuil: 30, axe: 'Stock' as const },
+              { key: 'tauxMargeNette', label: 'Marge nette', unit: '%',  dir: 'higher' as const, defaultSeuil: 38, axe: 'Commerce' as const },
+              { key: 'noteGoogle',    label: 'Note Google',  unit: '/5', dir: 'higher' as const, defaultSeuil: 4.4, axe: 'Commerce' as const },
             ].map(kpi => {
               const val = data[kpi.key as keyof MagasinData] as number;
               const seuil = customSeuils[kpi.key] || kpi.defaultSeuil;
               const hasData = val > 0;
               const isOk  = hasData && (kpi.dir === 'higher' ? val >= seuil : val <= seuil);
               const isBad = hasData && (kpi.dir === 'higher' ? val < seuil * 0.85 : val > seuil * 1.2);
+              const isWarn = hasData && !isOk && !isBad;
               return (
                 <div key={kpi.key} className={`bg-white rounded-xl p-3 text-center border-l-4 shadow-sm ${
                   !hasData ? 'border-[#E0E0E0]' : isOk ? 'border-green-500' : isBad ? 'border-[#E30613]' : 'border-orange-400'
@@ -411,6 +568,12 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
                   </div>
                   <div className="text-xs text-[#1A1A1A] font-medium mt-0.5">{kpi.label}</div>
                   <div className="text-xs text-[#6B7280]">seuil {seuil}{kpi.unit}</div>
+                  {onAddAction && hasData && (isBad || isWarn) && (
+                    <button onClick={() => {
+                      const d = new Date(); d.setDate(d.getDate() + 14);
+                      onAddAction({ id: String(Date.now()), titre: `Dashboard — ${kpi.label} à ${val}${kpi.unit} (seuil ${seuil}${kpi.unit})`, axe: kpi.axe, pilote: 'Franchisé', copilote: '', description: `${kpi.label} actuel : ${val}${kpi.unit}. Seuil cible : ${seuil}${kpi.unit}. Analyser et mettre en place un plan d'action.`, echeance: d.toISOString().slice(0, 10), priorite: isBad ? 1 : 2, gain: 0, statut: 'À faire' });
+                    }} className="mt-1.5 text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 transition-colors">+ PAP</button>
+                  )}
                 </div>
               );
             })}
@@ -464,6 +627,91 @@ export default function Dashboard({ data, onSave, actions, onNavigate }: Props) 
               </div>
             )}
           </div>
+          {/* Modules actifs */}
+          {(simuSummary || routinesScore !== null || hasBenchmark || hasObjectifs || hasCompetences || hasCouverture || hasJournal) && (
+            <div className="space-y-2">
+              <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Synthèse modules</h3>
+
+              {/* Simulateur */}
+              {simuSummary && (
+                <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-[#1A1A1A]">💰 Équipe & RH</span>
+                    <button onClick={() => onNavigate('simulateur')} className="text-[10px] text-[#E30613] hover:underline">Voir →</button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="text-center">
+                      <div className="text-lg font-black text-[#1A1A1A]">{simuSummary.ca > 0 ? `${(simuSummary.ca/1000).toFixed(0)}k€` : '—'}</div>
+                      <div className="text-[10px] text-[#6B7280]">CA annuel</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`text-lg font-black ${simuSummary.msPct === 0 ? 'text-[#6B7280]' : simuSummary.msPct <= 15 ? 'text-green-600' : simuSummary.msPct <= 18 ? 'text-orange-500' : 'text-red-600'}`}>
+                        {simuSummary.ca > 0 ? `${simuSummary.msPct.toFixed(1)}%` : '—'}
+                      </div>
+                      <div className="text-[10px] text-[#6B7280]">Masse sal.</div>
+                    </div>
+                    <div className="text-center">
+                      {simuSummary.turnover !== null ? (
+                        <>
+                          <div className={`text-lg font-black ${simuSummary.turnover <= 15 ? 'text-green-600' : simuSummary.turnover <= 30 ? 'text-orange-500' : 'text-red-600'}`}>
+                            {simuSummary.turnover.toFixed(0)}%
+                          </div>
+                          <div className="text-[10px] text-[#6B7280]">Turnover</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-lg font-black text-[#1A1A1A]">{simuSummary.etp.toFixed(1)}</div>
+                          <div className="text-[10px] text-[#6B7280]">ETP</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {onAddAction && simuSummary.ca > 0 && simuSummary.msPct > 18 && (
+                    <button onClick={() => {
+                      const d = new Date(); d.setDate(d.getDate() + 14);
+                      onAddAction({ id: String(Date.now()), titre: `Masse salariale critique à ${simuSummary!.msPct.toFixed(1)}% du CA`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Masse salariale à ${simuSummary!.msPct.toFixed(1)}% du CA (seuil ≤15%). Coût annuel : ${Math.round(simuSummary!.masseSal).toLocaleString('fr-FR')} €.`, echeance: d.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
+                    }} className="mt-2 text-[10px] text-white bg-[#E30613] hover:bg-red-700 rounded-full px-2 py-0.5 transition-colors">+ PAP</button>
+                  )}
+                </div>
+              )}
+
+              {/* Other module badges */}
+              <div className="flex flex-wrap gap-2">
+                {routinesScore !== null && (
+                  <button onClick={() => onNavigate('routines')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    routinesScore >= 80 ? 'bg-green-50 border-green-300 text-green-700' : routinesScore >= 50 ? 'bg-orange-50 border-orange-300 text-orange-700' : 'bg-red-50 border-red-300 text-red-700'
+                  }`}>
+                    🔁 Routines {routinesScore}%
+                  </button>
+                )}
+                {hasBenchmark && (
+                  <button onClick={() => onNavigate('benchmark')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border bg-[#F5F5F5] border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB] transition-colors">
+                    📊 Benchmark ✓
+                  </button>
+                )}
+                {hasObjectifs && (
+                  <button onClick={() => onNavigate('objectifs')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border bg-[#F5F5F5] border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB] transition-colors">
+                    🎯 Objectifs ✓
+                  </button>
+                )}
+                {hasCompetences && (
+                  <button onClick={() => onNavigate('competences')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border bg-[#F5F5F5] border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB] transition-colors">
+                    🎓 Compétences ✓
+                  </button>
+                )}
+                {hasCouverture && (
+                  <button onClick={() => onNavigate('couverture')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border bg-[#F5F5F5] border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB] transition-colors">
+                    🗂 Gamme ✓
+                  </button>
+                )}
+                {hasJournal && (
+                  <button onClick={() => onNavigate('journal')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border bg-[#F5F5F5] border-[#E0E0E0] text-[#1A1A1A] hover:bg-[#EBEBEB] transition-colors">
+                    📊 Journal ✓
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
 

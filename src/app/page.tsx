@@ -155,7 +155,7 @@ export default function App() {
 
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 py-5">
-        {tab === 'dashboard'   && <Dashboard        data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} />}
+        {tab === 'dashboard'   && <Dashboard        data={data} onSave={saveData} actions={actions} onNavigate={(t) => setTab(t as TabId)} onAddAction={a => saveActions([...actions, a])} />}
         {tab === 'objectifs'   && <Objectifs         magasinNom={currentNom} />}
         {tab === 'plan'        && <PlanAction        data={data} actions={actions} onSave={saveActions} />}
         {tab === 'journal'     && <JournalAchatVente magasinNom={currentNom} onAddAction={a => saveActions([...actions, a])} onNavigateToBijouterie={() => setTab('bijouterie')} />}
