@@ -14,6 +14,7 @@ interface ObjFamille {
   margeCible: number;
   tauxMarge: number;
   stockInitial: number;
+  delaiRotation: number; // 0 = non renseigné, stock informatif uniquement
   margeRealisee: number;
 }
 
@@ -51,7 +52,7 @@ function uid() { return Math.random().toString(36).slice(2); }
 function defaultRows(): ObjFamille[] {
   return DEFAULT_FAMILLES.map(f => ({
     id: uid(), famille: f.famille, tauxMarge: f.tauxMarge,
-    margeCible: 0, stockInitial: 0, margeRealisee: 0,
+    margeCible: 0, stockInitial: 0, delaiRotation: 0, margeRealisee: 0,
   }));
 }
 
@@ -94,12 +95,8 @@ export function getVisionContext(magasinNom: string): string {
           if (f.tauxMarge <= 0) return 0;
           const t = f.tauxMarge / 100;
           const base = Math.round((f.margeCible - f.margeRealisee) / t);
-          if (f.stockInitial > 0) {
-            const fc = detectFamilyCode(f.famille);
-            const delai = fc !== 'UNKNOWN' ? (delais[fc] ?? null) : null;
-            if (delai !== null && delai > 0) {
-              return Math.max(0, Math.round(base - f.stockInitial * Math.min(1, 30 / delai)));
-            }
+          if (f.stockInitial > 0 && (f.delaiRotation ?? 0) > 0) {
+            return Math.max(0, Math.round(base - f.stockInitial * Math.min(1, 30 / f.delaiRotation)));
           }
           return Math.max(0, base);
         };
@@ -195,7 +192,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
       const s = localStorage.getItem(key);
       if (s) {
         const parsed = JSON.parse(s) as ObjData;
-        setFamilles((parsed.familles ?? defaultRows()).map(f => ({ ...f, stockInitial: f.stockInitial ?? 0 })));
+        setFamilles((parsed.familles ?? defaultRows()).map(f => ({ ...f, stockInitial: f.stockInitial ?? 0, delaiRotation: f.delaiRotation ?? 0 })));
         setPromoRedist(parsed.promoRedist ?? 30);
       } else {
         setFamilles(defaultRows());
@@ -224,7 +221,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
   }
 
   function addFamille() {
-    const next = [...familles, { id: uid(), famille: '', tauxMarge: 40, margeCible: 0, stockInitial: 0, margeRealisee: 0 }];
+    const next = [...familles, { id: uid(), famille: '', tauxMarge: 40, margeCible: 0, stockInitial: 0, delaiRotation: 0, margeRealisee: 0 }];
     setFamilles(next);
     saveObj(next, promoRedist);
   }
@@ -253,6 +250,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
         margeRealisee: f.margeRealisee,
         tauxMarge: f.tauxMarge,
         stockInitial: f.stockInitial,
+        delaiRotation: f.delaiRotation,
       })),
       clotureLe: new Date().toISOString().slice(0, 10),
     };
@@ -277,29 +275,31 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
     return Math.round(f.margeCible / (f.tauxMarge / 100));
   }
 
-  // Délai moyen de rotation (jours) pour la famille de f, ou null si non disponible
-  function getDelaiInfo(f: ObjFamille): { delai: number | null; partPct: number | null } {
-    if (f.stockInitial <= 0 || !f.famille) return { delai: null, partPct: null };
-    const fc = detectFamilyCode(f.famille);
-    if (fc === 'UNKNOWN') return { delai: null, partPct: null };
-    const delai = delaisParFamille[fc] ?? null;
-    if (delai === null || delai <= 0) return { delai: null, partPct: null };
-    return { delai, partPct: Math.min(100, Math.round((30 / delai) * 100)) };
+  // Délai effectif : saisie manuelle en priorité.
+  // Auto-Journal visible en hint mais n'entre pas dans le calcul si le champ est vide.
+  function getDelaiInfo(f: ObjFamille): { delai: number | null; partPct: number | null; autoDelai: number | null } {
+    const autoDelai = (() => {
+      if (!f.famille) return null;
+      const fc = detectFamilyCode(f.famille);
+      if (fc === 'UNKNOWN') return null;
+      return delaisParFamille[fc] ?? null;
+    })();
+    if (f.delaiRotation > 0) {
+      return { delai: f.delaiRotation, partPct: Math.min(100, Math.round((30 / f.delaiRotation) * 100)), autoDelai };
+    }
+    // Champ vide → stock informatif uniquement, pas de pondération
+    return { delai: null, partPct: null, autoDelai };
   }
 
   // Sourcing restant = (margeCible − margeRealisee) / tauxMarge
-  // Si stock initial > 0 et délai Journal disponible : pondéré par Part = min(1, 30/délai)
-  // Le franchisé voit clairement la part utilisée dans l'interface
+  // Stock pondéré uniquement si delaiRotation > 0 (saisi manuellement)
   function sourcingRestant(f: ObjFamille): number {
     if (f.margeCible <= 0 || f.tauxMarge <= 0) return 0;
     const t = f.tauxMarge / 100;
     const base = Math.round((f.margeCible - f.margeRealisee) / t);
-    if (f.stockInitial > 0) {
-      const { delai } = getDelaiInfo(f);
-      if (delai !== null && delai > 0) {
-        const part = Math.min(1, 30 / delai);
-        return Math.max(0, Math.round(base - f.stockInitial * part));
-      }
+    if (f.stockInitial > 0 && f.delaiRotation > 0) {
+      const part = Math.min(1, 30 / f.delaiRotation);
+      return Math.max(0, Math.round(base - f.stockInitial * part));
     }
     return Math.max(0, base);
   }
@@ -435,6 +435,7 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge cible (€)</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Taux marge (%)</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock initial (€)</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Délai rotation (j)</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Stock cible (€)</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Marge réalisée (€)</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[#6B7280]">Avancement</th>
@@ -488,6 +489,28 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                           placeholder="0"
                         />
                       </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <input
+                            type="number"
+                            value={f.delaiRotation || ''}
+                            onChange={e => updateFamille(f.id, 'delaiRotation', parseFloat(e.target.value) || 0)}
+                            className={`${ic} w-16 text-right`}
+                            placeholder="—"
+                            min="1"
+                          />
+                          {f.delaiRotation > 0 && f.stockInitial > 0 && (
+                            <span className="text-[10px] text-blue-600 leading-tight font-medium">
+                              → {Math.min(100, Math.round(30 / f.delaiRotation * 100))}% du stock
+                            </span>
+                          )}
+                          {f.delaiRotation <= 0 && delaiInfo.autoDelai !== null && f.stockInitial > 0 && (
+                            <span className="text-[10px] text-[#9CA3AF] leading-tight italic">
+                              Journal : {delaiInfo.autoDelai}j
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-right font-medium text-[#1A1A1A]">
                         {stockCible > 0 ? stockCible.toLocaleString('fr-FR') + ' €' : '—'}
                       </td>
@@ -511,25 +534,16 @@ export default function Objectifs({ magasinNom, onAddAction }: Props) {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-right bg-orange-50/40">
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className={`font-semibold ${
-                            atteint ? 'text-green-600'
-                            : sourcing > 0 ? 'text-orange-600'
-                            : 'text-[#9CA3AF]'
-                          }`}>
-                            {f.margeCible <= 0 ? '—'
-                              : atteint ? '✓ Atteint'
-                              : sourcing > 0 ? `+${sourcing.toLocaleString('fr-FR')} €`
-                              : '—'}
-                          </span>
-                          {f.stockInitial > 0 && !atteint && f.margeCible > 0 && (
-                            <span className="text-[10px] text-[#9CA3AF] leading-tight text-right">
-                              {delaiInfo.delai !== null
-                                ? `Délai ${delaiInfo.delai}j → ${delaiInfo.partPct}% stock`
-                                : 'Délai non disponible'}
-                            </span>
-                          )}
-                        </div>
+                        <span className={`font-semibold ${
+                          atteint ? 'text-green-600'
+                          : sourcing > 0 ? 'text-orange-600'
+                          : 'text-[#9CA3AF]'
+                        }`}>
+                          {f.margeCible <= 0 ? '—'
+                            : atteint ? '✓ Atteint'
+                            : sourcing > 0 ? `+${sourcing.toLocaleString('fr-FR')} €`
+                            : '—'}
+                        </span>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <span className={`font-semibold ${promo > 0 ? 'text-green-600' : 'text-[#9CA3AF]'}`}>
