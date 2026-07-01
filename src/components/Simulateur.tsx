@@ -19,6 +19,11 @@ interface EquipeStore {
   tauxMarge: number;
 }
 
+interface RhStore {
+  departs: number;
+  effectifMoyen: number | null;
+}
+
 function uid() { return Math.random().toString(36).slice(2); }
 
 const CONTRAT_DEFS: {key:string;label:string;hSemaine:number;note:string}[] = [
@@ -50,8 +55,36 @@ function margeColor(v: number) {
   return 'text-red-600';
 }
 
+export function getSimulateurContext(magasinNom: string): string {
+  try {
+    const equipeKey = `equipe_${magasinNom}`;
+    const rhKey = `rh_${magasinNom}`;
+    const eq = localStorage.getItem(equipeKey);
+    const rh = localStorage.getItem(rhKey);
+    if (!eq) return '';
+    const store = JSON.parse(eq) as EquipeStore;
+    const rows = Array.isArray(store) ? store as EquipeRow[] : store.rows;
+    const ca = Array.isArray(store) ? 0 : store.caAnnuel;
+    const marge = Array.isArray(store) ? 38 : (store.tauxMarge ?? 38);
+    const totalH = rows.reduce((s, r) => s + r.heures, 0);
+    const totalEtp = totalH / 151.67;
+    const totalMS = rows.reduce((s, r) => s + r.heures * r.salaireHoraire * 12 * 1.42, 0);
+    const msPct = ca > 0 ? (totalMS / ca) * 100 : 0;
+    let rhCtx = '';
+    if (rh) {
+      const rhData = JSON.parse(rh) as RhStore;
+      const eff = rhData.effectifMoyen ?? totalEtp;
+      const turnover = eff > 0 ? (rhData.departs / eff) * 100 : 0;
+      if (rhData.departs > 0) rhCtx = ` | Turnover: ${turnover.toFixed(0)}% (${rhData.departs} départs / ${eff.toFixed(1)} ETP moy)`;
+    }
+    if (totalEtp === 0) return '';
+    return `[Simulateur RH] CA: ${ca.toLocaleString('fr-FR')} € | Marge: ${marge}% | ETP: ${totalEtp.toFixed(1)} | MS: ${msPct.toFixed(1)}% CA | Coût annuel: ${Math.round(totalMS).toLocaleString('fr-FR')} €${rhCtx}`;
+  } catch { return ''; }
+}
+
 export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }: Props) {
   const equipeKey = `equipe_${magasinNom}`;
+  const rhKey = `rh_${magasinNom}`;
 
   const [equipeStore, setEquipeStore] = useState<EquipeStore>(() => {
     try {
@@ -66,7 +99,19 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
     } catch { return { rows: [], caAnnuel: 0, tauxMarge: 38 }; }
   });
 
+  const [rhStore, setRhStore] = useState<RhStore>(() => {
+    try {
+      const s = typeof window !== 'undefined' ? localStorage.getItem(rhKey) : null;
+      return s ? JSON.parse(s) as RhStore : { departs: 0, effectifMoyen: null };
+    } catch { return { departs: 0, effectifMoyen: null }; }
+  });
+
   const [showExplain, setShowExplain] = useState(false);
+
+  function saveRhStore(rh: RhStore) {
+    setRhStore(rh);
+    localStorage.setItem(rhKey, JSON.stringify(rh));
+  }
 
   function saveEquipeStore(store: EquipeStore) {
     setEquipeStore(store);
@@ -103,6 +148,10 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
   const ratioCAEtp = totalEtp > 0 && caAnnuel > 0 ? caAnnuel / totalEtp : 0;
   const caParEtp = totalEtp > 0 && caAnnuel > 0 ? caAnnuel / totalEtp : 0;
   const margeParEtp = totalEtp > 0 && caAnnuel > 0 ? (caAnnuel * tauxMarge / 100) / totalEtp : 0;
+
+  const effectifMoyenDisplay = rhStore.effectifMoyen !== null ? rhStore.effectifMoyen : totalEtp;
+  const turnover = effectifMoyenDisplay > 0 ? (rhStore.departs / effectifMoyenDisplay) * 100 : 0;
+  const turnoverColor = turnover <= 15 ? 'text-green-600' : turnover <= 30 ? 'text-orange-500' : 'text-red-600';
 
   const inputCls = 'bg-white border border-[#E0E0E0] rounded-lg px-3 py-2 text-sm text-[#1A1A1A] focus:outline-none focus:border-[#E30613]';
 
@@ -304,6 +353,63 @@ export default function Simulateur({ magasinNom, isCriticalSpiral, onAddAction }
           </div>
         </div>
         <p className="text-xs text-[#6B7280]">Coût chargé = salaire brut × heures × 12 × 1.42 (charges patronales estimées France)</p>
+      </div>
+
+      {/* Indicateurs RH — Turnover */}
+      <div className="bg-white rounded-xl border border-[#E0E0E0] shadow-sm p-4 space-y-3">
+        <h3 className="text-sm font-bold text-[#1A1A1A]">📊 Indicateurs RH</h3>
+        <div className="flex flex-wrap gap-4">
+          <div>
+            <label className="text-xs text-[#6B7280] block mb-1">Départs sur 12 mois</label>
+            <input
+              type="number"
+              min={0}
+              value={rhStore.departs || ''}
+              onChange={e => saveRhStore({ ...rhStore, departs: parseInt(e.target.value) || 0 })}
+              placeholder="0"
+              className={`${inputCls} w-28`}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[#6B7280] block mb-1">Effectif moyen (ETP) <span className="text-[#9CA3AF]">— auto si vide</span></label>
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={rhStore.effectifMoyen !== null ? rhStore.effectifMoyen : ''}
+              onChange={e => {
+                const v = e.target.value;
+                saveRhStore({ ...rhStore, effectifMoyen: v === '' ? null : parseFloat(v) || null });
+              }}
+              placeholder={totalEtp > 0 ? totalEtp.toFixed(1) : '—'}
+              className={`${inputCls} w-28`}
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="bg-[#F5F5F5] rounded-xl px-4 py-3 text-center min-w-[100px]">
+            <div className={`text-2xl font-black ${rhStore.departs > 0 ? turnoverColor : 'text-[#6B7280]'}`}>
+              {rhStore.departs > 0 ? `${turnover.toFixed(0)}%` : '—'}
+            </div>
+            <div className="text-xs text-[#6B7280]">Turnover</div>
+            <div className="text-xs text-[#9CA3AF]">vert &lt;15 · orange 15-30 · rouge &gt;30</div>
+          </div>
+          {rhStore.departs > 0 && (
+            <p className="text-xs text-[#6B7280] leading-relaxed">
+              {turnover <= 15
+                ? '✓ Turnover maîtrisé — stabilité de l\'équipe satisfaisante.'
+                : turnover <= 30
+                ? '⚠ Turnover élevé — attention à la fidélisation et aux coûts de recrutement.'
+                : '⚠ Turnover critique — fort impact sur la qualité de service et les coûts RH.'}
+            </p>
+          )}
+        </div>
+        {onAddAction && rhStore.departs > 0 && turnover > 30 && (
+          <button onClick={() => {
+            const d = new Date(); d.setDate(d.getDate() + 14);
+            onAddAction({ id: String(Date.now()), titre: `RH — Turnover critique à ${turnover.toFixed(0)}% (${rhStore.departs} départs)`, axe: 'Management', pilote: 'Franchisé', copilote: '', description: `Turnover sur 12 mois : ${turnover.toFixed(0)}% (${rhStore.departs} départs pour ${effectifMoyenDisplay.toFixed(1)} ETP moyen). Analyser les causes de départ et mettre en place un plan de fidélisation.`, echeance: d.toISOString().slice(0, 10), priorite: 1, gain: 0, statut: 'À faire' });
+          }} className="text-xs text-white bg-[#E30613] hover:bg-red-700 rounded-full px-3 py-1 whitespace-nowrap transition-colors">+ PAP</button>
+        )}
       </div>
 
       {/* Explanations */}
